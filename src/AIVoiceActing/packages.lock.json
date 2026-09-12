@@ -16,11 +16,11 @@
       },
       "Microsoft.ML.OnnxRuntime": {
         "type": "Direct",
-        "requested": "[1.30.0, )",
-        "resolved": "1.30.0",
-        "contentHash": "RaF3KjPXB/IbNvvrcQtrxS/NZjB9dEHnZQTsdJCLP5Fnn1Jj3LomeqR1mMAoRFKinJ0pIe85PLhLlfGBYqzgWA==",
+        "requested": "[1.24.4, )",
+        "resolved": "1.24.4",
+        "contentHash": "895huFBVrZkZEGjlsxBSZD3p6D32Cdz6q8DM9UcUps2YKFYdFR8TefaTggFBUTYlvcSyfNTpmOOU/ZkeL69izw==",
         "dependencies": {
-          "Microsoft.ML.OnnxRuntime.Managed": "1.30.0"
+          "Microsoft.ML.OnnxRuntime.Managed": "1.24.4"
         }
       },
       "Microsoft.ML.OnnxRuntime.DirectML": {
@@ -31,6 +31,15 @@
         "dependencies": {
           "Microsoft.AI.DirectML": "1.15.4",
           "Microsoft.ML.OnnxRuntime.Managed": "1.24.4"
+        }
+      },
+      "Microsoft.ML.OnnxRuntime.Managed": {
+        "type": "Direct",
+        "requested": "[1.24.4, )",
+        "resolved": "1.24.4",
+        "contentHash": "e5jsEo0HcCKDMkuRsMSievKoMv10Odv4MGmxbCin8SEm4Pto1qTpwti47xRwMtk9I/zVvfAiFIWquOq/0+22DA==",
+        "dependencies": {
+          "System.Numerics.Tensors": "9.0.0"
         }
       },
       "NAudio": {
@@ -75,14 +84,6 @@
         "type": "Transitive",
         "resolved": "1.15.4",
         "contentHash": "UblWBtQxcXcxwcn+jh0pfbq4zv2b6w7ThJ35qUV9gd8niGofrFWzVqZ6yqYDMiE+IJf8LRpG+H1cZpswceOeiA=="
-      },
-      "Microsoft.ML.OnnxRuntime.Managed": {
-        "type": "Transitive",
-        "resolved": "1.30.0",
-        "contentHash": "KHW+vp+i4Mdf6RhIsMvurTVepafXHjg8/VQ0o6sa2wEK0KzV/4iEoRTUvsymcRP+XPAM/r6kZCaTADdV6Xn4RA==",
-        "dependencies": {
-          "System.Numerics.Tensors": "9.0.0"
-        }
       },
       "NAudio.Asio": {
         "type": "Transitive",
