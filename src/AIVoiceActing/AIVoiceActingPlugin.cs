@@ -114,13 +114,13 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             nameNpcWithSayFactory: () => config.NameNpcWithSay,
             disallowMultipleSayFactory: () => config.DisallowMultipleSay,
             sayPartialNameFactory: () => config.SayPartialName,
+            onlySayFirstOrLastNameFactory: () => config.OnlySayFirstOrLastName,
+            // Voiced-cutscene courtesy: a cutscene owns one shared context window.
+            cutsceneActiveFactory: () => conditions.OccupiedInCutscene || conditions.WatchingCutscene,
             talkVisibleFactory: () => this.talkPoller.IsVisible(),
             defaultExaggerationFactory: () => config.DefaultExaggeration,
             selectedEpFactory: () => config.SelectedEp,
             llmDirectorFactory: () => config.DirectorEnabled ? this.TryGetLlmDirector() : null);
-
-        this.audioSink = new NAudioSink(
-            () => config.SelectedAudioDeviceIndex, new DalamudLogSink(PluginLog));
 
         this.hints = new ObjectTableHintProvider(ObjectTable);
 
@@ -159,7 +159,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
                 config.Enabled = value;
                 this.SaveConfig();
             },
-            cancelSpeech: () => this.services.SpeechHandler.CancelCurrent(),
+            // TTT parity: /cancelspeech and /disabletts drop the WHOLE backlog
+            // (CancelTts -> CancelAllSpeech); text advance stays current-line only.
+            cancelSpeech: () => this.services.SpeechQueue.Clear(),
             currentPresetId: () => config.CurrentPresetId,
             presets: () => [.. config.EnabledChatTypesPresets.Select(p => new PresetSummary(p.Id, p.Name))],
             switchPreset: id =>
@@ -255,6 +257,11 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     private void OnFrameworkUpdate(IFramework framework)
     {
         var config = this.pluginConfig;
+        if (!config.UseKeybind && !config.EnabledChatTypesPresets.Any(p => p.UseKeybind))
+        {
+            return; // nothing bound: skip the per-tick key-state reads and list materialization
+        }
+
         var result = this.keybinds.Tick(
             vkey => KeyState[vkey],
             useTtsToggle: config.UseKeybind,

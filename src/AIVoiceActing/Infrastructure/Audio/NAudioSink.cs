@@ -56,15 +56,18 @@ public sealed class NAudioSink : IAudioSink
         using var finished = new ManualResetEventSlim(false);
         output.PlaybackStopped += (_, _) => finished.Set();
 
-        lock (this.currentGate)
-        {
-            this.current = output;
-        }
-
         try
         {
             output.Init(scaled);
             output.Play();
+            // Register only once playback has begun: a Cancel landing before this point
+            // must never be silently no-op'd by the Play below — the worst case is that
+            // it misses the first milliseconds of a just-started line instead.
+            lock (this.currentGate)
+            {
+                this.current = output;
+            }
+
             while (!finished.IsSet)
             {
                 finished.Wait(100);
@@ -98,12 +101,21 @@ public sealed class NAudioSink : IAudioSink
         var enumerator = new MMDeviceEnumerator();
         var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).ToArray();
         var index = this.deviceIndexFactory?.Invoke() ?? 0;
-        if (index >= 0 && index < devices.Length)
+        try
         {
-            return new WasapiOut(devices[index], AudioClientShareMode.Shared, false, 200);
+            // WasapiOut fully consumes the device in its constructor and does not take
+            // ownership of the MMDevice, so the endpoints are released here either way.
+            return index >= 0 && index < devices.Length
+                ? new WasapiOut(devices[index], AudioClientShareMode.Shared, false, 200)
+                : new WasapiOut(AudioClientShareMode.Shared, 200);
         }
-
-        return new WasapiOut(AudioClientShareMode.Shared, 200);
+        finally
+        {
+            foreach (var device in devices)
+            {
+                device.Dispose();
+            }
+        }
     }
 
     private void WarnUnsupportedOnce()
