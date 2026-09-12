@@ -41,10 +41,32 @@ public sealed class ArchitectureScanTests
         Assert.True(scanned.Length >= 16, $"Expected a real scan; found only {scanned.Length} types.");
         Assert.Contains(scanned, t => t.Name == "ISpeechSynthesizer");
 
+        var violations = FindViolations(scanned);
+
+        Assert.True(violations.Count == 0, "Dependency-rule violations:\n" + string.Join("\n", violations));
+    }
+
+    /// <summary>Guard: constructed generic arguments must be scanned too — a Task&lt;ForbiddenType&gt;
+    /// property otherwise yields only System.Threading.Tasks as its namespace.</summary>
+    [Fact]
+    public void Scan_CatchesGenericTypeArguments()
+    {
+        var violations = FindViolations([typeof(Ports.TestFixtures.GenericScanFixture)]);
+
+        Assert.NotEmpty(violations);
+        Assert.All(violations, v =>
+        {
+            Assert.Contains("GenericScanFixture", v);
+            Assert.Contains("ForbiddenProbe", v);
+        });
+    }
+
+    private static List<string> FindViolations(IEnumerable<Type> scanned)
+    {
         var violations = new List<string>();
         foreach (var type in scanned)
         {
-            foreach (var referenced in ReferencedTypes(type))
+            foreach (var referenced in ReferencedTypes(type).SelectMany(ExpandGenerics))
             {
                 var ns = referenced.Namespace;
                 if (ns is null)
@@ -66,11 +88,24 @@ public sealed class ArchitectureScanTests
             }
         }
 
-        Assert.True(violations.Count == 0, "Dependency-rule violations:\n" + string.Join("\n", violations));
+        return violations;
+    }
+
+    private static IEnumerable<Type> ExpandGenerics(Type type)
+    {
+        yield return type;
+        foreach (var argument in type.GetGenericArguments())
+        {
+            foreach (var expanded in ExpandGenerics(argument))
+            {
+                yield return expanded;
+            }
+        }
     }
 
     private static bool IsScanned(Type type) =>
         type.Namespace is not null
+        && !type.Namespace.Contains(".TestFixtures", StringComparison.Ordinal)
         && (type.Namespace.StartsWith("AIVoiceActing.Domain", StringComparison.Ordinal)
             || type.Namespace.StartsWith("AIVoiceActing.Ports", StringComparison.Ordinal));
 

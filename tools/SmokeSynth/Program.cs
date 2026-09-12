@@ -31,8 +31,13 @@ internal static class Program
                 case "--ref" when i + 1 < args.Length:
                     reference = args[++i];
                     break;
-                case "--exaggeration" when i + 1 < args.Length
-                        && double.TryParse(args[++i], out exaggeration):
+                case "--exaggeration" when i + 1 < args.Length:
+                    if (!double.TryParse(args[++i], out exaggeration))
+                    {
+                        Console.Error.WriteLine($"Invalid value for --exaggeration: '{args[i]}'.");
+                        return 1;
+                    }
+
                     break;
                 case "--tags" when i + 1 < args.Length:
                     tags.AddRange(args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
