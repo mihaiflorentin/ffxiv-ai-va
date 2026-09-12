@@ -94,6 +94,21 @@ public sealed class JsonProfileStore : IProfileStore
         }
     }
 
+    public bool Remove(string speakerKey)
+    {
+        lock (this.gate)
+        {
+            this.EnsureLoadedUnlocked();
+            if (!this.entries.Remove(speakerKey))
+            {
+                return false;
+            }
+
+            this.SaveUnlocked();
+            return true;
+        }
+    }
+
     private void EnsureLoadedUnlocked()
     {
         if (this.loaded)

@@ -2,8 +2,11 @@ namespace AIVoiceActing;
 
 using AIVoiceActing.Container;
 using AIVoiceActing.Infrastructure.Audio;
+using AIVoiceActing.Infrastructure.Onnx;
 using AIVoiceActing.Ports;
 using AIVoiceActing.Infrastructure.Dalamud;
+using AIVoiceActing.UI;
+using Dalamud.Interface.Windowing;
 using Dalamud.Game.ClientState;
 using Dalamud.Game.ClientState.Keys;
 using Dalamud.Game.ClientState.Objects;
@@ -76,6 +79,10 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     private readonly ChatDialogueSource chatSource;
     private readonly CutsceneSubtitleSource subtitleSource;
     private readonly VoiceLineDetector voiceLineDetector;
+    private readonly WindowSystem windowSystem = new("AIVoiceActing");
+    private readonly ConfigurationWindow configWindow;
+    private readonly StylesWindow stylesWindow;
+    private readonly Action openConfigUiHook;
 
     public AIVoiceActingPlugin()
     {
@@ -179,6 +186,54 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             openConfig: () => this.services.OpenConfigurationUi,
             openStyles: () => this.services.OpenStylesUi);
 
+
+        // UI (Step 7): the windows receive container-resolved ports only — the UI layer
+        // never references Infrastructure types directly.
+        this.configWindow = new ConfigurationWindow(
+            config,
+            save: this.SaveConfig,
+            speech: this.services.SpeechHandler,
+            synthesizer: this.services.SpeechSynthesizer,
+            queue: this.services.SpeechQueue,
+            profiles: this.services.ProfileStore,
+            modelAssets: () => [.. ModelCatalog.Assets.Select(a => a.Asset)],
+            provisioner: () => this.services.ModelProvisioner,
+            voiceMap: () => this.services.VoiceMap,
+            sessions: () => this.services.DialogueSessions,
+            modelsDir: () => this.services.ModelsDir,
+            voicesDir: () => Path.Combine(this.services.ModelsDir, "voices"),
+            localPlayer: () => ObjectTable.LocalPlayer is { } player
+                ? (player.Name.TextValue, (ushort)player.HomeWorld.RowId)
+                : null,
+            openDirectory: path =>
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(
+                        new System.Diagnostics.ProcessStartInfo { FileName = path, UseShellExecute = true });
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning($"Could not open \"{path}\": {ex.Message}");
+                    return false;
+                }
+            },
+            reportError: message => this.services.LogSink.Warn(message));
+        this.stylesWindow = new StylesWindow(config, this.SaveConfig);
+        this.windowSystem.AddWindow(this.configWindow);
+        this.windowSystem.AddWindow(this.stylesWindow);
+
+        // /aivaconfig + /aivastyles route through the container hooks (headless-safe);
+        // the game's own OpenConfigUi (system menu) opens our configuration window.
+        this.services.OpenConfigurationUi = this.configWindow.Toggle;
+        this.services.OpenStylesUi = this.stylesWindow.Toggle;
+        this.openConfigUiHook = () => this.configWindow.IsOpen = true;
+        var uiBuilder = PluginInterface.UiBuilder;
+        uiBuilder.Draw += this.windowSystem.Draw;
+        uiBuilder.OpenConfigUi += this.openConfigUiHook;
+
+        this.services.LogSink.Info("AIVoiceActing UI: configuration and styles windows registered.");
         this.RegisterCommands();
 
         // Voiced-cutscene courtesy: the detector cancels current speech and re-samples the
@@ -273,6 +328,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         if (result.TtsToggled)
         {
             foreach (var line in this.commands.Execute("/toggletts", "").Output)
+
             {
                 ChatGui.Print(line);
             }
@@ -285,13 +341,13 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         }
     }
 
+    private void SaveConfig() => PluginInterface.SavePluginConfig(this.pluginConfig);
+
     private void OnVoiceLinePlaybackObserved()
     {
         this.talkSource.PollOnVoiceLine();
         this.battleTalkSource.PollOnVoiceLine();
     }
-
-    private void SaveConfig() => PluginInterface.SavePluginConfig(this.pluginConfig);
 
     /// <summary>Materializes the embedded race/voice manifest into the config directory
     /// once, so the profile store can read it like any on-disk asset.</summary>
@@ -314,7 +370,12 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
 
     public void Dispose()
     {
-        // Hooks first, then sources, then queue/sink state inside the container.
+        // Hooks first (UI draw + keybinds), then sources, then queue/sink state inside
+        // the container.
+        var uiBuilder = PluginInterface.UiBuilder;
+        uiBuilder.Draw -= this.windowSystem.Draw;
+        uiBuilder.OpenConfigUi -= this.openConfigUiHook;
+        this.windowSystem.RemoveAllWindows();
         Framework.Update -= this.OnFrameworkUpdate;
         foreach (var name in CommandNames)
         {

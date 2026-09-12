@@ -45,6 +45,8 @@
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\FileModelStore.cs" Link="AIVoiceActing\Infrastructure\Storage\FileModelStore.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\JsonProfileStore.cs" Link="AIVoiceActing\Infrastructure\Storage\JsonProfileStore.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Text\**\*.cs" Link="AIVoiceActing\Infrastructure\Text\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- Step 7: pure UI state (Dalamud- and ImGui-free by the same rule as Domain). -->
+    <Compile Include="..\..\src\AIVoiceActing\UI\State\**\*.cs" Link="AIVoiceActing\UI\State\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Configuration.cs" Link="AIVoiceActing\Configuration.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Container\CommandRouter.cs" Link="AIVoiceActing\CommandRouter.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Container\KeybindMonitor.cs" Link="AIVoiceActing\KeybindMonitor.cs" />

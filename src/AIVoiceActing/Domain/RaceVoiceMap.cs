@@ -50,6 +50,11 @@ public sealed class RaceVoiceMap
     public string[] VoicesFor(VoiceGroup group, byte? race) =>
         this.ResolveSet(group, race).Select(slot => slot.Id).ToArray();
 
+    /// <summary>All distinct reference-voice ids across every set, stable order — the UI
+    /// voice-picker options (one clip may back many slots).</summary>
+    public string[] DistinctVoiceIds() =>
+        [.. this.sets.Values.SelectMany(slots => slots).Select(slot => slot.Id).Distinct()];
+
     private VoiceSlot[] ResolveSet(VoiceGroup group, byte? race)
     {
         if (race is { } raceId

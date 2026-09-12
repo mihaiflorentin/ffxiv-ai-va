@@ -43,4 +43,11 @@ public interface IProfileStore
 
     /// <summary>Records a manual override; overrides win over deterministic assignment and persist.</summary>
     void SetOverride(string speakerKey, string referenceVoiceId, float exaggerationBias);
+
+    /// <summary>
+    /// Deletes any persisted entry (override or deterministic slot) for
+    /// <paramref name="speakerKey"/>, persisting immediately. True when an entry existed.
+    /// The speaker is simply forgotten: the next lookup re-assigns deterministically.
+    /// </summary>
+    bool Remove(string speakerKey);
 }
