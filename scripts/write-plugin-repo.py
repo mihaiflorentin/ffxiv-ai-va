@@ -36,32 +36,58 @@ def main() -> None:
         type=Path,
         default=None,
         help=(
-            "Offline-test mode: read a canned release payload JSON ({tag, LastUpdate, repository?}) "
-            "instead of validating the tag against the project version. Field assembly is identical; "
-            "LastUpdate and repository come from the fixture so the output is deterministic."
+            "Offline-test mode: read a canned release payload JSON ({tag, LastUpdate, "
+            "repository?}) instead of validating the tag against the project version. "
+            "Versions and release URLs derive from the fixture tag; --tag must match it "
+            "when both are given. Field assembly is identical; LastUpdate and repository "
+            "come from the fixture so the output is deterministic."
         ),
     )
     args = parser.parse_args()
 
+    tag = args.tag
     fixture = None
     if args.fixture is not None:
         fixture = json.loads(args.fixture.read_text(encoding="utf-8-sig"))
 
-    if fixture is None:
-        version = read_project_version()
-        tag_version = args.tag[1:] if args.tag.startswith("v") else args.tag
-        if tag_version != version:
-            raise RuntimeError(f"Tag {args.tag} does not match project version {version}")
-        last_update = int(time.time())
+        fixture_tag = fixture.get("tag")
+        if not isinstance(fixture_tag, str) or not fixture_tag:
+            raise RuntimeError(
+                f"Fixture {args.fixture} is missing or has invalid required field 'tag' (non-empty string)."
+            )
+
+        last_update = fixture.get("LastUpdate")
+        if isinstance(last_update, bool) or not isinstance(last_update, int):
+            raise RuntimeError(
+                f"Fixture {args.fixture} is missing or has invalid required field 'LastUpdate' (integer)."
+            )
+
+        fixture_repository = fixture.get("repository")
+        if fixture_repository is not None and not isinstance(fixture_repository, str):
+            raise RuntimeError(
+                f"Fixture {args.fixture} has invalid optional field 'repository' (string expected)."
+            )
+
+        tag = fixture_tag
+        tag_version = tag[1:] if tag.startswith("v") else tag
+        args_tag_version = args.tag[1:] if args.tag.startswith("v") else args.tag
+        if args_tag_version != tag_version:
+            raise RuntimeError(f"--tag {args.tag} does not match fixture tag {tag}")
+
+        version = tag_version
+        last_update = int(last_update)
     else:
-        tag = fixture.get("tag", args.tag)
-        version = tag[1:] if tag.startswith("v") else tag
-        last_update = int(fixture.get("LastUpdate", 0))
+        version = read_project_version()
+        tag_version = tag[1:] if tag.startswith("v") else tag
+        if tag_version != version:
+            raise RuntimeError(f"Tag {tag} does not match project version {version}")
+        last_update = int(time.time())
+
 
     repository = (fixture or {}).get("repository", args.repository)
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8-sig"))
     repo_url = f"https://github.com/{repository}"
-    download_url = f"{repo_url}/releases/download/{args.tag}/{PLUGIN_ZIP_NAME}"
+    download_url = f"{repo_url}/releases/download/{tag}/{PLUGIN_ZIP_NAME}"
 
     entry = {
         "Author": manifest["Author"],
