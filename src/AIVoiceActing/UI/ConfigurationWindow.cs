@@ -572,9 +572,12 @@ public sealed class ConfigurationWindow : Window
         if (Controls.Button("Speak", ready, ModelsTabModel.EngineNotReadyHint))
         {
             // Rules path: a throwaway session id reads no history — exactly what the
-            // rules table would produce in-game.
+            // rules table would produce in-game. The session is torn down when the line
+            // settles so presses do not leak window entries.
+            var sessionId = $"ui-rules-{Guid.NewGuid():N}";
             this.SpeakFireAndForget(
-                this.speech.SpeakAsync($"ui-rules-{Guid.NewGuid():N}", speaker, this.test.Text, CancellationToken.None));
+                this.speech.SpeakAsync(sessionId, speaker, this.test.Text, CancellationToken.None),
+                onSettled: () => this.sessions().EndSession(sessionId));
         }
 
         ImGui.SameLine();
@@ -601,16 +604,17 @@ public sealed class ConfigurationWindow : Window
     }
 
     /// <summary>Per-profile ▶ Test target (the voice tables): the courtesy line on the
-    /// row's voice with the configured default exaggeration plus the row's bias.</summary>
-    internal Task? SpeakVoiceTest(VoiceProfile profile) =>
-        this.SpeakDirect(
+    /// row's voice with the configured default exaggeration plus the row's bias. Faults
+    /// surface through the same reporting wrapper as the Test-tab buttons.</summary>
+    internal void SpeakVoiceTest(VoiceProfile profile) =>
+        this.SpeakFireAndForget(this.SpeakDirect(
             new SpeakerIdentity(
                 profile.SpeakerKey,
                 SpeakerKeyView.Parse(profile.SpeakerKey).Name,
                 null, null, null, null),
             TestBenchModel.BuildVoiceTestRequest(
                 profile.ReferenceVoiceId,
-                Math.Clamp(this.config.DefaultExaggeration + profile.ExaggerationBias, 0f, 1f)));
+                Math.Clamp(this.config.DefaultExaggeration + profile.ExaggerationBias, 0f, 1f))));
 
     /// <summary>The direct ISpeechSynthesizer + ISpeechQueue path — the exact tail of the
     /// game pipeline (SpeechRequestHandler), reused for forced-emotion auditions.</summary>
@@ -620,20 +624,29 @@ public sealed class ConfigurationWindow : Window
         this.queue.Enqueue(new SpeechItem(speaker, request, audio));
     }
 
-    /// <summary>Resolves (and persists) the deterministic voice for a test speaker.</summary>
+    /// <summary>
+    /// Resolves the deterministic voice for a test speaker WITHOUT touching assignment
+    /// state: an existing profile wins; otherwise the pure xxHash slot pick runs over the
+    /// race-map slots with no store entry — auditioning never writes
+    /// voice-assignments.json.
+    /// </summary>
     private string ResolveVoice(SpeakerIdentity speaker)
     {
+        var existing = this.profiles.Entries.FirstOrDefault(e => e.SpeakerKey == speaker.Key);
+        if (existing is not null)
+        {
+            return existing.ReferenceVoiceId;
+        }
+
         var map = this.voiceMap();
         var group = VoiceGroupResolver.Resolve(speaker.Race, speaker.Tribe, speaker.Sex, null, null);
-        return this.profiles.GetOrCreate(
+        return VoiceAssigner.AssignSlot(
             speaker.Key,
-            () => map.SlotsFor(group, speaker.Race),
-            speaker.Race,
-            speaker.Tribe,
-            speaker.Sex).ReferenceVoiceId;
+            map.SlotsFor(group, speaker.Race),
+            new Dictionary<string, VoiceProfile>()).ReferenceVoiceId;
     }
 
-    private async void SpeakFireAndForget(Task task)
+    private async void SpeakFireAndForget(Task task, Action? onSettled = null)
     {
         try
         {
@@ -642,6 +655,10 @@ public sealed class ConfigurationWindow : Window
         catch (Exception ex)
         {
             this.reportError($"Speech test failed: {ex.Message}");
+        }
+        finally
+        {
+            onSettled?.Invoke();
         }
     }
 }

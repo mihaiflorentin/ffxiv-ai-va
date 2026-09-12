@@ -41,8 +41,8 @@ public sealed class VoiceTable
     /// <summary>Deletes the stored entry for a speaker.</summary>
     public required Action<string> Remove { get; init; }
 
-    /// <summary>Speaks the test line for a row's profile (fire-and-forget).</summary>
-    public required Func<VoiceProfile, Task?> SpeakTest { get; init; }
+    /// <summary>Speaks the test line for a row's profile (fire-and-forget, faults reported).</summary>
+    public required Action<VoiceProfile> SpeakTest { get; init; }
 
     public required Func<bool> EngineReady { get; init; }
 
@@ -103,14 +103,25 @@ public sealed class VoiceTable
                 ImGui.SetNextItemWidth(-1);
                 if (ImGui.Combo("##voice", ref voiceIndex, voices))
                 {
-                    this.Apply(profile, voices[voiceIndex], bias, defer: false);
+                    this.pending.Remove(profile.SpeakerKey);
+                    this.SetOverride(profile.SpeakerKey, voices[voiceIndex], Math.Clamp(bias, 0f, 1f));
+                    this.save();
                 }
 
                 ImGui.TableNextColumn();
                 ImGui.SetNextItemWidth(-1);
                 if (ImGui.SliderFloat("##bias", ref bias, 0f, 1f, "%.2f"))
                 {
-                    this.Apply(profile, voiceId, bias, defer: !ImGui.IsItemDeactivatedAfterEdit());
+                    // Defer while dragging: the release frame reports deactivated WITHOUT a
+                    // value change, so the commit happens below, outside the changed branch.
+                    this.pending[profile.SpeakerKey] = (voiceId, Math.Clamp(bias, 0f, 1f));
+                }
+
+                if (ImGui.IsItemDeactivatedAfterEdit()
+                    && this.pending.Remove(profile.SpeakerKey, out var committed))
+                {
+                    this.SetOverride(profile.SpeakerKey, committed.VoiceId, committed.Bias);
+                    this.save();
                 }
 
                 ImGui.TableNextColumn();
@@ -119,7 +130,7 @@ public sealed class VoiceTable
                     : Controls.Button("▶", false, this.EngineNotReadyReason);
                 if (test)
                 {
-                    _ = this.SpeakTest(profile);
+                    this.SpeakTest(profile);
                 }
 
                 ImGui.PopID();
@@ -136,21 +147,6 @@ public sealed class VoiceTable
 
         ImGui.Separator();
         this.DrawAddForm(entries, form);
-    }
-
-    /// <summary>Commits an edit; deferred edits live in <see cref="pending"/> until the
-    /// interaction ends, then persist in one write.</summary>
-    private void Apply(VoiceProfile profile, string voiceId, float bias, bool defer)
-    {
-        if (defer)
-        {
-            this.pending[profile.SpeakerKey] = (voiceId, Math.Clamp(bias, 0f, 1f));
-            return;
-        }
-
-        this.pending.Remove(profile.SpeakerKey);
-        this.SetOverride(profile.SpeakerKey, voiceId, Math.Clamp(bias, 0f, 1f));
-        this.save();
     }
 
     private void DrawAddForm(IReadOnlyCollection<VoiceProfile> entries, VoiceEntryForm form)
@@ -175,7 +171,9 @@ public sealed class VoiceTable
         }
 
         ImGui.SameLine();
-        if (Controls.Button("Add", enabled: true) && form.TryBuildKey(out var key, out _))
+        if (Controls.Button("Add", enabled: true)
+            && form.TryBuildKey(out var key, out _)
+            && !existing.Contains(key)) // duplicates surface via the Validate line below
         {
             var voices = this.voiceOptions();
             this.SetOverride(key, voices.Count > 0 ? voices[0] : "default", 0f);
