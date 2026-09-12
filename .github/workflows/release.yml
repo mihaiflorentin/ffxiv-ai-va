@@ -1,0 +1,135 @@
+name: Build and Publish
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  PLUGIN_PROJECT: src/AIVoiceActing/AIVoiceActing.csproj
+  DALAMUD_DOWNLOAD_URL: https://goatcorp.github.io/dalamud-distrib/latest.zip
+
+jobs:
+  build:
+    name: Build plugin
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download Dalamud references
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$RUNNER_TEMP/dalamud"
+          curl -fsSL "$DALAMUD_DOWNLOAD_URL" -o "$RUNNER_TEMP/dalamud.zip"
+          unzip -q "$RUNNER_TEMP/dalamud.zip" -d "$RUNNER_TEMP/dalamud"
+
+          dalamud_root="$(find "$RUNNER_TEMP/dalamud" -name Dalamud.dll -printf '%h\n' | head -n 1)"
+          if [ -z "$dalamud_root" ]; then
+            echo "Could not find Dalamud.dll in downloaded Dalamud package." >&2
+            exit 1
+          fi
+
+          echo "DALAMUD_HOME=$dalamud_root" >> "$GITHUB_ENV"
+          echo "Using DALAMUD_HOME=$dalamud_root"
+
+      - name: Restore
+        run: dotnet restore "$PLUGIN_PROJECT"
+
+      - name: Build
+        run: dotnet build "$PLUGIN_PROJECT" --configuration Release --no-restore -p:Platform=x64 -p:OutputPath="$GITHUB_WORKSPACE/artifacts/"
+
+      - name: Build tests
+        run: dotnet build tests/AIVoiceActing.Tests/AIVoiceActing.Tests.csproj --configuration Release
+
+      - name: Test
+        run: dotnet test tests/AIVoiceActing.Tests/AIVoiceActing.Tests.csproj --configuration Release --no-build
+
+      - name: Prepare release files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p release
+          zip_path="$(find artifacts -name latest.zip -print | head -n 1)"
+          if [ -z "$zip_path" ]; then
+            echo "Could not find latest.zip in build artifacts." >&2
+            find artifacts -maxdepth 4 -type f -print >&2
+            exit 1
+          fi
+
+          cp "$zip_path" release/latest.zip
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AIVoiceActing
+          path: |
+            artifacts/**
+            release/latest.zip
+
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(python3 -c 'import xml.etree.ElementTree as ET; print(ET.parse("src/AIVoiceActing/AIVoiceActing.csproj").getroot().findtext("./PropertyGroup/Version"))')"
+          tag_version="${GITHUB_REF_NAME#v}"
+
+          if [ "$version" != "$tag_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match project version $version." >&2
+            exit 1
+          fi
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/latest.zip
+          fail_on_unmatched_files: true
+
+      - name: Generate Dalamud repo JSON
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: python3 scripts/write-plugin-repo.py --tag "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/repo.json"
+
+      - name: Publish Dalamud repo JSON
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch origin gh-pages
+            git switch --force-create gh-pages origin/gh-pages
+          else
+            git switch --orphan gh-pages
+          fi
+
+          git rm -rf . || true
+
+          cp "$RUNNER_TEMP/repo.json" repo.json
+          git add repo.json
+          git commit -m "Update Dalamud plugin repository for $GITHUB_REF_NAME" || exit 0
+          git push origin gh-pages
