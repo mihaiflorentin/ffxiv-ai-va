@@ -7,18 +7,18 @@
     <Description>AI voice acting for FFXIV - local neural TTS with emotion-aware delivery.</Description>
     <IsPackable>false</IsPackable>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <!-- OnnxRuntime core, Managed, and DirectML MUST stay on the same version (the DirectML
-         package tops out at 1.24.4). Core and DirectML both ship a win-x64 onnxruntime.dll and
-         publish dedup picks ONE copy; verified empirically the copy order picks core's CPU-only
-         build, which would break DirectML EP registration in-game. core therefore excludes
-         native AND build assets: its build targets inject a None item that re-copies the
-         CPU-only onnxruntime.dll over the DirectML build (which contains the CPU EP too). -->
+    <!-- Plugin runs inside the Windows FFXIV process (DirectML or CPU, via the DML-capable
+         native). Local macOS engine work happens in tools/SmokeSynth, which references the
+         full Microsoft.ML.OnnxRuntime core package (osx-arm64 native, CPU+CoreML EPs) —
+         never reference core here: its win-x64 CPU-only onnxruntime.dll collides with the
+         DirectML package's DML-capable one (publish dedup + build-target copy order pick
+         the CPU build, breaking DirectML EP registration in-game). Managed and DirectML
+         MUST stay on the same version; the DirectML package tops out at 1.24.4. -->
     <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.24.4" ExcludeAssets="native;build" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.24.4" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
     <PackageReference Include="NAudio" Version="2.4.0" />

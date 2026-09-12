@@ -14,15 +14,6 @@
         "resolved": "1.2.39",
         "contentHash": "fcFN01tDTIQqDuTwr1jUQK/geofiwjG5DycJQOnC72i1SsLAk1ELe+apBOuZ11UMQG8YKFZG1FgvjZPbqHyatg=="
       },
-      "Microsoft.ML.OnnxRuntime": {
-        "type": "Direct",
-        "requested": "[1.24.4, )",
-        "resolved": "1.24.4",
-        "contentHash": "895huFBVrZkZEGjlsxBSZD3p6D32Cdz6q8DM9UcUps2YKFYdFR8TefaTggFBUTYlvcSyfNTpmOOU/ZkeL69izw==",
-        "dependencies": {
-          "Microsoft.ML.OnnxRuntime.Managed": "1.24.4"
-        }
-      },
       "Microsoft.ML.OnnxRuntime.DirectML": {
         "type": "Direct",
         "requested": "[1.24.4, )",
