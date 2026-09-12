@@ -44,9 +44,12 @@ public sealed class EmotionRulesTests
         AssertPlan(EmotionRules.Plan("goodbye then..."), "sad", 0.3f, pauseMs: 250, tags: []);
 
     [Theory]
+    [InlineData("haha nice one")]
+    [InlineData("hahah, sure")]
     [InlineData("hahaha nice one")]
     [InlineData("Hehe, good point")]
-    [InlineData("lol sure")] // laugh outranks trailing "!"-less punctuation (priority 3 before 4/5)
+    [InlineData("hehehe, no way")]
+    [InlineData("lol sure")]
     public void LaughToken_IsAmused_WithLaughsTag(string line) =>
         AssertPlan(EmotionRules.Plan(line), "amused", 0.6f, tags: ["laughs"]);
 
@@ -58,6 +61,8 @@ public sealed class EmotionRulesTests
     [Theory]
     [InlineData("Plain line.")]
     [InlineData("No signals here")]
+    [InlineData("ha alone is not a laugh")]
+    [InlineData("he alone is not a laugh")]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData(null)]

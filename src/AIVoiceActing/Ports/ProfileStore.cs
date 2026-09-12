@@ -1,5 +1,7 @@
 namespace AIVoiceActing.Ports;
 
+using AIVoiceActing.Domain;
+
 /// <summary>Thrown by <see cref="IProfileStore"/> when persistent voice profiles cannot be loaded or saved.</summary>
 public sealed class ProfileStoreException(string message, Exception? inner = null)
     : Exception(message, inner);
@@ -28,11 +30,13 @@ public interface IProfileStore
 
     /// <summary>
     /// Returns the stored profile for <paramref name="speakerKey"/>, creating and persisting a
-    /// deterministic assignment (over <paramref name="candidateVoiceIds"/>) on first sight.
+    /// deterministic slot assignment (over <paramref name="candidateVoiceSlots"/>) on first
+    /// sight. The chosen slot's (voice id, exaggeration bias) pair persists as one unit, so
+    /// candidates must carry their bias (see <see cref="Domain.RaceVoiceMap"/>).
     /// </summary>
     VoiceProfile GetOrCreate(
         string speakerKey,
-        Func<string[]> candidateVoiceIds,
+        Func<VoiceSlot[]> candidateVoiceSlots,
         byte? race,
         byte? tribe,
         byte? sex);

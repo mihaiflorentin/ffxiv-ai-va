@@ -1,5 +1,6 @@
 namespace AIVoiceActing.Domain;
 
+using System.Text;
 using AIVoiceActing.Ports;
 using Standart.Hash.xxHash;
 
@@ -12,11 +13,15 @@ using Standart.Hash.xxHash;
 /// </summary>
 public static class VoiceAssigner
 {
-    /// <summary>Stable index into a candidate list: <c>xxHash32(key) % candidateCount</c>.</summary>
+    /// <summary>
+    /// Stable index into a candidate list: <c>xxHash32(UTF-8 key bytes) % candidateCount</c>.
+    /// Note: the library's string overload hashes UTF-16 code units — hash the UTF-8 bytes
+    /// explicitly (the binding and persistence contract).
+    /// </summary>
     public static int AssignIndex(string speakerKey, int candidateCount)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(candidateCount);
-        var hash = xxHash32.ComputeHash(speakerKey ?? string.Empty);
+        var hash = xxHash32.ComputeHash(Encoding.UTF8.GetBytes(speakerKey ?? string.Empty));
         return (int)(hash % (uint)candidateCount);
     }
 

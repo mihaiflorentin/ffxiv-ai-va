@@ -9,16 +9,15 @@ using System.Text.RegularExpressions;
 /// <list type="number">
 /// <item><b>Angry</b> — any ALL-CAPS word of 2+ letters: shouting overrides every punctuation signal → 0.8</item>
 /// <item><b>Sad</b> — ellipsis ("..."/"…") or the keyword "sigh": trailing hesitation colors the whole line → 0.3 + 250 ms pause; a literal sigh also emits the [sigh] tag</item>
-/// <item><b>Amused</b> — laugh token (hahaha/hehe/lol): a paralinguistic event beats punctuation → 0.6 + [laughs]</item>
+/// <item><b>Amused</b> — laugh token (hahah…/hahaha…, hehe/hehehe, lol): a paralinguistic event beats punctuation → 0.6 + [laughs]</item>
 /// <item><b>Excited</b> — "!" → 0.75</item>
-/// <item><b>Curious</b> — "?" → 0.6</item>
 /// <item><b>Neutral</b> — default → 0.5</item>
 /// </list>
 /// </summary>
 public static class EmotionRules
 {
     private static readonly Regex CapsWord = new(@"\b[A-Z]{2,}\b", RegexOptions.Compiled);
-    private static readonly Regex LaughToken = new(@"\b(?:(?:ha){2,}|hehe|lol)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex LaughToken = new(@"\b(?:(?:ha){2,}h?|he(?:he)+|lol)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex SighKeyword = new(@"\bsigh", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public static EmotionPlan Plan(string? line)

@@ -13,12 +13,17 @@ public sealed class JsonProfileStoreTests : IDisposable
 
     private string FilePath => Path.Combine(this.directory, "voice-assignments.json");
 
-    private JsonProfileStore NewStore(
-        Func<byte?, byte?, byte?, float>? biasFor = null,
-        FakeLogSink? log = null) =>
-        new(this.FilePath, log ?? new FakeLogSink(), biasFor);
+    private JsonProfileStore NewStore(FakeLogSink? log = null) =>
+        new(this.FilePath, log ?? new FakeLogSink());
 
-    private static readonly Func<string[]> Candidates = () => ["alpha", "beta", "gamma"];
+    private static readonly Func<VoiceSlot[]> Candidates = () =>
+    [
+        new VoiceSlot("default", 0.05f),
+        new VoiceSlot("default", 0.10f),
+        new VoiceSlot("default", 0.15f),
+    ];
+
+    private static readonly byte?[] AnyDemographics = [3, 33, 1];
 
     public void Dispose()
     {
@@ -31,16 +36,12 @@ public sealed class JsonProfileStoreTests : IDisposable
     [Fact]
     public void GetOrCreate_CreatesAndPersists_OnFirstSight()
     {
-        var store = this.NewStore(biasFor: (_, _, _) => 0.2f);
-        var profile = store.GetOrCreate("pc:Mihai Testa@66", Candidates, race: 3, tribe: 33, sex: 1);
+        var store = this.NewStore();
+        var profile = store.GetOrCreate("pc:Mihai Testa@66", Candidates, AnyDemographics[0], AnyDemographics[1], AnyDemographics[2]);
 
-        Assert.Equal(VoiceAssigner.AssignIndex("pc:Mihai Testa@66", 3) switch
-        {
-            0 => "alpha",
-            1 => "beta",
-            _ => "gamma",
-        }, profile.ReferenceVoiceId);
-        Assert.Equal(0.2f, profile.ExaggerationBias);
+        var chosenSlot = Candidates()[VoiceAssigner.AssignIndex("pc:Mihai Testa@66", 3)];
+        Assert.Equal(chosenSlot.Id, profile.ReferenceVoiceId);
+        Assert.Equal(chosenSlot.ExaggerationBias, profile.ExaggerationBias);
         Assert.False(profile.Custom);
 
         Assert.True(File.Exists(this.FilePath));
@@ -49,11 +50,36 @@ public sealed class JsonProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public void GetOrCreate_PersistsChosenSlotAsUnit_SameDemographicsDifferentSlots()
+    {
+        // Same demographics on purpose (all-null race/tribe/sex): the only source of variety
+        // is the slot the hash picks. Derived pins (UTF-8 xxHash, 3 candidates):
+        // "npc:alpha npc" → index 1 (bias 0.10), "npc:gamma npc" → index 2 (bias 0.15).
+        var store = this.NewStore();
+        var a = store.GetOrCreate("npc:alpha npc", Candidates, null, null, null);
+        var b = store.GetOrCreate("npc:gamma npc", Candidates, null, null, null);
+
+        Assert.Equal(1, VoiceAssigner.AssignIndex("npc:alpha npc", 3));
+        Assert.Equal(2, VoiceAssigner.AssignIndex("npc:gamma npc", 3));
+        Assert.Equal(("default", 0.10f), (a.ReferenceVoiceId, a.ExaggerationBias));
+        Assert.Equal(("default", 0.15f), (b.ReferenceVoiceId, b.ExaggerationBias));
+        Assert.NotEqual(a.ExaggerationBias, b.ExaggerationBias);
+
+        // And the (voiceId, bias) pairs persist across store instances as one unit.
+        var reloaded = this.NewStore();
+        Assert.Equal(
+            (a.ReferenceVoiceId, a.ExaggerationBias),
+            (reloaded.GetOrCreate("npc:alpha npc", Candidates, null, null, null).ReferenceVoiceId,
+             reloaded.GetOrCreate("npc:alpha npc", Candidates, null, null, null).ExaggerationBias));
+    }
+
+    [Fact]
     public void GetOrCreate_NeverReassigns_ExistingKey_EvenWithOtherCandidates()
     {
         var store = this.NewStore();
-        var first = store.GetOrCreate("npc:feo ul", () => ["alpha"], race: null, tribe: null, sex: null);
-        var again = store.GetOrCreate("npc:feo ul", () => ["totally", "different"], race: null, tribe: null, sex: null);
+        var first = store.GetOrCreate("npc:feo ul", () => [new VoiceSlot("alpha", 0.1f)], null, null, null);
+        var again = store.GetOrCreate(
+            "npc:feo ul", () => [new VoiceSlot("totally", 0.2f), new VoiceSlot("different", 0.3f)], null, null, null);
         Assert.Equal(first, again);
     }
 
@@ -63,13 +89,13 @@ public sealed class JsonProfileStoreTests : IDisposable
         var keys = Enumerable.Range(0, 20).Select(i => $"npc:npc-{i}").ToArray();
         var firstPass = keys.ToDictionary(
             key => key,
-            key => this.NewStore().GetOrCreate(key, Candidates, race: null, tribe: null, sex: null));
+            key => this.NewStore().GetOrCreate(key, Candidates, null, null, null));
 
         // Fresh store instances over the same file (simulating a game restart).
         var secondStore = this.NewStore();
         foreach (var key in keys)
         {
-            var second = secondStore.GetOrCreate(key, Candidates, race: null, tribe: null, sex: null);
+            var second = secondStore.GetOrCreate(key, Candidates, null, null, null);
             Assert.Equal(firstPass[key].ReferenceVoiceId, second.ReferenceVoiceId);
             Assert.Equal(firstPass[key].ExaggerationBias, second.ExaggerationBias);
             Assert.Equal(firstPass[key].CreatedUtc, second.CreatedUtc);
@@ -80,13 +106,13 @@ public sealed class JsonProfileStoreTests : IDisposable
     public void SetOverride_Wins_Persists_AndIsCustom()
     {
         var store = this.NewStore();
-        store.GetOrCreate("pc:A B@66", Candidates, race: null, tribe: null, sex: null);
+        store.GetOrCreate("pc:A B@66", Candidates, null, null, null);
 
         store.SetOverride("pc:A B@66", "warm", 0.35f);
-        var overridden = store.GetOrCreate("pc:A B@66", Candidates, race: null, tribe: null, sex: null);
+        var overridden = store.GetOrCreate("pc:A B@66", Candidates, null, null, null);
         Assert.Equal(("warm", 0.35f, true), (overridden.ReferenceVoiceId, overridden.ExaggerationBias, overridden.Custom));
 
-        var reloaded = this.NewStore().GetOrCreate("pc:A B@66", Candidates, race: null, tribe: null, sex: null);
+        var reloaded = this.NewStore().GetOrCreate("pc:A B@66", Candidates, null, null, null);
         Assert.Equal(("warm", 0.35f, true), (reloaded.ReferenceVoiceId, reloaded.ExaggerationBias, reloaded.Custom));
     }
 
@@ -97,39 +123,35 @@ public sealed class JsonProfileStoreTests : IDisposable
         File.WriteAllText(this.FilePath, "{ not valid json !!");
         var log = new FakeLogSink();
 
-        var store = this.NewStore(log: log);
+        var store = this.NewStore(log);
         Assert.Empty(store.Entries);
         Assert.True(File.Exists(this.FilePath + ".bak"), "corrupt file was not backed up");
         Assert.Contains("{ not valid json !!", File.ReadAllText(this.FilePath + ".bak"));
         Assert.Contains(log.Snapshot(), call => call.Level == "Error");
 
-        var recovered = store.GetOrCreate("npc:feo ul", Candidates, race: null, tribe: null, sex: null);
-        Assert.Contains(recovered.ReferenceVoiceId, Candidates());
+        // Store still works after recovery.
+        var recovered = store.GetOrCreate("npc:feo ul", Candidates, null, null, null);
+        Assert.Contains(recovered.ReferenceVoiceId, Candidates().Select(slot => slot.Id));
         Assert.Single(store.Entries);
     }
-
-    [Fact]
-    public void Bias_IsClampedToUnitRange() =>
-        Assert.Equal(1f, this.NewStore(biasFor: (_, _, _) => 7f)
-            .GetOrCreate("npc:x", Candidates, race: null, tribe: null, sex: null).ExaggerationBias);
 
     [Fact]
     public void EmptyCandidates_ThrowProfileStoreException()
     {
         var store = this.NewStore();
         Assert.Throws<ProfileStoreException>(
-            () => store.GetOrCreate("npc:x", () => [], race: null, tribe: null, sex: null));
+            () => store.GetOrCreate("npc:x", () => [], null, null, null));
     }
 
     [Fact]
     public void Entries_IsDefensiveCopy()
     {
         var store = this.NewStore();
-        store.GetOrCreate("npc:x", Candidates, race: null, tribe: null, sex: null);
+        store.GetOrCreate("npc:x", Candidates, null, null, null);
         var copy = store.Entries;
         store.SetOverride("npc:x", "warm", 0f);
         Assert.Single(copy);
-        Assert.Equal(1, store.Entries.Count);
+        Assert.Single(store.Entries);
         Assert.NotEqual(copy, store.Entries);
     }
 }

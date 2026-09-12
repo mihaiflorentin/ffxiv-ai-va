@@ -11,7 +11,9 @@ using AIVoiceActing.Ports;
 /// deterministic assignments. Loaded lazily on first access; a corrupt file is backed up to
 /// ".bak" and the store starts fresh (logged). Writes are atomic (temp file + move).
 /// Single-process plugin: a private lock guards all state. Invariant: an existing entry is
-/// NEVER reassigned — only <see cref="SetOverride"/> (Custom = true) replaces one.
+/// NEVER reassigned — only <see cref="SetOverride"/> (Custom = true) replaces one. Hashed
+/// assignments go through <see cref="VoiceAssigner.AssignSlot"/>, so the chosen slot's
+/// (voice id, exaggeration bias) persists as one unit.
 /// </summary>
 public sealed class JsonProfileStore : IProfileStore
 {
@@ -25,22 +27,13 @@ public sealed class JsonProfileStore : IProfileStore
 
     private readonly object gate = new();
     private readonly ILogSink log;
-    private readonly Func<byte?, byte?, byte?, float>? exaggerationBiasFor;
     private readonly Dictionary<string, VoiceProfile> entries;
     private bool loaded;
 
-    /// <param name="exaggerationBiasFor">
-    /// Optional race/tribe/sex → bias delegate applied to newly created (non-override)
-    /// entries; typically backed by <see cref="RaceVoiceMap"/> slots.
-    /// </param>
-    public JsonProfileStore(
-        string filePath,
-        ILogSink log,
-        Func<byte?, byte?, byte?, float>? exaggerationBiasFor = null)
+    public JsonProfileStore(string filePath, ILogSink log)
     {
         FilePath = filePath;
         this.log = log;
-        this.exaggerationBiasFor = exaggerationBiasFor;
         this.entries = [];
     }
 
@@ -60,7 +53,7 @@ public sealed class JsonProfileStore : IProfileStore
 
     public VoiceProfile GetOrCreate(
         string speakerKey,
-        Func<string[]> candidateVoiceIds,
+        Func<VoiceSlot[]> candidateVoiceSlots,
         byte? race,
         byte? tribe,
         byte? sex)
@@ -73,16 +66,13 @@ public sealed class JsonProfileStore : IProfileStore
                 return existing; // never reassigned
             }
 
-            var candidates = candidateVoiceIds();
-            if (candidates is not { Length: > 0 })
+            var slots = candidateVoiceSlots();
+            if (slots is not { Length: > 0 })
             {
                 throw new ProfileStoreException($"No candidate voices provided for speaker \"{speakerKey}\".");
             }
 
-            var voiceId = candidates[VoiceAssigner.AssignIndex(speakerKey, candidates.Length)];
-            var rawBias = this.exaggerationBiasFor?.Invoke(race, tribe, sex) ?? 0f;
-            var profile = new VoiceProfile(
-                speakerKey, voiceId, Math.Clamp(rawBias, 0f, 1f), DateTimeOffset.UtcNow, Custom: false);
+            var profile = VoiceAssigner.AssignSlot(speakerKey, slots, this.entries);
             this.entries[speakerKey] = profile;
             this.SaveUnlocked();
             return profile;

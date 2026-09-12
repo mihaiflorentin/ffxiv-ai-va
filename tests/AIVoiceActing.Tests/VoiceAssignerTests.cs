@@ -9,6 +9,17 @@ public sealed class VoiceAssignerTests
     private static readonly string[] Candidates = ["alpha", "beta", "gamma"];
 
     [Fact]
+    public void AssignIndex_Utf8Key_MatchesPrecomputedDigest()
+    {
+        // Derived once with a throwaway console referencing Standart.Hash.xxHash 4.0.5:
+        // (int)(xxHash32.ComputeHash(Encoding.UTF8.GetBytes(key)) % count)
+        // "pc:Mihai Testa@66": digest 1317929423, %3 = 2
+        Assert.Equal(2, VoiceAssigner.AssignIndex("pc:Mihai Testa@66", 3));
+        // "npc:feo ul": digest 3177869990, %5 = 0
+        Assert.Equal(0, VoiceAssigner.AssignIndex("npc:feo ul", 5));
+    }
+
+    [Fact]
     public void SameKey_YieldsSameVoice_Across100Iterations()
     {
         IReadOnlyDictionary<string, VoiceProfile> existing = new Dictionary<string, VoiceProfile>();
@@ -20,15 +31,6 @@ public sealed class VoiceAssignerTests
             Assert.Equal(VoiceAssigner.AssignIndex("pc:Mihai Testa@66", Candidates.Length),
                 VoiceAssigner.AssignIndex("pc:Mihai Testa@66", Candidates.Length));
         }
-    }
-
-    [Fact]
-    public void Assignment_IsIndependentOfProcessInstance_Ordering()
-    {
-        // Hash over the key directly — list order changes mapping, same key never flips within one list.
-        var direct = VoiceAssigner.AssignIndex("npc:feo ul", 5);
-        Assert.InRange(direct, 0, 4);
-        Assert.Equal(direct, VoiceAssigner.AssignIndex("npc:feo ul", 5));
     }
 
     [Fact]
@@ -66,6 +68,15 @@ public sealed class VoiceAssignerTests
         Assert.Equal(expectedSlot.Id, profile.ReferenceVoiceId);
         Assert.Equal(expectedSlot.ExaggerationBias, profile.ExaggerationBias);
         Assert.False(profile.Custom);
+    }
+
+    [Fact]
+    public void AssignSlot_ClampsSlotBiasToUnitRange()
+    {
+        var slots = new[] { new VoiceSlot("default", 7f) };
+        var profile = VoiceAssigner.AssignSlot(
+            "npc:feo ul", slots, new Dictionary<string, VoiceProfile>());
+        Assert.Equal(1f, profile.ExaggerationBias);
     }
 
     [Fact]

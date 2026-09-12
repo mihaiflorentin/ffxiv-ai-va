@@ -1,5 +1,6 @@
 namespace AIVoiceActing.Tests;
 
+using AIVoiceActing.Domain;
 using AIVoiceActing.Container;
 using AIVoiceActing.Tests.Mock;
 using Xunit;
@@ -28,7 +29,8 @@ public sealed class ContainerProfileStoreTests : IDisposable
         var second = container.ProfileStore;
         Assert.Same(first, second);
 
-        var profile = first.GetOrCreate("npc:feo ul", () => ["default"], race: null, tribe: null, sex: null);
+        var profile = first.GetOrCreate(
+            "npc:feo ul", () => [new VoiceSlot("default", 0f)], race: null, tribe: null, sex: null);
         Assert.Equal("default", profile.ReferenceVoiceId);
         Assert.True(File.Exists(Path.Combine(this.directory, "voice-assignments.json")));
     }
