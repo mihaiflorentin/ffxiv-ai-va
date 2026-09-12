@@ -24,6 +24,9 @@ public static class SpeakerKey
         return $"npc:{name.ToLowerInvariant()}";
     }
 
+    /// <summary>Public view of suffix stripping, for adapters comparing displayed names.</summary>
+    public static string StripWorldSuffix(string? fullName) => StripSuffix(fullName);
+
     private static string StripSuffix(string? fullName)
     {
         var name = fullName?.Trim() ?? string.Empty;

@@ -2,11 +2,13 @@ namespace AIVoiceActing.Container;
 
 using AIVoiceActing.Domain;
 using AIVoiceActing.Domain.Handlers;
+using AIVoiceActing.Domain.Pipeline;
 using AIVoiceActing.Infrastructure.Net;
 using AIVoiceActing.Infrastructure.Onnx;
 using AIVoiceActing.Infrastructure.Storage;
 using AIVoiceActing.Infrastructure.Text;
 using AIVoiceActing.Ports;
+using AIVoiceActing.Infrastructure.Dalamud;
 
 /// <summary>
 /// Composition root (census container pattern): lazy, lock-guarded accessors returning
@@ -27,6 +29,24 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<IReadOnlyDictionary<string, string>>? lexiconEntriesFactory;
     private readonly Func<bool>? removeStutterEnabledFactory;
     private readonly Func<ISpeechQueue>? speechQueueFactory;
+    private readonly Func<IReadOnlyCollection<int>?>? enabledChatTypesFactory;
+    private readonly Func<bool>? enableAllChatTypesFactory;
+    private readonly Func<IReadOnlyList<TriggerSpec>>? triggersFactory;
+    private readonly Func<IReadOnlyList<TriggerSpec>>? exclusionsFactory;
+    private readonly Func<bool>? pipelineEnabledFactory;
+    private readonly Func<bool>? skipMessagesFromYouFactory;
+    private readonly Func<bool>? onlyMessagesFromYouFactory;
+    private readonly Func<bool>? playerRateLimitEnabledFactory;
+    private readonly Func<double>? messagesPerSecondFactory;
+    private readonly Func<long>? rateLimiterClockMs;
+    private readonly Func<string?>? localPlayerNameFactory;
+    private readonly Func<bool>? nameWithSayEnabledFactory;
+    private readonly Func<bool>? nameNpcWithSayFactory;
+    private readonly Func<bool>? disallowMultipleSayFactory;
+    private readonly Func<bool>? sayPartialNameFactory;
+    private readonly Func<FirstOrLastName>? onlySayFirstOrLastNameFactory;
+    private readonly Func<bool>? cutsceneActiveFactory;
+    private readonly Func<bool>? talkVisibleFactory;
 
     private ILogSink? logSink;
     private IProfileStore? profileStore;
@@ -39,6 +59,13 @@ public sealed class ServiceContainer : IDisposable
     private ILexicon? lexicon;
     private ISpeechQueue? speechQueue;
     private SpeechRequestHandler? speechHandler;
+    private ISpeakerDirectory? speakerDirectory;
+    private SpeakerAnnouncer? announcer;
+    private FromYouGate? fromYou;
+    private TextGate? textGate;
+    private ChatChannelGate? chatGate;
+    private ConfiguredRateLimiter? rateLimiter;
+    private SpeechPipeline? pipeline;
 
     /// <summary>
     /// <paramref name="logSinkFactory"/> is lazy (evaluated once on first use);
@@ -56,7 +83,28 @@ public sealed class ServiceContainer : IDisposable
         Func<string>? voicesManifestFactory = null,
         Func<IReadOnlyDictionary<string, string>>? lexiconEntriesFactory = null,
         Func<bool>? removeStutterEnabledFactory = null,
-        Func<ISpeechQueue>? speechQueueFactory = null)
+        Func<ISpeechQueue>? speechQueueFactory = null,
+        // Step 5 pipeline wiring: capture/filter configuration is supplied as live
+        // delegates (read-per-call, so in-game config edits apply immediately); missing
+        // filter delegates default to permissive passthrough.
+        Func<IReadOnlyCollection<int>?>? enabledChatTypesFactory = null,
+        Func<bool>? enableAllChatTypesFactory = null,
+        Func<IReadOnlyList<TriggerSpec>>? triggersFactory = null,
+        Func<IReadOnlyList<TriggerSpec>>? exclusionsFactory = null,
+        Func<bool>? pipelineEnabledFactory = null,
+        Func<bool>? skipMessagesFromYouFactory = null,
+        Func<bool>? onlyMessagesFromYouFactory = null,
+        Func<bool>? playerRateLimitEnabledFactory = null,
+        Func<double>? messagesPerSecondFactory = null,
+        Func<long>? rateLimiterClockMs = null,
+        Func<string?>? localPlayerNameFactory = null,
+        Func<bool>? nameWithSayEnabledFactory = null,
+        Func<bool>? nameNpcWithSayFactory = null,
+        Func<bool>? disallowMultipleSayFactory = null,
+        Func<bool>? sayPartialNameFactory = null,
+        Func<FirstOrLastName>? onlySayFirstOrLastNameFactory = null,
+        Func<bool>? cutsceneActiveFactory = null,
+        Func<bool>? talkVisibleFactory = null)
     {
         this.logSinkOverride = logSinkOverride;
         this.logSinkFactory = logSinkFactory;
@@ -66,6 +114,24 @@ public sealed class ServiceContainer : IDisposable
         this.lexiconEntriesFactory = lexiconEntriesFactory;
         this.removeStutterEnabledFactory = removeStutterEnabledFactory;
         this.speechQueueFactory = speechQueueFactory;
+        this.enabledChatTypesFactory = enabledChatTypesFactory;
+        this.enableAllChatTypesFactory = enableAllChatTypesFactory;
+        this.triggersFactory = triggersFactory;
+        this.exclusionsFactory = exclusionsFactory;
+        this.pipelineEnabledFactory = pipelineEnabledFactory;
+        this.skipMessagesFromYouFactory = skipMessagesFromYouFactory;
+        this.onlyMessagesFromYouFactory = onlyMessagesFromYouFactory;
+        this.playerRateLimitEnabledFactory = playerRateLimitEnabledFactory;
+        this.messagesPerSecondFactory = messagesPerSecondFactory;
+        this.rateLimiterClockMs = rateLimiterClockMs;
+        this.localPlayerNameFactory = localPlayerNameFactory;
+        this.nameWithSayEnabledFactory = nameWithSayEnabledFactory;
+        this.nameNpcWithSayFactory = nameNpcWithSayFactory;
+        this.disallowMultipleSayFactory = disallowMultipleSayFactory;
+        this.sayPartialNameFactory = sayPartialNameFactory;
+        this.onlySayFirstOrLastNameFactory = onlySayFirstOrLastNameFactory;
+        this.cutsceneActiveFactory = cutsceneActiveFactory;
+        this.talkVisibleFactory = talkVisibleFactory;
     }
 
     /// <summary>Downloaded-model directory (modelsDirFactory or a hard error, like the profile store).</summary>
@@ -199,6 +265,7 @@ public sealed class ServiceContainer : IDisposable
                     lexicon: this.Lexicon,
                     dialogueSessions: this.DialogueSessions,
                     synthesizer: this.SpeechSynthesizer,
+
                     queue: this.SpeechQueue,
                     profileLookup: this.ResolveProfileUnlocked,
                     directorFactory: () => this.EmotionDirector,
@@ -208,6 +275,140 @@ public sealed class ServiceContainer : IDisposable
                     log: this.LogSinkUnlocked());
             }
         }
+    }
+    // ---- Step 5: capture pipeline (filters are permissive passthrough until configured) ----
+
+    /// <summary>Stable speaker-identity resolution over capture-time hints.</summary>
+    public ISpeakerDirectory SpeakerDirectory
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.speakerDirectory ??= new GameObjectSpeakerDirectory();
+            }
+        }
+    }
+
+    /// <summary>"says" prefix policy (EnableNameWithSay / NameNpcWithSay / partial names).</summary>
+    public SpeakerAnnouncer Announcer
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.announcer ??= new SpeakerAnnouncer(
+                    enableNameWithSay: this.nameWithSayEnabledFactory ?? (() => false),
+                    nameNpcWithSay: this.nameNpcWithSayFactory ?? (() => false),
+                    disallowMultipleSay: this.disallowMultipleSayFactory ?? (() => false),
+                    sayPartialName: this.sayPartialNameFactory ?? (() => false),
+                    onlySayFirstOrLastName: this.onlySayFirstOrLastNameFactory ?? (() => FirstOrLastName.First));
+            }
+        }
+    }
+
+    /// <summary>Skip/only-messages-from-you gates over the local player's name.</summary>
+    public FromYouGate FromYou
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.fromYou ??= new FromYouGate(
+                    skipMessagesFromYou: this.skipMessagesFromYouFactory ?? (() => false),
+                    onlyMessagesFromYou: this.onlyMessagesFromYouFactory ?? (() => false),
+                    localPlayerName: this.localPlayerNameFactory ?? (() => null));
+            }
+        }
+    }
+
+    /// <summary>Trigger/exclusion gate (an exclusion wins; empty triggers admit all).</summary>
+    public TextGate TextGate
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.textGate ??= new TextGate(
+                    good: this.triggersFactory ?? (() => []),
+                    bad: this.exclusionsFactory ?? (() => []));
+            }
+        }
+    }
+
+    /// <summary>Channel-preset gate over the active preset's enabled channels.</summary>
+    public ChatChannelGate ChatGate
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.chatGate ??= new ChatChannelGate(
+                    enabledChatTypes: this.enabledChatTypesFactory,
+                    enableAllChatTypes: this.enableAllChatTypesFactory
+                        ?? (() => this.enabledChatTypesFactory is null));
+            }
+        }
+    }
+
+    /// <summary>PC-only per-speaker throttle (UsePlayerRateLimiter / MessagesPerSecond).</summary>
+    public ConfiguredRateLimiter RateLimiter
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.rateLimiter ??= this.RegisterDisposable(new ConfiguredRateLimiter(
+                    shouldRateLimit: this.playerRateLimitEnabledFactory ?? (() => false),
+                    messagesPerSecond: this.messagesPerSecondFactory ?? (() => 5d),
+                    nowMs: this.rateLimiterClockMs));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The composed speech pipeline (merge → dedupe → gates → rate limit → handler).
+    /// Capture sources push into <see cref="PipelineSink"/>; cutscene/talk lines feed the
+    /// dialogue-context windows through the session id deriver.
+    /// </summary>
+    public SpeechPipeline Pipeline
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.pipeline ??= this.RegisterDisposable(new SpeechPipeline(
+                    captureSources: [],
+                    enabled: this.pipelineEnabledFactory ?? (() => true),
+                    chatGate: this.ChatGate,
+                    textGate: this.TextGate,
+                    rateLimiter: this.RateLimiter,
+                    resolveSpeaker: this.SpeakerDirectory.Resolve,
+                    cutsceneActive: this.cutsceneActiveFactory ?? (() => false),
+                    talkVisible: this.talkVisibleFactory ?? (() => false),
+                    dialogueSessions: this.DialogueSessions,
+                    handler: this.SpeechHandler,
+                    log: this.LogSinkOptional));
+            }
+        }
+    }
+
+    /// <summary>Where capture sources push their lines (the pipeline's merged stream head).</summary>
+    public PipelineSource<TextEmitEvent> PipelineSink => this.Pipeline.Sink;
+
+    /// <summary>
+    /// Raised after the voiced-line courtesy cancels current speech; the plugin polls the
+    /// talk-family sources here so the game's own voice line is suppressed (TTT's
+    /// AddonPollSource.VoiceLinePlayback round-trip).
+    /// </summary>
+    public event Action? VoiceLinePlaybackObserved;
+
+    /// <summary>The game's own voice acting just started: stop current speech, then let
+    /// observers re-sample the talk addons so the voiced line is not synthesized.</summary>
+    public void OnVoiceLinePlayback()
+    {
+        this.SpeechHandler.CancelCurrent();
+        this.VoiceLinePlaybackObserved?.Invoke();
     }
 
     /// <summary>
@@ -255,6 +456,10 @@ public sealed class ServiceContainer : IDisposable
             }
         }
     }
+
+    /// <summary>Soft log sink: null when nothing configured (pipeline logging is optional).</summary>
+    private ILogSink? LogSinkOptional =>
+        this.logSink ??= this.logSinkOverride ?? this.logSinkFactory?.Invoke();
 
     public void Dispose()
     {
