@@ -44,10 +44,20 @@ public sealed class AddonTalkProcessorTests
     }
 
     [Fact]
-    public void ClosedSample_ReportsClose_WithoutAdvance()
+    public void OpenToClosed_IsACloseTransition_ThatAdvances()
     {
         var processor = Processor();
         processor.Poll(Visible("Y'shtola", "Hello."));
+        var closed = processor.Poll(AddonTalkState.Closed);
+        Assert.Equal(TalkDecision.Closed, closed.Decision);
+        Assert.True(closed.Advanced); // the line just ended — interrupt exactly once
+    }
+
+    [Fact]
+    public void ClosedToClosed_IsANoOp()
+    {
+        var processor = Processor();
+        processor.Poll(AddonTalkState.Closed); // initial closed sample: nothing open ended
         var closed = processor.Poll(AddonTalkState.Closed);
         Assert.Equal(TalkDecision.Closed, closed.Decision);
         Assert.False(closed.Advanced);

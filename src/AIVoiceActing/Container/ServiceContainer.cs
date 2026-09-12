@@ -239,8 +239,11 @@ public sealed class ServiceContainer : IDisposable
         }
     }
 
-    /// <summary>Speech playback serializer (speechQueueFactory or a hard error; the audio
-    /// sink adapter lands in a later step).</summary>
+    /// <summary>
+    /// Speech playback serializer: <c>speechQueueFactory</c> when wired, else a no-op queue
+    /// with a one-time warning — the plugin must load (and the pipeline must resolve) before
+    /// the audio sink lands in a later step; wiring the factory is then a one-line change.
+    /// </summary>
     public ISpeechQueue SpeechQueue
     {
         get
@@ -248,11 +251,14 @@ public sealed class ServiceContainer : IDisposable
             lock (this.gate)
             {
                 return this.speechQueue ??= this.speechQueueFactory?.Invoke()
-                    ?? throw new InvalidOperationException(
-                        "No speech queue configured: pass speechQueueFactory (in-game) or wire a fake (tests).");
+                    ?? this.RegisterDisposable(new NoopSpeechQueue(this.WarnNoQueueUnlocked));
             }
         }
     }
+
+    private void WarnNoQueueUnlocked() => this.LogSinkOptional?.Warn(
+        "No speech queue configured yet; speech playback is disabled until the audio " +
+        "sink is wired (pass speechQueueFactory).");
 
     /// <summary>Speech pipeline: lexicon → stutter removal → director → synthesis → queue.</summary>
     public SpeechRequestHandler SpeechHandler
@@ -492,5 +498,33 @@ public sealed class ServiceContainer : IDisposable
     {
         this.disposables.Add(port);
         return port;
+    }
+
+    /// <summary>Placeholder queue until the audio sink wires a real one (review round 1):
+    /// playback calls are no-ops; the first resolution warns once.</summary>
+    private sealed class NoopSpeechQueue(Action warnOnce) : ISpeechQueue
+    {
+        private bool warned;
+
+        public void Enqueue(SpeechItem item) => this.Warn();
+
+        public void CancelCurrent()
+        {
+        }
+
+        public void Clear()
+        {
+        }
+
+        private void Warn()
+        {
+            if (this.warned)
+            {
+                return;
+            }
+
+            this.warned = true;
+            warnOnce();
+        }
     }
 }

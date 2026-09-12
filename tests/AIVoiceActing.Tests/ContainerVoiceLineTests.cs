@@ -28,6 +28,29 @@ public sealed class ContainerVoiceLineTests : IDisposable
     }
 
     [Fact]
+    public void Pipeline_ResolvesWithoutQueueFactory()
+    {
+        // Plugin-constructor-equivalent resolution path with NO speech queue factory:
+        // the pipeline (and its handler → queue chain) must not throw at load (review
+        // round 1 — the no-op queue fallback covers this until the audio sink lands).
+        var container = new ServiceContainer(
+            logSinkOverride: new FakeLogSink(),
+            profileStorePathFactory: () => Path.Combine(this.tempDir.Path, "voice-assignments.json"),
+            modelsDirFactory: () => Path.Combine(this.tempDir.Path, "models"),
+            voicesManifestFactory: () => Path.Combine(AppContext.BaseDirectory, "voices.json"));
+        try
+        {
+            var pipeline = container.Pipeline;
+            Assert.Same(pipeline, container.Pipeline);
+            pipeline.NotifyVoiceLinePlayback(); // resolves SpeechHandler → no-op queue
+        }
+        finally
+        {
+            container.Dispose();
+        }
+    }
+
+    [Fact]
     public void Pipeline_IsCached()
     {
         var queue = new FakeSpeechQueue();

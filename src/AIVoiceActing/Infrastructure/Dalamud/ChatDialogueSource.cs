@@ -144,7 +144,10 @@ public sealed class ChatDialogueSource : IDialogueSource, IDisposable
             return;
         }
 
-        var displayName = speakerObject?.Name.TextValue ?? senderText;
+        // GetCleanSpeakerName port: entity name when available, else the parsed chat name,
+        // else the raw sender text — keeps semantic dedupe comparing clean names.
+        var displayName = speakerObject?.Name.TextValue ?? (
+            SeStringUtils.TryGetEntityName(sender, out var senderName) ? senderName : senderText);
         this.sink.Emit(new TextEmitEvent(
             TextSource.Chat, displayName, textValue, rawText, hint, (int)type));
         this.LineCaptured?.Invoke(new DialogueLine(

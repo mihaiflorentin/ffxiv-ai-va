@@ -48,12 +48,21 @@ public sealed class ContainerPipelineTests
     }
 
     [Fact]
-    public void SpeechQueue_ThrowsWithoutFactory()
+    public void SpeechQueue_FallsBackToNoopWithoutFactory()
     {
-        using var container = new ServiceContainer();
+        // Review round 1 contract change: the plugin must load before the audio sink is
+        // wired, so a missing factory yields a no-op queue (warn once) instead of throwing.
+        using var container = new ServiceContainer(logSinkOverride: new FakeLogSink());
 
-        var ex = Assert.Throws<InvalidOperationException>(() => _ = container.SpeechQueue);
-        Assert.Contains("speechQueueFactory", ex.Message);
+        var queue = container.SpeechQueue;
+        Assert.NotNull(queue);
+        queue.Enqueue(new SpeechItem(
+            new AIVoiceActing.Domain.SpeakerIdentity("npc:x", "x", null, null, null, null),
+            new AIVoiceActing.Ports.SynthesisRequest("default", "hi", 0.5f, []),
+            new AIVoiceActing.Ports.SynthesisResult([0f], 24000)));
+        queue.CancelCurrent();
+        queue.Clear();
+        Assert.Same(container.SpeechQueue, queue); // cached — warns once
     }
 
     [Fact]

@@ -85,7 +85,9 @@ public sealed class BattleTalkDialogueSource : IDialogueSource, IDisposable
             : AddonTalkState.Closed;
 
         var result = this.processor.Poll(sample);
-        if (result.Decision == TalkDecision.Closed || result.Advanced)
+        // Advanced fires on the open→closed transition and on every changed line; closed
+        // ticks after the first are no-ops (review round 1: no per-tick cancel spam).
+        if (result.Advanced)
         {
             this.SpeechInterrupted?.Invoke();
         }

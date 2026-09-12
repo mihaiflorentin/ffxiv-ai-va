@@ -31,7 +31,7 @@ public sealed unsafe class VoiceLineDetector : IVoiceLineDetector
 
     private readonly Hook<LoadSoundFileDelegate>? loadSoundFileHook;
     private readonly Hook<PlaySpecificSoundDelegate>? playSpecificSoundHook;
-    private readonly HashSet<nint> knownVoiceLinePtrs = [];
+    private readonly VoiceLineAddressTracker tracker = new();
     private readonly IPluginLog? log;
 
     public VoiceLineDetector(ISigScanner sigScanner, IGameInteropProvider gameInterop, IPluginLog? log = null)
@@ -90,26 +90,16 @@ public sealed unsafe class VoiceLineDetector : IVoiceLineDetector
                 var resourceDataPtr = Marshal.ReadIntPtr(resourceHandlePtr + ResourceDataOffset);
                 if (resourceDataPtr != nint.Zero)
                 {
-                    if (!VoiceLinePathMatcher.IsIgnoredSound(fileName))
+                    if (VoiceLinePathMatcher.IsVoiceLine(fileName))
                     {
-                        this.log?.Debug($"Loaded sound: {fileName}");
+                        this.log?.Debug($"Discovered voice line at address {resourceDataPtr:x}");
+                    }
 
-                        if (VoiceLinePathMatcher.IsVoiceLine(fileName))
-                        {
-                            this.log?.Debug($"Discovered voice line at address {resourceDataPtr:x}");
-                            this.knownVoiceLinePtrs.Add(resourceDataPtr);
-                        }
-                        else
-                        {
-                            // Addresses can be reused, so a non-voice-line sound may load to
-                            // an address previously occupied by a voice line.
-                            if (this.knownVoiceLinePtrs.Remove(resourceDataPtr))
-                            {
-                                this.log?.Debug(
-                                    $"Cleared voice line from address {resourceDataPtr:x} " +
-                                    $"(address reused by: {fileName})");
-                            }
-                        }
+                    // Add/Remove bookkeeping runs outside the ignored-tree gate (TTT shape):
+                    // a reused address must be cleared even by music/vfx loads.
+                    if (this.tracker.OnSoundLoaded(fileName, resourceDataPtr) is { } cleared)
+                    {
+                        this.log?.Debug(cleared);
                     }
                 }
             }
@@ -130,7 +120,7 @@ public sealed unsafe class VoiceLineDetector : IVoiceLineDetector
         {
             var soundDataPtr = Marshal.ReadIntPtr(soundPtr + SoundDataOffset);
             // Assume a voice line plays only once after it is loaded; prune as they play.
-            if (this.knownVoiceLinePtrs.Remove(soundDataPtr))
+            if (this.tracker.OnSoundPlayed(soundDataPtr))
             {
                 this.log?.Debug($"Caught playback of known voice line at address {soundDataPtr:x}");
                 this.VoiceLinePlayback?.Invoke();

@@ -37,12 +37,9 @@ public enum TalkDecision
 }
 
 /// <param name="Decision">Verdict.</param>
-/// <param name="Advanced">The on-screen line moved on — current speech is stale. Fires for
-/// every changed non-closed sample (TTT raises OnAdvance before dedupe), so callers can
-/// cancel in-flight speech.</param>
-/// <param name="Speaker">Raw addon speaker ("" when unavailable).</param>
-/// <param name="Text">Punctuation-normalized text.</param>
-/// <param name="RawText">Text before normalization.</param>
+/// <param name="Advanced">The previous state ended — the on-screen line moved on or the
+/// addon just closed — so current speech is stale. Fires for every changed sample (TTT
+/// raises OnAdvance before dedupe; the close transition is carried here too).</param>
 public sealed record AddonTalkResult(
     TalkDecision Decision,
     bool Advanced,
@@ -76,10 +73,11 @@ public sealed class AddonTalkProcessor
     {
         var changed = !sample.Equals(this.lastSample);
         this.lastSample = sample;
-
         if (sample.IsClosed)
         {
-            return new AddonTalkResult(TalkDecision.Closed, Advanced: false, "", "", "");
+            // Advanced carries the open→closed transition, so callers interrupt exactly
+            // once when the addon closes — never on every closed tick (review round 1).
+            return new AddonTalkResult(TalkDecision.Closed, Advanced: changed, "", "", "");
         }
 
         var advanced = changed;
