@@ -27,5 +27,9 @@
     <PackageReference Include="Tokenizers.DotNet.runtime.win-x64" Version="1.4.1" />
     <PackageReference Include="Standart.Hash.xxHash" Version="4.0.5" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Domain\voices.json" />
+    <EmbeddedResource Include="Infrastructure\Dalamud\overridenModelIds.txt" />
+  </ItemGroup>
 
 </Project>

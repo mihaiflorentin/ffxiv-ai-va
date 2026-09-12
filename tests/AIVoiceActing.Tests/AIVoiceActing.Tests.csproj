@@ -13,8 +13,8 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageReference Include="Standart.Hash.xxHash" Version="4.0.5" />
   </ItemGroup>
-
   <!--
     Why tests compile the Dalamud-free sources instead of referencing the plugin assembly:
     - A net10.0-windows TEST project cannot run on non-Windows hosts (its testhost requires
@@ -29,6 +29,16 @@
     <Compile Include="..\..\src\AIVoiceActing\Domain\**\*.cs" Link="AIVoiceActing\Domain\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Ports\**\*.cs" Link="AIVoiceActing\Ports\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Container\ServiceContainer.cs" Link="AIVoiceActing\ServiceContainer.cs" />
+  </ItemGroup>
+  <!-- Dalamud-free Infrastructure sources exercised by the tests (mirrors the Domain/Ports
+       rule: these three adapters reference no Dalamud namespaces, so they compile and run on
+       any OS alongside the pure domain). -->
+  <ItemGroup>
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Dalamud\UngenderedModelIds.cs" Link="AIVoiceActing\Infrastructure\UngenderedModelIds.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Dalamud\GameObjectSpeakerDirectory.cs" Link="AIVoiceActing\Infrastructure\GameObjectSpeakerDirectory.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\JsonProfileStore.cs" Link="AIVoiceActing\Infrastructure\Storage\JsonProfileStore.cs" />
+    <Content Include="..\..\src\AIVoiceActing\Infrastructure\Dalamud\overridenModelIds.txt" Link="overridenModelIds.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\src\AIVoiceActing\Domain\voices.json" Link="voices.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

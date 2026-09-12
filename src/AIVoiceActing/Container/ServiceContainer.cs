@@ -1,5 +1,6 @@
 namespace AIVoiceActing.Container;
 
+using AIVoiceActing.Infrastructure.Storage;
 using AIVoiceActing.Ports;
 
 /// <summary>
@@ -15,17 +16,25 @@ public sealed class ServiceContainer : IDisposable
 
     private readonly ILogSink? logSinkOverride;
     private readonly Func<ILogSink>? logSinkFactory;
+    private readonly Func<string>? profileStorePathFactory;
 
     private ILogSink? logSink;
+    private IProfileStore? profileStore;
 
     /// <summary>
-    /// Prefer <paramref name="logSinkFactory"/> (lazy, evaluated once on first use);
-    /// <paramref name="logSinkOverride"/> pins an already-built sink (tests, tools).
+    /// <paramref name="logSinkFactory"/> is lazy (evaluated once on first use);
+    /// <paramref name="logSinkOverride"/> pins an already-built sink (tests, tools);
+    /// <paramref name="profileStorePathFactory"/> supplies the voice-assignments.json path
+    /// (ConfigDirectory in-game, temp dirs in tests).
     /// </summary>
-    public ServiceContainer(ILogSink? logSinkOverride = null, Func<ILogSink>? logSinkFactory = null)
+    public ServiceContainer(
+        ILogSink? logSinkOverride = null,
+        Func<ILogSink>? logSinkFactory = null,
+        Func<string>? profileStorePathFactory = null)
     {
         this.logSinkOverride = logSinkOverride;
         this.logSinkFactory = logSinkFactory;
+        this.profileStorePathFactory = profileStorePathFactory;
     }
 
     public ILogSink LogSink
@@ -35,6 +44,18 @@ public sealed class ServiceContainer : IDisposable
             lock (this.gate)
             {
                 return this.LogSinkUnlocked();
+            }
+        }
+    }
+
+    /// <summary>Persistent voice-assignment store (JsonProfileStore over voice-assignments.json).</summary>
+    public IProfileStore ProfileStore
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.ProfileStoreUnlocked();
             }
         }
     }
@@ -58,6 +79,13 @@ public sealed class ServiceContainer : IDisposable
             ?? this.logSinkFactory?.Invoke()
             ?? throw new InvalidOperationException(
                 "No log sink configured: pass a logSinkFactory (in-game) or logSinkOverride (tests/tools)."));
+
+    private IProfileStore ProfileStoreUnlocked() =>
+        this.profileStore ??= this.RegisterDisposable(new JsonProfileStore(
+            this.profileStorePathFactory?.Invoke()
+            ?? throw new InvalidOperationException(
+                "No profile store path configured: pass a profileStorePathFactory (in-game) or wire a fake store (tests)."),
+            this.LogSinkUnlocked()));
 
     private T RegisterDisposable<T>(T port) where T : notnull
     {
