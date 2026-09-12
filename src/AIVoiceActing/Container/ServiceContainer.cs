@@ -41,6 +41,9 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<long>? rateLimiterClockMs;
     private readonly Func<string?>? localPlayerNameFactory;
     private readonly Func<bool>? nameWithSayEnabledFactory;
+    private readonly Func<float>? defaultExaggerationFactory;
+    private readonly Func<string>? selectedEpFactory;
+    private readonly Func<IEmotionDirector?>? llmDirectorFactory;
     private readonly Func<bool>? nameNpcWithSayFactory;
     private readonly Func<bool>? disallowMultipleSayFactory;
     private readonly Func<bool>? sayPartialNameFactory;
@@ -103,6 +106,9 @@ public sealed class ServiceContainer : IDisposable
         Func<bool>? disallowMultipleSayFactory = null,
         Func<bool>? sayPartialNameFactory = null,
         Func<FirstOrLastName>? onlySayFirstOrLastNameFactory = null,
+        Func<float>? defaultExaggerationFactory = null,
+        Func<string>? selectedEpFactory = null,
+        Func<IEmotionDirector?>? llmDirectorFactory = null,
         Func<bool>? cutsceneActiveFactory = null,
         Func<bool>? talkVisibleFactory = null)
     {
@@ -130,7 +136,10 @@ public sealed class ServiceContainer : IDisposable
         this.disallowMultipleSayFactory = disallowMultipleSayFactory;
         this.sayPartialNameFactory = sayPartialNameFactory;
         this.onlySayFirstOrLastNameFactory = onlySayFirstOrLastNameFactory;
+        this.defaultExaggerationFactory = defaultExaggerationFactory;
         this.cutsceneActiveFactory = cutsceneActiveFactory;
+        this.selectedEpFactory = selectedEpFactory;
+        this.llmDirectorFactory = llmDirectorFactory;
         this.talkVisibleFactory = talkVisibleFactory;
     }
 
@@ -182,7 +191,7 @@ public sealed class ServiceContainer : IDisposable
                         voicePathResolver: voiceId => voiceId == "default"
                             ? Path.Combine(this.ModelsDir, "default_voice.wav")
                             : Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav"),
-                        executionProvider: "auto",
+                        executionProvider: this.selectedEpFactory?.Invoke() ?? "auto",
                         log: this.LogSinkUnlocked()));
             }
         }
@@ -213,8 +222,9 @@ public sealed class ServiceContainer : IDisposable
     }
 
     /// <summary>
-    /// Emotion director: the rules table by default (zero footprint); an LLM-backed
-    /// director can slot in behind the same port later without touching the pipeline.
+    /// Emotion director: the rules table by default (zero footprint). The plugin's
+    /// llmDirectorFactory returns the LLM-backed director only while DirectorEnabled and
+    /// its asset exists; null falls back to the rules table.
     /// </summary>
     public IEmotionDirector EmotionDirector
     {
@@ -222,10 +232,19 @@ public sealed class ServiceContainer : IDisposable
         {
             lock (this.gate)
             {
-                return this.emotionDirector ??= RulesEmotionDirector.Instance;
+                return this.emotionDirector ??= this.llmDirectorFactory?.Invoke()
+                    ?? RulesEmotionDirector.Instance;
             }
         }
     }
+
+    /// <summary>
+    /// Light UI hooks for the command router (Step 7 sets these when the windows exist);
+    /// the plugin reads them so commands stay headless-safe without referencing UI types.
+    /// </summary>
+    public Action? OpenConfigurationUi { get; set; }
+
+    public Action? OpenStylesUi { get; set; }
 
     /// <summary>User lexicon substitutions (passthrough until configuration supplies entries).</summary>
     public ILexicon Lexicon
@@ -250,8 +269,9 @@ public sealed class ServiceContainer : IDisposable
         {
             lock (this.gate)
             {
-                return this.speechQueue ??= this.speechQueueFactory?.Invoke()
-                    ?? this.RegisterDisposable(new NoopSpeechQueue(this.WarnNoQueueUnlocked));
+                return this.speechQueue ??= this.RegisterDisposable(
+                    this.speechQueueFactory?.Invoke()
+                    ?? (ISpeechQueue)new NoopSpeechQueue(this.WarnNoQueueUnlocked));
             }
         }
     }
@@ -271,13 +291,13 @@ public sealed class ServiceContainer : IDisposable
                     lexicon: this.Lexicon,
                     dialogueSessions: this.DialogueSessions,
                     synthesizer: this.SpeechSynthesizer,
-
                     queue: this.SpeechQueue,
                     profileLookup: this.ResolveProfileUnlocked,
                     directorFactory: () => this.EmotionDirector,
                     removeStutters: this.removeStutterEnabledFactory is null
                         ? null
                         : text => this.removeStutterEnabledFactory() ? StutterRemover.Remove(text) : text,
+                    defaultExaggeration: this.defaultExaggerationFactory,
                     log: this.LogSinkUnlocked());
             }
         }
@@ -350,7 +370,7 @@ public sealed class ServiceContainer : IDisposable
             lock (this.gate)
             {
                 return this.chatGate ??= new ChatChannelGate(
-                    enabledChatTypes: this.enabledChatTypesFactory,
+                    enabledChatTypes: this.enabledChatTypesFactory ?? (() => null),
                     enableAllChatTypes: this.enableAllChatTypesFactory
                         ?? (() => this.enabledChatTypesFactory is null));
             }

@@ -17,6 +17,7 @@ public sealed class SpeechRequestHandler
     private readonly Func<SpeakerIdentity, VoiceProfile?> profileLookup;
     private readonly Func<IEmotionDirector?> directorFactory;
     private readonly Func<string, string>? removeStutters;
+    private readonly Func<float>? defaultExaggeration;
     private readonly ILogSink? log;
 
     public SpeechRequestHandler(
@@ -27,6 +28,7 @@ public sealed class SpeechRequestHandler
         Func<SpeakerIdentity, VoiceProfile?> profileLookup,
         Func<IEmotionDirector?> directorFactory,
         Func<string, string>? removeStutters = null,
+        Func<float>? defaultExaggeration = null,
         ILogSink? log = null)
     {
         this.lexicon = lexicon;
@@ -36,6 +38,7 @@ public sealed class SpeechRequestHandler
         this.profileLookup = profileLookup;
         this.directorFactory = directorFactory;
         this.removeStutters = removeStutters;
+        this.defaultExaggeration = defaultExaggeration;
         this.log = log;
     }
 
@@ -100,7 +103,9 @@ public sealed class SpeechRequestHandler
 
     /// <summary>
     /// Plans the delivery: the context director when one is configured, else the pure
-    /// rules table (which ignores history, so the window is not even read).
+    /// rules table (which ignores history, so the window is not even read). A neutral plan
+    /// becomes the configured baseline exaggeration (DefaultExaggeration), so users can
+    /// shift the default delivery intensity without touching the emotion table.
     /// </summary>
     private async Task<EmotionPlan> PlanAsync(
         string sessionId,
@@ -109,12 +114,18 @@ public sealed class SpeechRequestHandler
         CancellationToken cancellationToken)
     {
         var director = this.directorFactory();
-        if (director is null)
+        var plan = director is null
+            ? EmotionRules.Plan(processed)
+            : await director.PlanAsync(
+                new EmotionContext(speaker, processed, this.dialogueSessions.GetContext(sessionId)),
+                cancellationToken);
+
+        if (this.defaultExaggeration is { } baseline
+            && plan.Emotion.Equals("neutral", StringComparison.OrdinalIgnoreCase))
         {
-            return EmotionRules.Plan(processed);
+            plan = plan with { Exaggeration = Math.Clamp(baseline(), 0f, 1f) };
         }
 
-        var history = this.dialogueSessions.GetContext(sessionId);
-        return await director.PlanAsync(new EmotionContext(speaker, processed, history), cancellationToken);
+        return plan;
     }
 }

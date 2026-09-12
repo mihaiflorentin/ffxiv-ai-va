@@ -45,6 +45,10 @@
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\FileModelStore.cs" Link="AIVoiceActing\Infrastructure\Storage\FileModelStore.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\JsonProfileStore.cs" Link="AIVoiceActing\Infrastructure\Storage\JsonProfileStore.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Text\**\*.cs" Link="AIVoiceActing\Infrastructure\Text\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\AIVoiceActing\Configuration.cs" Link="AIVoiceActing\Configuration.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\Container\CommandRouter.cs" Link="AIVoiceActing\CommandRouter.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\Container\KeybindMonitor.cs" Link="AIVoiceActing\KeybindMonitor.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Audio\PlaybackSpeechQueue.cs" Link="AIVoiceActing\PlaybackSpeechQueue.cs" />
     <Content Include="..\..\src\AIVoiceActing\Infrastructure\Dalamud\overridenModelIds.txt" Link="overridenModelIds.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\AIVoiceActing\Domain\voices.json" Link="voices.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
