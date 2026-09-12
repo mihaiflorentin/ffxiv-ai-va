@@ -1,0 +1,7 @@
+.omp/
+.superpowers/
+bin/
+obj/
+*.user
+ConfigDirectory/
+models/
