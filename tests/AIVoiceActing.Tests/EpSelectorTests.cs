@@ -6,7 +6,7 @@ using Xunit;
 public sealed class EpSelectorTests : IDisposable
 {
     [Fact]
-    public void Candidates_MacOSStartsWithCoreml()
+    public void Candidates_MacOsDefaultsToCpuWithCoremlSelectable()
     {
         if (!OperatingSystem.IsMacOS())
         {
@@ -14,10 +14,9 @@ public sealed class EpSelectorTests : IDisposable
         }
 
         var candidates = EpSelector.CandidateEps();
-        Assert.Equal("coreml", candidates[0]);
-        Assert.Contains("cpu", candidates);
+        Assert.Equal("cpu", candidates[0]); // gate finding: CoreML stalls on the LM at run time
+        Assert.Contains("coreml", candidates);
     }
-
     [Fact]
     public void Candidates_WindowsStartsWithDirectml()
     {

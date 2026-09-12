@@ -10,11 +10,16 @@ using Microsoft.ML.OnnxRuntime;
 /// </summary>
 public static class EpSelector
 {
+    /// <summary>
+    /// macOS lists CPU first: CoreML registers but partitions the LM into thousands of
+    /// fragments and stalls at run time (gate finding), so "auto" must default to CPU;
+    /// coreml stays explicitly selectable. Windows keeps DirectML first.
+    /// </summary>
     public static string[] CandidateEps()
     {
         if (OperatingSystem.IsMacOS())
         {
-            return ["coreml", "cpu"];
+            return ["cpu", "coreml"];
         }
 
         if (OperatingSystem.IsWindows())

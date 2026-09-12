@@ -34,6 +34,10 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     private readonly string? languageModelOverride;
     private readonly ILogSink? log;
     private readonly Lazy<Engine> engine;
+    // Unbounded by design: one entry is a few MB (condition embedding + prompt tokens +
+    // speaker tensors) and the voice population per session is small (tens — race/gender
+    // slots plus overrides), so the cache stays in the low MBs for the process lifetime;
+    // no eviction until a real workload shows otherwise.
     private readonly ConcurrentDictionary<string, ReferenceEmbeddings> referenceCache = new();
     private readonly object tokenizerGate = new();
     private ITextTokenizer? tokenizer;
@@ -74,21 +78,60 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     {
         get
         {
+            // The LM actually in use: an override (e.g. the fp32 fallback) replaces the
+            // catalog's q4 pair, so readiness must check that one, not the ignored default.
+            var lmInUse = this.languageModelOverride ?? ModelCatalog.LanguageModelQ4FileName;
             foreach (var asset in ModelCatalog.ChatterboxRequiredAssets)
             {
-                var path = Path.Combine(this.modelsDir, asset.FileName);
-                if (!File.Exists(path)
-                    || (asset.SizeBytes is { } expected
-                        && !FileModelStore.SizeWithinTolerance(new FileInfo(path).Length, expected)))
+                if (this.languageModelOverride is not null
+                    && (asset.FileName == ModelCatalog.LanguageModelQ4FileName
+                        || asset.FileName == ModelCatalog.LanguageModelQ4DataFileName))
+                {
+                    continue;
+                }
+
+                // The default voice is existence-checked below via the resolver: the bundled
+                // clip is a PCM16 conversion of the pinned HF download, so its byte size
+                // legitimately differs from the catalog pin (any playable wav is fine).
+                if (asset.FileName == ModelCatalog.DefaultVoiceFileName)
+                {
+                    continue;
+                }
+
+                if (!this.AssetPresent(asset.FileName, asset.SizeBytes))
                 {
                     return false;
                 }
             }
 
-            // The reference voice must resolve too — no default clip, no synthesis.
-            return this.voicePathResolver(ModelCatalog.DefaultVoiceFileName) is not null
-                && this.EnsureTokenizer() is not null;
+            if (!this.AssetPresent(lmInUse, null))
+            {
+                return false;
+            }
+
+            // The default reference voice must exist on disk — no clip, no synthesis.
+            var voicePath = this.voicePathResolver("default");
+            if (voicePath is null || !File.Exists(voicePath))
+            {
+                return false;
+            }
+
+            return this.EnsureTokenizer() is not null;
         }
+    }
+
+    private bool AssetPresent(string fileName, long? expectedSize)
+    {
+        var path = Path.Combine(this.modelsDir, fileName);
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        expectedSize ??= ModelCatalog.Assets
+            .FirstOrDefault(a => a.Asset.FileName == fileName)?.Asset.SizeBytes;
+        return expectedSize is not { } expected
+            || FileModelStore.SizeWithinTolerance(new FileInfo(path).Length, expected);
     }
 
     public async Task<SynthesisResult> SynthesizeAsync(
@@ -322,7 +365,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
             try
             {
-                this.tokenizer = this.tokenizerFactory();
+                this.tokenizer = this.tokenizerFactory!();
             }
             catch (Exception ex)
             {
@@ -340,15 +383,20 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     {
         SessionOptions? options = null;
         InferenceSession encoder, embed, lm, decoder;
+        var created = new List<InferenceSession>(); // disposed if a later session fails
         try
         {
             var (epOptions, ep) = EpSelector.CreateSessionOptions(
                 this.executionProvider, message => this.log?.Info(message));
             options = epOptions;
             encoder = this.CreateSession(ModelCatalog.SpeechEncoderFileName, epOptions);
+            created.Add(encoder);
             embed = this.CreateSession(ModelCatalog.EmbedTokensFileName, epOptions);
+            created.Add(embed);
             lm = this.CreateSession(this.languageModelOverride ?? ModelCatalog.LanguageModelQ4FileName, epOptions);
+            created.Add(lm);
             decoder = this.CreateSession(ModelCatalog.ConditionalDecoderFileName, epOptions);
+            created.Add(decoder);
             this.log?.Info($"Chatterbox sessions initialized on EP '{ep}'.");
             return new Engine(encoder, embed, lm, decoder, ep, options);
         }
@@ -357,6 +405,11 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             // Provider-level failure at session creation (e.g. CoreML rejects a graph):
             // retry everything on CPU so the engine still works.
             this.log?.Warn("Execution provider rejected a session; retrying on CPU.");
+            foreach (var session in created)
+            {
+                session.Dispose();
+            }
+
             options?.Dispose();
             var cpuOptions = EpSelector.CreateSessionOptions("cpu").Options;
             encoder = this.CreateSession(ModelCatalog.SpeechEncoderFileName, cpuOptions);

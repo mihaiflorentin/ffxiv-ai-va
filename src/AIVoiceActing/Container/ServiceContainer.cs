@@ -88,8 +88,13 @@ public sealed class ServiceContainer : IDisposable
                 return this.speechSynthesizer ??= this.RegisterDisposable(
                     new ChatterboxSynthesizer(
                         this.ModelsDir,
-                        voicePathResolver: voiceId => Path.Combine(
-                            this.ModelsDir, "voices", $"{voiceId}.wav"),
+                        // Convention: the provisioner writes catalog assets flat, so the
+                        // bundled fallback clip id "default" resolves to
+                        // ModelsDir/default_voice.wav; plugin-installed clips live under
+                        // ModelsDir/voices/{id}.wav (wired in Steps 5-6).
+                        voicePathResolver: voiceId => voiceId == "default"
+                            ? Path.Combine(this.ModelsDir, "default_voice.wav")
+                            : Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav"),
                         executionProvider: "auto",
                         log: this.LogSinkUnlocked()));
             }
