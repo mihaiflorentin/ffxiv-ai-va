@@ -1,0 +1,13 @@
+{
+  "Author": "Mihai",
+  "Name": "AI Voice Acting",
+  "Punchline": "Local AI voice acting for FFXIV dialogue, cutscenes, and chat.",
+  "Description": "Voice-acts quest dialogue, BattleTalk, cutscene lines, and chat channels with local AI voices. Every character keeps a persistent, deterministic voice; delivery is shaped by dialogue context; and the game's own voiced lines always win.",
+  "InternalName": "AIVoiceActing",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "tts",
+    "voice acting",
+    "accessibility"
+  ]
+}
