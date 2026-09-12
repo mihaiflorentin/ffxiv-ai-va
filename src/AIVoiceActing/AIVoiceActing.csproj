@@ -31,5 +31,8 @@
     <EmbeddedResource Include="Domain\voices.json" />
     <EmbeddedResource Include="Infrastructure\Dalamud\overridenModelIds.txt" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="voices\default_voice.wav" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 
 </Project>
