@@ -17,6 +17,10 @@
          MUST stay on the same version; the DirectML package tops out at 1.24.4. -->
     <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Publish output must live OUTSIDE $(OutputPath): DalamudPackager zips the whole
+         $(OutputPath) tree when it builds latest.zip at Build time, so a publish/ folder
+         inside it gets baked into the zip as a nested duplicate of every file. -->
+    <PublishDir>$(BaseOutputPath)publish\</PublishDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -34,6 +38,26 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="voices\default_voice.wav" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="icon.png" Link="icon.png">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
+  <!-- DalamudPackager packs everything under $(OutputPath), and the NuGet copy pipeline
+       drops a runtimes/ tree there (RID-specific natives, incl. the osx-arm64 tokenizers
+       dylib) next to the DirectML package's debug pdb/dll junk. Flatten the natives the
+       game actually loads to the output root and delete the rest before packing, so
+       latest.zip holds exactly: plugin dll/pdb/deps/manifest, managed deps, required
+       natives (onnxruntime, DirectML, providers_shared, hf_tokenizers), icon.png and
+       voices/. The RemoveDir also clears stale publish/ folders left by the old
+       in-OutputPath PublishDir layout. -->
+  <Target Name="PreparePackOutput" BeforeTargets="DefaultDalamudPackagerRelease;DefaultDalamudPackagerDebug">
+    <ItemGroup>
+      <_RequiredNative Include="$(OutputPath)runtimes/win-x64/native/*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_RequiredNative)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+    <RemoveDir Directories="$(OutputPath)runtimes" Condition="Exists('$(OutputPath)runtimes')" />
+    <RemoveDir Directories="$(OutputPath)publish" Condition="Exists('$(OutputPath)publish')" />
+    <Delete Files="$(OutputPath)DirectML.Debug.dll;$(OutputPath)DirectML.Debug.pdb;$(OutputPath)DirectML.pdb" />
+  </Target>
 </Project>

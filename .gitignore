@@ -6,3 +6,5 @@ obj/
 ConfigDirectory/
 models/
 .dalamud/
+artifacts/
+src/AIVoiceActing/publish/
