@@ -41,30 +41,6 @@
     "id": "bf_alice"
    }
   ],
-  "deepMale": [
-   {
-    "id": "am_onyx",
-    "pitch": 0.88,
-    "speed": 0.95
-   },
-   {
-    "id": "am_fenrir",
-    "pitch": 0.88,
-    "speed": 0.95
-   }
-  ],
-  "deepFemale": [
-   {
-    "id": "af_alloy",
-    "pitch": 0.92,
-    "speed": 0.97
-   },
-   {
-    "id": "af_river",
-    "pitch": 0.92,
-    "speed": 0.97
-   }
-  ],
   "childMale": [
    {
     "id": "bm_fable",
@@ -108,13 +84,16 @@
   ],
   "midlanderMale": [
    {
+    "id": "bm_daniel"
+   },
+   {
     "id": "bm_fable"
    },
    {
     "id": "bm_george"
    },
    {
-    "id": "am_echo"
+    "id": "bm_lewis"
    }
   ],
   "midlanderFemale": [
@@ -125,7 +104,10 @@
     "id": "bf_alice"
    },
    {
-    "id": "af_nova"
+    "id": "bf_emma"
+   },
+   {
+    "id": "bf_isabella"
    }
   ],
   "highlanderMale": [
@@ -186,18 +168,6 @@
     "id": "am_eric"
    }
   ],
-  "hrothgarMale": [
-   {
-    "id": "am_fenrir",
-    "pitch": 0.82,
-    "speed": 0.92
-   },
-   {
-    "id": "am_onyx",
-    "pitch": 0.82,
-    "speed": 0.92
-   }
-  ],
   "vieraMale": [
    {
     "id": "em_alex"
@@ -211,6 +181,9 @@
   "chineseMale": [
    {
     "id": "zm_yunjian"
+   },
+   {
+    "id": "zm_yunyang"
    }
   ],
   "chineseFemale": [
@@ -219,6 +192,28 @@
    },
    {
     "id": "jf_alpha"
+   },
+   {
+    "id": "jf_tebukuro"
+   },
+   {
+    "id": "zf_xiaoyi"
+   }
+  ],
+  "roegadynMale": [
+   {
+    "id": "im_nicola"
+   },
+   {
+    "id": "em_santa"
+   },
+   {
+    "id": "hm_psi"
+   }
+  ],
+  "roegadynFemale": [
+   {
+    "id": "if_sara"
    }
   ]
  },
@@ -231,17 +226,17 @@
   "3|Female": "childFemale",
   "4|Male": "poshMale",
   "4|Female": "poshFemale",
-  "5|Male": "deepMale",
-  "5|Female": "deepFemale",
+  "5|Male": "roegadynMale",
+  "5|Female": "roegadynFemale",
   "6|Male": "chineseMale",
   "6|Female": "chineseFemale",
-  "7|Male": "hrothgarMale",
-  "7|Female": "deepFemale",
+  "7|Male": "roegadynMale",
+  "7|Female": "roegadynFemale",
   "8|Male": "vieraMale",
   "8|Female": "vieraFemale"
  },
  "disabledSets": {
-  "why": "Parked casts: activation = append 'modelId ; Name ; setKey' to overridenModelIds.txt. The jf_/jm_ (Japanese) bank garbles English on the v1.0 model (user-reported in game), so any cast using it stays parked. The zf_/zm_ (Chinese) bank was auditioned by the user on 2026-09-14 and is now ACTIVE for Au Ra. F5-clip casting (Piper-generated accents) was dropped the same day: play stays Kokoro-only.",
+  "why": "Parked casts: activation = append 'modelId ; Name ; setKey' to overridenModelIds.txt. The jf_/jm_ (Japanese) bank garbles English on the v1.0 model (user-reported in game), so any cast using it stays parked. The zf_/zm_ (Chinese) bank was auditioned by the user on 2026-09-14 and is now ACTIVE for Au Ra. F5-clip casting (Piper-generated accents) was dropped the same day: play stays Kokoro-only. deepMale (am_onyx 0.88) parked 2026-09-14: user moved Roegadyn male to im_nicola after disliking am_fenrir. hrothgarMale/deepFemale parked 2026-09-14: user found no suitable Hrothgar voices; Hrothgar now shares the Roegadyn cast.",
   "sets": {
    "icelandicMale": [
     {
@@ -532,6 +527,37 @@
    "setItalianfemale": [
     {
      "id": "if_sara"
+    }
+   ],
+   "deepMaleParked": [
+    {
+     "id": "am_onyx",
+     "pitch": 0.88,
+     "speed": 0.95
+    }
+   ],
+   "hrothgarMaleParked": [
+    {
+     "id": "am_fenrir",
+     "pitch": 0.82,
+     "speed": 0.92
+    },
+    {
+     "id": "am_onyx",
+     "pitch": 0.82,
+     "speed": 0.92
+    }
+   ],
+   "deepFemaleParked": [
+    {
+     "id": "af_alloy",
+     "pitch": 0.92,
+     "speed": 0.97
+    },
+    {
+     "id": "af_river",
+     "pitch": 0.92,
+     "speed": 0.97
     }
    ]
   },

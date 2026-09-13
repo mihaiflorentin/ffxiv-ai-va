@@ -66,21 +66,28 @@ public sealed class RaceVoiceMapTests
     public void AuRa_UsesChineseBank()
     {
         var map = LoadDefault();
-        // zf_/zm_ verified by ear on the v1.0 model; jf_alpha joined on user verdict.
-        Assert.All(map.SlotsFor(VoiceGroup.Male, 6).Select(s => s.Id), id => Assert.Equal("zm_yunjian", id));
+        // zf_/zm_ verified by ear on the v1.0 model; jf_alpha and jf_tebukuro joined
+        // on user verdict. jm_kumo stays parked (garbles English).
         Assert.Equal(
-            new HashSet<string> { "zf_xiaoxiao", "jf_alpha" },
+            new HashSet<string> { "zm_yunjian", "zm_yunyang" },
+            map.SlotsFor(VoiceGroup.Male, 6).Select(s => s.Id).ToHashSet());
+        Assert.Equal(
+            new HashSet<string> { "zf_xiaoxiao", "jf_alpha", "jf_tebukuro", "zf_xiaoyi" },
             map.SlotsFor(VoiceGroup.Female, 6).Select(s => s.Id).ToHashSet());
     }
 
     [Fact]
-    public void RoegadynAndHrothgar_UseDeepSet()
+    public void Roegadyn_And_Hrothgar_ShareItalianBankCast()
     {
         var map = LoadDefault();
+        // Roegadyn: im_nicola/em_santa/hm_psi on user verdict (am_fenrir disliked).
+        // Hrothgar: no suitable voices found, so it shares the Roegadyn cast.
         foreach (var race in new byte?[] { 5, 7 })
         {
-            Assert.All(map.SlotsFor(VoiceGroup.Male, race).Select(s => s.Id), id => Assert.StartsWith("am_", id));
-            Assert.All(map.SlotsFor(VoiceGroup.Female, race).Select(s => s.Id), id => Assert.StartsWith("af_", id));
+            Assert.Equal(
+                new HashSet<string> { "im_nicola", "em_santa", "hm_psi" },
+                map.SlotsFor(VoiceGroup.Male, race).Select(s => s.Id).ToHashSet());
+            Assert.All(map.SlotsFor(VoiceGroup.Female, race).Select(s => s.Id), id => Assert.Equal("if_sara", id));
         }
     }
 
