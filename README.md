@@ -28,13 +28,23 @@ Models are downloaded to `ConfigDirectory/models/` at runtime; nothing model-siz
 
 ## Install
 
-Plugin repository (after first tagged release):
+The repository must be public — the plugin installer and the manual download link below fetch files unauthenticated.
 
-```
-https://<owner>.github.io/<repo>/repo.json
-```
+**Option A — plugin repository (automatic updates):**
 
-Manual install: download `latest.zip` from a GitHub release and unzip it into `%AppData%\XIVLauncher\installedPlugins\AIVoiceActing\` (or install via any Dalamud plugin repo pointing at the zip). Launch the game, open `/aivaconfig`, and use the **Models** tab to download the model files.
+1. In XIVLauncher, open **Settings → Dalamud** and add this URL under **Custom Plugin Repositories**:
+
+    ```
+    https://raw.githubusercontent.com/mihaiflorentin/ffxiv-ai-va/gh-pages/repo.json
+    ```
+
+2. Open the plugin installer, find **AI Voice Acting**, and install it.
+
+**Option B — manual:**
+
+Download `latest.zip` from the [releases page](https://github.com/mihaiflorentin/ffxiv-ai-va/releases) — direct link: <https://github.com/mihaiflorentin/ffxiv-ai-va/releases/latest/download/latest.zip> — and extract it into `%APPDATA%\XIVLauncher\devPlugins\AIVoiceActing\` so that folder directly contains `AIVoiceActing.dll`.
+
+**First use:** launch the game, run `/aivaconfig`, open the **Models** tab, and press **Download** (~1.1 GB, one time; the button is the only trigger). Voices start working immediately after the download finishes.
 
 ## Building from source
 
