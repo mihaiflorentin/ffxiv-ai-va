@@ -169,11 +169,25 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Renders paralinguistic tags as "[tag] " prompt prefixes before the text.</summary>
-    public static string BuildPromptText(IReadOnlyList<string> tags, string text) =>
-        tags.Count == 0
+    /// <summary>
+    /// Renders paralinguistic tags as "[tag] " prompt prefixes before the text, and
+    /// guarantees sentence-final punctuation: the LM only emits STOP after it, and an
+    /// unpunctuated line otherwise runs to the token cap and decodes as noise
+    /// (measured: "this is a test" → 255 tokens of low-frequency rumble;
+    /// "This is a test." → 36 tokens of speech).
+    /// </summary>
+    public static string BuildPromptText(IReadOnlyList<string> tags, string text)
+    {
+        var prompt = tags.Count == 0
             ? text
             : string.Concat(tags.Select(tag => $"[{tag}] ")) + text;
+
+        return prompt.Length > 0 && !SentenceFinalPunctuation.Contains(prompt[^1])
+            ? prompt + "."
+            : prompt;
+    }
+
+    private static readonly char[] SentenceFinalPunctuation = ['.', '!', '?', '…'];
 
     public void Dispose()
     {
@@ -226,7 +240,13 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         // Greedy generation state.
         var generated = new List<long> { StartSpeechToken }; // card: generate_tokens = [[6561]]
         DenseTensor<long> attentionMask = null!;
-        var past = new Dictionary<string, DenseTensor<float>>();
+        // KV cache MUST be an ordered list: the card relies on Python dict insertion
+        // order (layer-major, key-then-value) to zip the model's positional present
+        // outputs back by name. A .NET Dictionary iterates in hash order, which
+        // scrambles the layers and feeds the model garbage from step 2 on — the
+        // generation never emits STOP and the decoder renders noise.
+        var pastNames = new List<string>(NumHiddenLayers * 2);
+        var pastTensors = new List<DenseTensor<float>>(NumHiddenLayers * 2);
 
         for (var step = 0; step < MaxNewTokens; step++)
         {
@@ -243,16 +263,21 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             DenseTensor<float> inputsEmbeds;
             if (step == 0)
             {
-                // Condition embedding precedes the text prompt in the sequence.
                 var condFrames = reference.CondShape[1];
                 var embedFrames = textEmbeds.Length / EmbedWidth(eng.EmbedTokens);
                 inputsEmbeds = new DenseTensor<float>([1, condFrames + embedFrames, EmbedWidth(eng.EmbedTokens)]);
+                // Card: np.concatenate((cond_emb, inputs_embeds), axis=1) — the condition
+                // embedding precedes the text prompt, and BOTH are written into the buffer.
                 reference.CondEmb.AsSpan().CopyTo(inputsEmbeds.Buffer.Span);
+                textEmbeds.AsSpan().CopyTo(
+                    inputsEmbeds.Buffer.Span[(condFrames * EmbedWidth(eng.EmbedTokens))..]);
                 // Card: zeros [B, 16, 0, 64] per layer/key-value before the first LM step.
                 for (var layer = 0; layer < NumHiddenLayers; layer++)
                 {
-                    past[$"past_key_values.{layer}.key"] = new DenseTensor<float>([1, NumKvHeads, 0, HeadDim]);
-                    past[$"past_key_values.{layer}.value"] = new DenseTensor<float>([1, NumKvHeads, 0, HeadDim]);
+                    pastNames.Add($"past_key_values.{layer}.key");
+                    pastTensors.Add(new DenseTensor<float>([1, NumKvHeads, 0, HeadDim]));
+                    pastNames.Add($"past_key_values.{layer}.value");
+                    pastTensors.Add(new DenseTensor<float>([1, NumKvHeads, 0, HeadDim]));
                 }
 
                 attentionMask = new DenseTensor<long>([1, inputsEmbeds.Dimensions[1]]);
@@ -267,10 +292,14 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
                 textEmbeds.AsSpan().CopyTo(inputsEmbeds.Buffer.Span);
             }
 
-            var lmInputs = new List<NamedOnnxValue> { NamedOnnxValue.CreateFromTensor("inputs_embeds", inputsEmbeds), NamedOnnxValue.CreateFromTensor("attention_mask", attentionMask) };
-            foreach (var kv in past)
+            var lmInputs = new List<NamedOnnxValue>
             {
-                lmInputs.Add(NamedOnnxValue.CreateFromTensor(kv.Key, kv.Value));
+                NamedOnnxValue.CreateFromTensor("inputs_embeds", inputsEmbeds),
+                NamedOnnxValue.CreateFromTensor("attention_mask", attentionMask),
+            };
+            for (var j = 0; j < pastNames.Count; j++)
+            {
+                lmInputs.Add(NamedOnnxValue.CreateFromTensor(pastNames[j], pastTensors[j]));
             }
 
             float[] lastLogits;
@@ -283,11 +312,11 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
                 lastLogits = TensorSpan(logitsTensor)[^vocab..].ToArray();
                 // ORT owns output memory — clone the present tensors before the results
                 // collection is disposed (numpy gives the Python card this for free).
-                // Card: past[key] = present[j] positional zip, layer-major key-then-value.
-                var pastNames = past.Keys.ToArray();
-                for (var j = 0; j < pastNames.Length; j++)
+                // Positional zip over the SAME ordered names the inputs were built from —
+                // the ONNX graph returns present tensors in that layer-major order.
+                for (var j = 0; j < pastNames.Count; j++)
                 {
-                    past[pastNames[j]] = CopyTensor(unwrap<float>(lmOutputs[1 + j]));
+                    pastTensors[j] = CopyTensor(unwrap<float>(lmOutputs[1 + j]));
                 }
             }
 

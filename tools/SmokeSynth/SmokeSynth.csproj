@@ -15,6 +15,8 @@
     <PackageReference Include="Tokenizers.DotNet" Version="1.4.1" />
     <PackageReference Include="Tokenizers.DotNet.runtime.osx-arm64" Version="1.4.1" />
     <PackageReference Include="Tokenizers.DotNet.runtime.win-x64" Version="1.4.1" />
+    <!-- Linux lets the harness run the engine on the dev workstation (CPU EP). -->
+    <PackageReference Include="Tokenizers.DotNet.runtime.linux-x64" Version="1.4.1" />
     <PackageReference Include="Standart.Hash.xxHash" Version="4.0.5" />
   </ItemGroup>
 

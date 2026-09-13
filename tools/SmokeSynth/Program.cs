@@ -97,6 +97,8 @@ internal static class Program
             var log = new ConsoleLogSink();
             var tokenizer = new TokenizersDotNetTokenizer(
                 Path.Combine(modelsDir, ModelCatalog.TokenizerJsonFileName));
+            Console.WriteLine(
+                $"text ids: [{string.Join(", ", tokenizer.Encode(ChatterboxSynthesizer.BuildPromptText([.. tags], text)))}]");
             var synthesizer = new ChatterboxSynthesizer(
                 modelsDir: modelsDir,
                 voicePathResolver: _ => reference,
