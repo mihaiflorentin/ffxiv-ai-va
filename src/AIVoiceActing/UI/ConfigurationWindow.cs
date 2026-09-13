@@ -307,7 +307,6 @@ public sealed class ConfigurationWindow : Window
         }
     }
 
-    private int RequiredAssetCount() => this.modelStore().Missing().Count;
 
     /// <summary>Live not-ready reason for tooltips; falls back to the generic hint.</summary>
     private string EngineReason() =>
@@ -323,10 +322,14 @@ public sealed class ConfigurationWindow : Window
     {
         var provisioner = this.provisioner();
         var anyDownload = this.downloading is not null;
+        var kokoroSelected = this.config.SelectedEngine != "chatterbox";
 
-        ImGui.TextWrapped(
-            "Local Chatterbox ONNX assets (~0.9 GB required). Downloads go to the plugin's " +
-            "models directory and run only when you press a button.");
+        ImGui.TextWrapped(kokoroSelected
+            ? "Kokoro engine (default): one 310 MB model — the 50+ voice banks ship inside " +
+              "the plugin. The Chatterbox rows below are the legacy fallback; only download " +
+              "them if you switch engines in Speech Settings."
+            : "Chatterbox engine (legacy fallback, ~0.9 GB required): voice cloning, much " +
+              "slower than Kokoro. The Kokoro row is the default engine's model.");
 
         if (anyDownload)
         {
@@ -348,17 +351,22 @@ public sealed class ConfigurationWindow : Window
             this.TryOpen(this.voicesDir());
         }
 
-        var missing = this.modelStore().Missing();
+        var assets = this.modelAssets();
+        var missingActive = assets
+            .Where(a => this.IsActiveEngineAsset(a) && !a.Optional && !provisioner.IsDownloaded(a))
+            .ToList();
         if (Controls.Button(
-                ModelsTabModel.DownloadAllLabel(missing.Count),
-                ModelsTabModel.CanDownloadAll(anyDownload, missing.Count),
+                ModelsTabModel.DownloadAllLabel(missingActive.Count),
+                ModelsTabModel.CanDownloadAll(anyDownload, missingActive.Count),
                 anyDownload ? "A download is already in progress." : null))
         {
-            this.StartDownloads(missing);
+            this.StartDownloads(missingActive);
         }
 
         ImGui.Separator();
 
+        // Active engine's assets first; the other engine's rows read as legacy fallback.
+        var ordered = assets.Where(this.IsActiveEngineAsset).Concat(assets.Where(a => !this.IsActiveEngineAsset(a)));
         if (ImGui.BeginTable("##models", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
         {
             ImGui.TableSetupScrollFreeze(0, 1);
@@ -368,7 +376,7 @@ public sealed class ConfigurationWindow : Window
             ImGui.TableSetupColumn("##action", ImGuiTableColumnFlags.WidthFixed, 100f);
             ImGui.TableHeadersRow();
 
-            foreach (var asset in this.modelAssets())
+            foreach (var asset in ordered)
             {
                 var row = ModelsTabModel.Row(asset, provisioner.IsDownloaded(asset));
                 ImGui.TableNextRow();
@@ -379,7 +387,7 @@ public sealed class ConfigurationWindow : Window
                 ImGui.TableNextColumn();
                 var status = this.downloading?.FileName == asset.FileName
                     ? "downloading…"
-                    : ModelsTabModel.StatusLabel(row);
+                    : ModelsTabModel.StatusLabel(row, requiredForSelectedEngine: this.IsActiveEngineAsset(asset));
                 ImGui.TextUnformatted(status);
                 ImGui.TableNextColumn();
                 if (row.Downloaded)
@@ -401,6 +409,20 @@ public sealed class ConfigurationWindow : Window
             ImGui.EndTable();
         }
     }
+
+    /// <summary>True when the asset belongs to the engine selected in Speech Settings.
+    /// Matches the catalog's local file name (the port layer has no engine concept).</summary>
+    private const string KokoroModelFileName = "kokoro-v1.0.onnx";
+
+    private bool IsActiveEngineAsset(ModelAsset asset) =>
+        this.config.SelectedEngine == "chatterbox"
+            ? asset.FileName != KokoroModelFileName
+            : asset.FileName == KokoroModelFileName;
+
+    private int RequiredAssetCount() => this.modelAssets()
+        .Count(a => this.IsActiveEngineAsset(a)
+            && !a.Optional
+            && !this.modelStore().IsDownloaded(a.FileName));
 
     // ---- Tab 3: Status ----
 

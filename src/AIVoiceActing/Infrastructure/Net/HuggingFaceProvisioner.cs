@@ -6,7 +6,8 @@ using AIVoiceActing.Infrastructure.Storage;
 using AIVoiceActing.Ports;
 
 /// <summary>
-/// Downloads pinned model assets from the Chatterbox ONNX HF repo. Streams to
+/// Downloads pinned catalog assets (per-asset resolve URLs from <see cref="ModelCatalog"/>:
+/// Chatterbox lives on Hugging Face, Kokoro on a GitHub release). Streams to
 /// "&lt;dest&gt;.part", verifies pinned size (±5%) and sha256 when known, then atomically
 /// moves into place; the .part file never survives a failure or cancellation.
 /// Downloads happen only on explicit request (Models tab button / SmokeSynth).
@@ -27,7 +28,6 @@ public sealed class HuggingFaceProvisioner : IModelProvisioner
     /// with the full catalog (single is-downloaded implementation).</param>
     public HuggingFaceProvisioner(
         string modelsDir,
-        string? baseUrl = null,
         HttpMessageHandler? handler = null,
         ILogSink? log = null,
         IModelStore? store = null)
@@ -39,13 +39,11 @@ public sealed class HuggingFaceProvisioner : IModelProvisioner
         this.http = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: true);
         this.http.Timeout = TimeSpan.FromMinutes(30);
         this.http.DefaultRequestHeaders.UserAgent.ParseAdd("AIVoiceActing/0.1 (Dalamud plugin; ffxiv-ai-va)");
-        this.BaseUrl = baseUrl ?? ModelCatalog.RepoBaseUrl;
         this.log = log;
     }
 
-    private string BaseUrl { get; }
-
     public bool IsDownloaded(ModelAsset asset) => this.store.IsDownloaded(asset.FileName);
+
 
     public async Task DownloadAsync(
         ModelAsset asset,
@@ -58,7 +56,7 @@ public sealed class HuggingFaceProvisioner : IModelProvisioner
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, this.BaseUrl + asset.FileName);
+            using var request = new HttpRequestMessage(HttpMethod.Get, ModelCatalog.UrlFor(asset));
             using var response = await this.http
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
                 .ConfigureAwait(false);

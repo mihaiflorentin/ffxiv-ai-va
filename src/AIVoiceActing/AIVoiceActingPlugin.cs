@@ -262,8 +262,12 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         this.services.OpenStylesUi = this.stylesWindow.Toggle;
         this.openConfigUiHook = () => this.configWindow.IsOpen = true;
         var uiBuilder = PluginInterface.UiBuilder;
-        uiBuilder.Draw += this.windowSystem.Draw;
+        // OpenMainUi is the modern Dalamud main-window hook (its absence raises a
+        // validation warning in /xlplugins); OpenConfigUi stays for the system menu.
+        // Our configuration window is both.
+        uiBuilder.OpenMainUi += this.openConfigUiHook;
         uiBuilder.OpenConfigUi += this.openConfigUiHook;
+        uiBuilder.Draw += this.windowSystem.Draw;
 
         this.services.LogSink.Info("AIVoiceActing UI: configuration and styles windows registered.");
         this.RegisterCommands();
@@ -431,6 +435,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         // the container.
         var uiBuilder = PluginInterface.UiBuilder;
         uiBuilder.Draw -= this.windowSystem.Draw;
+        uiBuilder.OpenMainUi -= this.openConfigUiHook;
         uiBuilder.OpenConfigUi -= this.openConfigUiHook;
         this.windowSystem.RemoveAllWindows();
         Framework.Update -= this.OnFrameworkUpdate;

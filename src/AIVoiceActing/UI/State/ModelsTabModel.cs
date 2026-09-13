@@ -24,21 +24,25 @@ public static class ModelsTabModel
         asset.Optional);
 
     /// <summary>"downloaded" / "missing" / "optional (missing)"; the draw layer prefixes
-    /// "downloading…" while a download is in flight.</summary>
-    public static string StatusLabel(AssetRow row) =>
+    /// "downloading…" while a download is in flight. Assets of the NON-selected engine
+    /// read as legacy fallback instead of implying the engine is broken without them.</summary>
+    public static string StatusLabel(AssetRow row, bool requiredForSelectedEngine = true) =>
         row.Downloaded
             ? "downloaded"
-            : row.Optional
-                ? "optional (missing)"
-                : "missing";
+            : !requiredForSelectedEngine
+                ? "legacy fallback"
+                : row.Optional
+                    ? "optional (missing)"
+                    : "missing";
+
+    /// <summary>Bulk-action label, scoped to the selected engine's assets.</summary>
+    public static string DownloadAllLabel(int missingCount) =>
+        missingCount > 0 ? $"Download all missing ({missingCount})" : "All required assets downloaded";
 
     /// <summary>A download may start only when idle and the asset is absent.</summary>
     public static bool CanDownload(bool downloadInFlight, AssetRow row) =>
         !downloadInFlight && !row.Downloaded;
 
-    /// <summary>Label for the bulk Models-tab action.</summary>
-    public static string DownloadAllLabel(int missingCount) =>
-        missingCount > 0 ? $"Download all missing ({missingCount})" : "All required assets downloaded";
 
     /// <summary>The bulk action is clickable only when idle and required assets are missing.</summary>
     public static bool CanDownloadAll(bool downloadInFlight, int missingCount) =>
