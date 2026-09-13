@@ -117,6 +117,9 @@ public sealed class VoiceTable
                     this.pending[profile.SpeakerKey] = (voiceId, Math.Clamp(bias, 0f, 1f));
                 }
 
+                Controls.Tooltip("Exaggeration bias added on top of the default for this speaker: 0 follows the global setting, higher is more theatrical.");
+
+
                 if (ImGui.IsItemDeactivatedAfterEdit()
                     && this.pending.Remove(profile.SpeakerKey, out var committed))
                 {
@@ -159,6 +162,8 @@ public sealed class VoiceTable
             form.Name = name;
         }
 
+        Controls.Tooltip("The character's name exactly as it appears in chat.");
+
         if (this.showWorld)
         {
             ImGui.SameLine();
@@ -168,6 +173,8 @@ public sealed class VoiceTable
             {
                 form.World = world;
             }
+
+            Controls.Tooltip("Numeric world id distinguishing same-named characters across worlds.");
         }
 
         ImGui.SameLine();

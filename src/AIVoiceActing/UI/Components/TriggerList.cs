@@ -50,6 +50,8 @@ public static class TriggerList
                     save();
                 }
 
+                Controls.Tooltip("Treat the text as a .NET regular expression instead of a plain substring.");
+
                 ImGui.PopID();
             }
 

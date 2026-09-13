@@ -50,7 +50,7 @@ public sealed class ModelCatalogTests
     public void RequiredGroup_HoldsExactlyTheTenChatterboxAssets_AndKokoroAndF5AreSeparate()
     {
         Assert.Equal(10, ModelCatalog.ChatterboxRequiredAssets.Count);
-        Assert.Equal(17, ModelCatalog.Assets.Count);
+        Assert.Equal(27, ModelCatalog.Assets.Count);
         Assert.All(ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.ChatterboxRequiredGroup),
             a => Assert.False(a.Asset.Optional));
         Assert.All(ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.ChatterboxFp32LmGroup), a => Assert.True(a.Asset.Optional));
@@ -70,6 +70,16 @@ public sealed class ModelCatalogTests
         Assert.Equal(
             ModelCatalog.F5RepoBaseUrl + "F5_Transformer.onnx",
             ModelCatalog.UrlFor(f5.Single(a => a.Asset.FileName == ModelCatalog.F5TransformerFileName).Asset));
+
+        var turbo = ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.TurboGroup).ToArray();
+        Assert.Equal(10, turbo.Length);
+        Assert.All(turbo, a => Assert.False(a.Asset.Optional));
+        Assert.Equal(
+            ModelCatalog.TurboRepoBaseUrl + "onnx/language_model.onnx",
+            ModelCatalog.UrlFor(turbo.Single(a => a.Asset.FileName == ModelCatalog.TurboLanguageModelFileName).Asset));
+        Assert.Equal(
+            ModelCatalog.TurboRepoBaseUrl + "tokenizer.json",
+            ModelCatalog.UrlFor(turbo.Single(a => a.Asset.FileName == ModelCatalog.TurboTokenizerJsonFileName).Asset));
     }
 
     [Fact]

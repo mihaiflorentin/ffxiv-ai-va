@@ -19,12 +19,17 @@ public static class Controls
     }
 
     /// <summary>Checkbox bound to a config property: <c>Controls.Checkbox("Label", () => c.X, v => { c.X = v; save(); })</c>.</summary>
-    public static void Checkbox(string label, Func<bool> get, Action<bool> apply)
+    public static void Checkbox(string label, Func<bool> get, Action<bool> apply, string? tooltip = null)
     {
         var value = get();
         if (ImGui.Checkbox(label, ref value))
         {
             apply(value);
+        }
+
+        if (tooltip is not null)
+        {
+            Tooltip(tooltip);
         }
     }
 
@@ -35,7 +40,7 @@ public static class Controls
     }
 
     /// <summary>Slider 0..1 (fraction) bound to a float config property.</summary>
-    public static void SliderFraction(string label, Func<float> get, Action<float> write, Action save)
+    public static void SliderFraction(string label, Func<float> get, Action<float> write, Action save, string? tooltip = null)
     {
         var value = get();
         if (ImGui.SliderFloat(label, ref value, 0f, 1f))
@@ -43,11 +48,16 @@ public static class Controls
             write(value);
         }
 
+        if (tooltip is not null)
+        {
+            Tooltip(tooltip);
+        }
+
         PersistOnRelease(save);
     }
 
     /// <summary>Slider over a scaled integer surface (e.g. volume 0–200% stored ÷100).</summary>
-    public static void SliderScaled(string label, float scale, Func<float> get, Action<float> write, Action save)
+    public static void SliderScaled(string label, float scale, Func<float> get, Action<float> write, Action save, string? tooltip = null)
     {
         var value = get() * scale;
         if (ImGui.SliderFloat(label, ref value, 0f, scale, "%.0f"))
@@ -55,11 +65,16 @@ public static class Controls
             write(value / scale);
         }
 
+        if (tooltip is not null)
+        {
+            Tooltip(tooltip);
+        }
+
         PersistOnRelease(save);
     }
 
     /// <summary>DragFloat with hard bounds (rate limiter 0.1–30 msg/s).</summary>
-    public static void DragFloat(string label, float min, float max, Func<float> get, Action<float> write, Action save)
+    public static void DragFloat(string label, float min, float max, Func<float> get, Action<float> write, Action save, string? tooltip = null)
     {
         var value = get();
         if (ImGui.DragFloat(label, ref value, (max - min) / 200f, min, max, "%.1f"))
@@ -67,31 +82,46 @@ public static class Controls
             write(Math.Clamp(value, min, max));
         }
 
+        if (tooltip is not null)
+        {
+            Tooltip(tooltip);
+        }
+
         PersistOnRelease(save);
     }
 
     /// <summary>Integer combo bound to a config property (indexes into <paramref name="items"/>).</summary>
-    public static void Combo(string label, IReadOnlyList<string> items, Func<int> get, Action<int> apply)
+    public static void Combo(string label, IReadOnlyList<string> items, Func<int> get, Action<int> apply, string? tooltip = null)
     {
         var index = Math.Clamp(get(), 0, items.Count - 1);
         if (ImGui.Combo(label, ref index, items))
         {
             apply(index);
         }
+
+        if (tooltip is not null)
+        {
+            Tooltip(tooltip);
+        }
     }
 
     /// <summary>String combo by value (EP selector: auto/cpu/directml/coreml).</summary>
-    public static void Combo(string label, IReadOnlyList<string> items, Func<string> get, Action<string> apply)
+    public static void Combo(string label, IReadOnlyList<string> items, Func<string> get, Action<string> apply, string? tooltip = null)
     {
         var index = Math.Max(0, items.ToList().IndexOf(get()));
         if (ImGui.Combo(label, ref index, items))
         {
             apply(items[index]);
         }
+
+        if (tooltip is not null)
+        {
+            Tooltip(tooltip);
+        }
     }
 
     /// <summary>Keyboard-code combo (VirtualKey wire values: modifiers and keys).</summary>
-    public static void KeyCombo(string label, IReadOnlyList<(int Code, string Name)> keys, Func<int> get, Action<int> apply)
+    public static void KeyCombo(string label, IReadOnlyList<(int Code, string Name)> keys, Func<int> get, Action<int> apply, string? tooltip = null)
     {
         var names = keys.Select(k => k.Name).ToArray();
         var index = keys.ToList().FindIndex(k => k.Code == get());
@@ -103,6 +133,11 @@ public static class Controls
         if (ImGui.Combo(label, ref index, names, names.Length))
         {
             apply(keys[index].Code);
+        }
+
+        if (tooltip is not null)
+        {
+            Tooltip(tooltip);
         }
     }
 
@@ -125,6 +160,15 @@ public static class Controls
         return ImGui.Button(label);
     }
 
+    /// <summary>Hover tooltip on the previously drawn item (use right after a control).</summary>
+    public static void Tooltip(string text)
+    {
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(text);
+        }
+    }
+
     public static void HelpMarker(string text)
     {
         ImGui.SameLine();
@@ -136,10 +180,10 @@ public static class Controls
     }
 
     /// <summary>Indented sub-option (TTT's courtesy toggles sit under their capture source).</summary>
-    public static void IndentedCheckbox(string label, Func<bool> get, Action<bool> apply)
+    public static void IndentedCheckbox(string label, Func<bool> get, Action<bool> apply, string? tooltip = null)
     {
         ImGui.Indent();
-        Checkbox(label, get, apply);
+        Checkbox(label, get, apply, tooltip);
         ImGui.Unindent();
     }
 

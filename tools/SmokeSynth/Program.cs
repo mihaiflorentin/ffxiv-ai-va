@@ -91,7 +91,7 @@ internal static class Program
         }
         // Chatterbox default reference: the bundled MIT fallback clip. Kokoro takes a
         // voice NAME (--ref af_heart); f5 takes a clip id resolved against its bank.
-        if (engine is null or "chatterbox")
+        if (engine is null or "chatterbox" or "turbo")
         {
             reference ??= Path.Combine(AppContext.BaseDirectory, "voices", "default_voice.wav");
             if (!File.Exists(reference))
@@ -117,6 +117,14 @@ internal static class Program
                     () => 4,
                     log,
                     voicesDirFactory: () => reference is null ? null : Path.GetDirectoryName(Path.GetFullPath(reference!)));
+            }
+            else if (engine == "turbo")
+            {
+                synthesizer = ChatterboxSynthesizer.CreateTurbo(
+                    modelsDir: modelsDir,
+                    voicePathResolver: _ => reference,
+                    executionProvider: executionProvider ?? "cpu",
+                    log: log);
             }
             else if (engine == "kokoro")
             {

@@ -186,32 +186,40 @@ public sealed class ConfigurationWindow : Window
 
         if (ImGui.CollapsingHeader("Keybinds"))
         {
-            Controls.Checkbox("Use keybind to toggle TTS", () => c.UseKeybind, v => { c.UseKeybind = v; save(); });
+            Controls.Checkbox("Use keybind to toggle TTS", () => c.UseKeybind, v => { c.UseKeybind = v; save(); },
+                "Hold the keys below to mute or unmute all voice output at once.");
             if (c.UseKeybind)
             {
                 ImGui.Indent();
-                Controls.KeyCombo("Modifier", Modifiers, () => c.ModifierKey, v => { c.ModifierKey = v; save(); });
-                Controls.KeyCombo("Key", MajorKeys, () => c.MajorKey, v => { c.MajorKey = v; save(); });
+                Controls.KeyCombo("Modifier", Modifiers, () => c.ModifierKey, v => { c.ModifierKey = v; save(); }, "First key of the toggle combination.");
+                Controls.KeyCombo("Key", MajorKeys, () => c.MajorKey, v => { c.MajorKey = v; save(); }, "Second key of the toggle combination.");
                 ImGui.Unindent();
             }
         }
 
         if (ImGui.CollapsingHeader("General", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            Controls.Checkbox("Enabled", () => c.Enabled, v => { c.Enabled = v; save(); });
-            Controls.SliderScaled("Global volume %", 200f, () => c.GlobalVolume, v => c.GlobalVolume = v, save);
+            Controls.Checkbox("Enabled", () => c.Enabled, v => { c.Enabled = v; save(); },
+                "Master switch: unchecked stops all synthesis and playback.");
+            Controls.SliderScaled("Global volume %", 200f, () => c.GlobalVolume, v => c.GlobalVolume = v, save,
+                "Playback volume; above 100% boosts quiet voices. 100% plays clips as synthesized.");
 
             Controls.Section("Quest dialogue");
-            Controls.Checkbox("Read quest Talk", () => c.ReadFromQuestTalkAddon, v => { c.ReadFromQuestTalkAddon = v; save(); });
+            Controls.Checkbox("Read quest Talk", () => c.ReadFromQuestTalkAddon, v => { c.ReadFromQuestTalkAddon = v; save(); },
+                "Speak quest dialogue from the Talk addon (the dialogue window during quests).");
             Controls.IndentedCheckbox(
-                "Cancel speech on text advance", () => c.CancelSpeechOnTextAdvance, v => { c.CancelSpeechOnTextAdvance = v; save(); });
+                "Cancel speech on text advance", () => c.CancelSpeechOnTextAdvance, v => { c.CancelSpeechOnTextAdvance = v; save(); },
+                "Stop the current line the moment you click through dialogue, so speech never trails behind.");
             Controls.IndentedCheckbox(
-                "Skip quest text the game voices (courtesy)", () => c.SkipVoicedQuestText, v => { c.SkipVoicedQuestText = v; save(); });
+                "Skip quest text the game voices (courtesy)", () => c.SkipVoicedQuestText, v => { c.SkipVoicedQuestText = v; save(); },
+                "Leave lines the game ships voice acting for to the original actors.");
 
             Controls.Section("Battle dialogue");
-            Controls.Checkbox("Read BattleTalk", () => c.ReadFromBattleTalkAddon, v => { c.ReadFromBattleTalkAddon = v; save(); });
+            Controls.Checkbox("Read BattleTalk", () => c.ReadFromBattleTalkAddon, v => { c.ReadFromBattleTalkAddon = v; save(); },
+                "Speak BattleTalk lines (in-scene dialogue outside the quest Talk window).");
             Controls.IndentedCheckbox(
-                "Skip BattleTalk the game voices (courtesy)", () => c.SkipVoicedBattleText, v => { c.SkipVoicedBattleText = v; save(); });
+                "Skip BattleTalk the game voices (courtesy)", () => c.SkipVoicedBattleText, v => { c.SkipVoicedBattleText = v; save(); },
+                "Avoid doubling lines the game already voices itself.");
 
             Controls.Section("Cutscenes");
             Controls.Checkbox(
@@ -221,15 +229,22 @@ public sealed class ConfigurationWindow : Window
                 v => { c.ReadCutsceneSubtitles = v; save(); });
 
             Controls.Section("Chat");
-            Controls.Checkbox("Skip messages from you", () => c.SkipMessagesFromYou, v => { c.SkipMessagesFromYou = v; save(); });
-            Controls.Checkbox("Only messages from you", () => c.OnlyMessagesFromYou, v => { c.OnlyMessagesFromYou = v; save(); });
+            Controls.Checkbox("Skip messages from you", () => c.SkipMessagesFromYou, v => { c.SkipMessagesFromYou = v; save(); },
+                "Never read your own chat messages (your emotes, party chat, and so on).");
+            Controls.Checkbox("Only messages from you", () => c.OnlyMessagesFromYou, v => { c.OnlyMessagesFromYou = v; save(); },
+                "Read nothing except your own messages — hear your own emote lines back.");
 
             Controls.Section("Name lines with \"say\"");
-            Controls.Checkbox("Enable name with say", () => c.EnableNameWithSay, v => { c.EnableNameWithSay = v; save(); });
-            Controls.IndentedCheckbox("Name NPCs with say", () => c.NameNpcWithSay, v => { c.NameNpcWithSay = v; save(); });
-            Controls.IndentedCheckbox("Say player world name", () => c.SayPlayerWorldName, v => { c.SayPlayerWorldName = v; save(); });
-            Controls.IndentedCheckbox("Disallow multiple say", () => c.DisallowMultipleSay, v => { c.DisallowMultipleSay = v; save(); });
-            Controls.IndentedCheckbox("Say partial name", () => c.SayPartialName, v => { c.SayPartialName = v; save(); });
+            Controls.Checkbox("Enable name with say", () => c.EnableNameWithSay, v => { c.EnableNameWithSay = v; save(); },
+                "Prefix \"say\" lines with the speaker's name so speakers are identifiable.");
+            Controls.IndentedCheckbox("Name NPCs with say", () => c.NameNpcWithSay, v => { c.NameNpcWithSay = v; save(); },
+                "Include NPC names in the prefix; off keeps prefixes to players only.");
+            Controls.IndentedCheckbox("Say player world name", () => c.SayPlayerWorldName, v => { c.SayPlayerWorldName = v; save(); },
+                "Add the player's home world to the prefix (useful on crowded cross-world servers).");
+            Controls.IndentedCheckbox("Disallow multiple say", () => c.DisallowMultipleSay, v => { c.DisallowMultipleSay = v; save(); },
+                "Never speak more than one name even when several speakers share the line.");
+            Controls.IndentedCheckbox("Say partial name", () => c.SayPartialName, v => { c.SayPartialName = v; save(); },
+                "Speak only part of long names to keep prefixes short.");
             Controls.IndentedCheckbox("Only say last name (instead of first)", () => c.OnlySayFirstOrLastName == FirstOrLastName.Last, v =>
             {
                 c.OnlySayFirstOrLastName = v ? FirstOrLastName.Last : FirstOrLastName.First;
@@ -241,7 +256,8 @@ public sealed class ConfigurationWindow : Window
             if (c.UsePlayerRateLimiter)
             {
                 ImGui.Indent();
-                Controls.DragFloat("Messages per second", 0.1f, 30f, () => c.MessagesPerSecond, v => c.MessagesPerSecond = v, save);
+                Controls.DragFloat("Messages per second", 0.1f, 30f, () => c.MessagesPerSecond, v => c.MessagesPerSecond = v, save,
+                    "Maximum lines started per second while the limiter is on.");
                 ImGui.Unindent();
             }
         }
@@ -256,7 +272,7 @@ public sealed class ConfigurationWindow : Window
             ImGui.TextUnformatted($"Voice engine: {status}");
             Controls.Combo(
                 "Engine",
-                ["f5", "kokoro", "chatterbox"],
+                ["kokoro", "f5", "turbo", "chatterbox"],
                 () => c.SelectedEngine,
                 v => { c.SelectedEngine = v; save(); });
             ImGui.SameLine();
@@ -266,7 +282,7 @@ public sealed class ConfigurationWindow : Window
             // Per-engine device options: an engine only lists providers its adapter can
             // actually wire. kokoro is CPU-only; f5 and chatterbox can try DirectML and
             // fall back to CPU when the EP fails to initialize (e.g. under Wine).
-            if (c.SelectedEngine is "f5" or "chatterbox")
+            if (c.SelectedEngine is "f5" or "chatterbox" or "turbo")
             {
                 var providers = c.SelectedEngine == "f5"
                     ? ["cpu", "directml"]
@@ -279,14 +295,16 @@ public sealed class ConfigurationWindow : Window
                     {
                         c.SelectedEp = v;
                         save();
-                    });
+                    },
+                    "Where synthesis runs: cpu always works; directml uses your GPU (Windows only, falls back to CPU when unavailable, e.g. under Wine).");
             }
 
             Controls.Combo(
                 "CPU impact",
                 ["low", "medium", "high"],
                 () => c.CpuImpact,
-                v => { c.CpuImpact = v; save(); });
+                v => { c.CpuImpact = v; save(); },
+                "How many CPU threads synthesis may use: low = 2 (gentlest on frame rate), medium = 4, high = 8. More threads mean faster lines but a bigger FPS hit.");
             ImGui.SameLine();
             Controls.HelpMarker(
                 "ONNX synthesis threads: low = 2, medium = 4, high = 8. Lower protects framerate, higher shortens waits.");
@@ -410,10 +428,25 @@ public sealed class ConfigurationWindow : Window
     /// Matches the catalog's local file name (the port layer has no engine concept).</summary>
     private const string KokoroModelFileName = "kokoro-v1.0.onnx";
 
-    private bool IsActiveEngineAsset(ModelAsset asset) =>
-        this.config.SelectedEngine == "chatterbox"
-            ? asset.FileName != KokoroModelFileName
-            : asset.FileName == KokoroModelFileName;
+    private bool IsActiveEngineAsset(ModelAsset asset)
+    {
+        // File-name prefixes double as engine groups: turbo-* rows are Turbo-only,
+        // f5-* rows are F5-only, the Kokoro row is Kokoro-only, and legacy chatterbox
+        // shows every remaining catalog row.
+        if (Infrastructure.Onnx.ModelCatalog.IsTurboAsset(asset.FileName))
+        {
+            return this.config.SelectedEngine == "turbo";
+        }
+
+        return this.config.SelectedEngine switch
+        {
+            "chatterbox" => asset.FileName != KokoroModelFileName
+                && !asset.FileName.StartsWith("f5-", StringComparison.Ordinal),
+            "turbo" => false,
+            "f5" => asset.FileName.StartsWith("f5-", StringComparison.Ordinal),
+            _ => asset.FileName == KokoroModelFileName,
+        };
+    }
 
     private int RequiredAssetCount() => this.modelAssets()
         .Count(a => this.IsActiveEngineAsset(a)
@@ -465,7 +498,7 @@ public sealed class ConfigurationWindow : Window
             "Builds the ONNX session ahead of the first line. The engine also loads itself " +
             "on login and on the first spoken line.");
         ImGui.BulletText(
-            this.config.SelectedEngine is "f5" or "chatterbox"
+            this.config.SelectedEngine is "f5" or "chatterbox" or "turbo"
                 ? $"Execution provider: {this.config.SelectedEp}"
                 : "Execution provider: cpu (Kokoro is CPU-only)");
         ImGui.BulletText(
@@ -672,18 +705,18 @@ public sealed class ConfigurationWindow : Window
             {
                 preset.EnableAllChatTypes = v;
                 save();
-            });
+            }, "Read every chat channel, ignoring the list below — quick setup without ticking dozens of boxes.");
 
             Controls.Checkbox("Use keybind for this preset", () => preset.UseKeybind, v =>
             {
                 preset.UseKeybind = v;
                 save();
-            });
+            }, "Read channels only while holding the keys below — a hold-to-talk gate for this preset.");
             if (preset.UseKeybind)
             {
                 ImGui.Indent();
-                Controls.KeyCombo("Modifier", Modifiers, () => preset.ModifierKey, v => { preset.ModifierKey = v; save(); });
-                Controls.KeyCombo("Key", MajorKeys, () => preset.MajorKey, v => { preset.MajorKey = v; save(); });
+                Controls.KeyCombo("Modifier", Modifiers, () => preset.ModifierKey, v => { preset.ModifierKey = v; save(); }, "First key of this preset's hold-to-talk combination.");
+                Controls.KeyCombo("Key", MajorKeys, () => preset.MajorKey, v => { preset.MajorKey = v; save(); }, "Second key of this preset's hold-to-talk combination.");
                 ImGui.Unindent();
             }
 
@@ -691,29 +724,63 @@ public sealed class ConfigurationWindow : Window
             {
                 preset.EnabledChatTypes ??= new List<int>();
                 var enabled = preset.EnabledChatTypes;
-                ImGui.TextWrapped("Channels this preset reads:");
-                var channels = ChannelNames.All();
-                for (var i = 0; i < channels.Count; i++)
+                ImGui.TextWrapped("Channels this preset reads, grouped by category:");
+                ImGui.Spacing();
+                foreach (var (category, channels) in ChannelNames.ByCategory())
                 {
-                    var channel = channels[i];
-                    if (i % 3 != 0)
+                    var enabledCount = channels.Count(ch => enabled.Contains(ch.Id));
+                    var header = $"{category} ({enabledCount}/{channels.Count})";
+                    if (!ImGui.CollapsingHeader(header))
                     {
-                        ImGui.SameLine();
+                        Controls.Tooltip(ChannelNames.CategoryDescription(category));
+                        continue;
                     }
 
-                    var on = enabled.Contains(channel.Id);
-                    if (ImGui.Checkbox(channel.Name, ref on))
+                    Controls.Tooltip(ChannelNames.CategoryDescription(category));
+
+                    var all = enabledCount == channels.Count;
+                    if (Controls.Button(all ? "none" : "all", true, all ? "Uncheck every channel in this category." : "Check every channel in this category."))
                     {
-                        if (on)
+                        if (all)
                         {
-                            enabled.Add(channel.Id);
+                            preset.EnabledChatTypes = enabled
+                                .Where(id => channels.All(ch => ch.Id != id))
+                                .ToList();
                         }
                         else
                         {
-                            enabled.Remove(channel.Id);
+                            foreach (var ch in channels.Where(ch => !enabled.Contains(ch.Id)))
+                            {
+                                enabled.Add(ch.Id);
+                            }
                         }
 
                         save();
+                    }
+
+                    ImGui.SameLine();
+                    for (var i = 0; i < channels.Count; i++)
+                    {
+                        var channel = channels[i];
+                        if (i % 3 != 0)
+                        {
+                            ImGui.SameLine();
+                        }
+
+                        var on = enabled.Contains(channel.Id);
+                        if (ImGui.Checkbox(channel.Name, ref on))
+                        {
+                            if (on)
+                            {
+                                enabled.Add(channel.Id);
+                            }
+                            else
+                            {
+                                enabled.Remove(channel.Id);
+                            }
+
+                            save();
+                        }
                     }
                 }
             }
@@ -746,7 +813,8 @@ public sealed class ConfigurationWindow : Window
             this.test.Text = text;
         }
 
-        Controls.Checkbox("Use my character", () => this.test.UseMyCharacter, v => this.test.UseMyCharacter = v);
+        Controls.Checkbox("Use my character", () => this.test.UseMyCharacter, v => this.test.UseMyCharacter = v,
+            "Speak the test line with your own character's race/gender voice assignment.");
         if (!this.test.UseMyCharacter)
         {
             var race = Races.All[Math.Clamp(this.test.RaceIndex, 0, Races.All.Count - 1)];
@@ -754,9 +822,9 @@ public sealed class ConfigurationWindow : Window
             {
                 this.test.RaceIndex = v;
                 this.test.TribeIndex = 0;
-            });
-            Controls.Combo("Tribe", [.. race.Tribes.Select(t => t.Name)], () => this.test.TribeIndex, v => this.test.TribeIndex = v);
-            Controls.Combo("Sex", ["Male", "Female"], () => (int)this.test.Sex, v => this.test.Sex = (byte)v);
+            }, "Race used for the test line's automatic voice assignment.");
+            Controls.Combo("Tribe", [.. race.Tribes.Select(t => t.Name)], () => this.test.TribeIndex, v => this.test.TribeIndex = v, "Tribe refines the race assignment where voice sets differ.");
+            Controls.Combo("Sex", ["Male", "Female"], () => (int)this.test.Sex, v => this.test.Sex = (byte)v, "Male or female voice set for the test.");
         }
 
         Controls.Combo("Emotion", TestBenchModel.Emotions, () => this.test.EmotionIndex, v => this.test.EmotionIndex = v);
@@ -765,7 +833,8 @@ public sealed class ConfigurationWindow : Window
             "emotion auditions that delivery with the slider below.");
         if (this.test.EmotionForced)
         {
-            Controls.SliderFraction("Exaggeration", () => this.test.Exaggeration, v => this.test.Exaggeration = v, () => { });
+            Controls.SliderFraction("Exaggeration", () => this.test.Exaggeration, v => this.test.Exaggeration = v, () => { },
+                "How much expressive variation the synthesizer applies: 0 is flat narration, higher is theatrical.");
         }
 
         var plan = this.test.EmotionForced ? this.test.ForcedPlan() : this.test.RulesPlan();

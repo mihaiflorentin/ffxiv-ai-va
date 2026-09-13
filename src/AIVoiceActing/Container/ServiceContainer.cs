@@ -247,6 +247,19 @@ public sealed class ServiceContainer : IDisposable
                             log: this.LogSinkUnlocked()));
                 }
 
+                if (this.selectedEngineFactory?.Invoke() == "turbo")
+                {
+                    return this.speechSynthesizer = this.RegisterDisposable(
+                        Infrastructure.Onnx.ChatterboxSynthesizer.CreateTurbo(
+                            this.ModelsDir,
+                            voicePathResolver: voiceId => voiceId == "default"
+                                ? Path.Combine(this.ModelsDir, "turbo-default-voice.wav")
+                                : Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav"),
+                            executionProvider: this.selectedEpFactory?.Invoke() ?? "cpu",
+                            intraOpThreads: threads,
+                            log: this.LogSinkUnlocked()));
+                }
+
                 if (this.selectedEngineFactory?.Invoke() == "kokoro")
                 {
                     return this.speechSynthesizer = this.RegisterDisposable(

@@ -26,12 +26,58 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     private const int NumKvHeads = 16;
     private const int HeadDim = 64;
     private const int SampleRate = 24000;
+    private const int TurboSilenceToken = 4299; // Turbo reference: 3 appended before decode
+
+    /// <summary>
+    /// Per-export protocol differences the shared generation loop branches on. The
+    /// legacy community export feeds position_ids+exaggeration to embed_tokens and
+    /// derives LM positions internally; the official Turbo export has a bare
+    /// input_ids embed, an LM that requires explicit position_ids (arange over the
+    /// condition+text prefix, then last+1 per step), 24 layers, and appends three
+    /// SILENCE tokens before decoding.
+    /// </summary>
+    private sealed record Variant(
+        string EncoderFile,
+        string EmbedFile,
+        string LmFile,
+        string DecoderFile,
+        string TokenizerFile,
+        int Layers,
+        bool EmbedTakesPositions,
+        bool EmbedTakesExaggeration,
+        bool LmTakesPositions,
+        int SilenceSuffixCount);
+
+    private static readonly Variant LegacyVariant = new(
+        ModelCatalog.SpeechEncoderFileName,
+        ModelCatalog.EmbedTokensFileName,
+        ModelCatalog.LanguageModelQ4FileName,
+        ModelCatalog.ConditionalDecoderFileName,
+        ModelCatalog.TokenizerJsonFileName,
+        Layers: NumHiddenLayers,
+        EmbedTakesPositions: true,
+        EmbedTakesExaggeration: true,
+        LmTakesPositions: false,
+        SilenceSuffixCount: 0);
+
+    private static readonly Variant TurboVariant = new(
+        ModelCatalog.TurboSpeechEncoderFileName,
+        ModelCatalog.TurboEmbedTokensFileName,
+        ModelCatalog.TurboLanguageModelFileName,
+        ModelCatalog.TurboConditionalDecoderFileName,
+        ModelCatalog.TurboTokenizerJsonFileName,
+        Layers: 24, // config.json text_config.n_layer
+        EmbedTakesPositions: false,
+        EmbedTakesExaggeration: false,
+        LmTakesPositions: true,
+        SilenceSuffixCount: 3);
 
     private readonly string modelsDir;
     private readonly Func<string, string?> voicePathResolver;
     private readonly Func<ITextTokenizer>? tokenizerFactory;
     private readonly string executionProvider;
     private readonly string? languageModelOverride;
+    private readonly Variant variant;
     private readonly ILogSink? log;
     private readonly int? intraOpThreads;
     private readonly Lazy<Engine> engine;
@@ -61,7 +107,45 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         ILogSink? log = null,
         string? languageModelOverride = null,
         int? intraOpThreads = null)
+        : this(LegacyVariant, modelsDir, voicePathResolver, tokenizerFactory, executionProvider, log, languageModelOverride, intraOpThreads)
     {
+    }
+
+    /// <summary>Chatterbox Turbo variant (official ResembleAI ONNX export).</summary>
+    public static ChatterboxSynthesizer CreateTurbo(
+        string modelsDir,
+        Func<string, string?> voicePathResolver,
+        string executionProvider = "auto",
+        ILogSink? log = null,
+        int? intraOpThreads = null,
+        Func<ITextTokenizer>? tokenizerFactory = null) =>
+        new(
+            TurboVariant,
+            modelsDir,
+            voicePathResolver,
+            tokenizerFactory ?? TurboTokenizerFactory(modelsDir),
+            executionProvider,
+            log,
+            null,
+            intraOpThreads);
+
+    private static Func<ITextTokenizer> TurboTokenizerFactory(string modelsDir) =>
+        () => new TokenizersDotNetTokenizer(Path.Combine(modelsDir, ModelCatalog.TurboTokenizerJsonFileName));
+
+    /// <summary>True when this instance runs the Turbo export protocol.</summary>
+    public bool IsTurbo => this.variant == TurboVariant;
+
+    private ChatterboxSynthesizer(
+        Variant variant,
+        string modelsDir,
+        Func<string, string?> voicePathResolver,
+        Func<ITextTokenizer>? tokenizerFactory,
+        string executionProvider,
+        ILogSink? log,
+        string? languageModelOverride,
+        int? intraOpThreads)
+    {
+        this.variant = variant;
         this.modelsDir = modelsDir;
         this.voicePathResolver = voicePathResolver;
         var modelsDirLocal = modelsDir;
@@ -95,8 +179,10 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     {
         // The LM actually in use: an override (e.g. the fp32 fallback) replaces the
         // catalog's q4 pair, so readiness must check that one, not the ignored default.
-        var lmInUse = this.languageModelOverride ?? ModelCatalog.LanguageModelQ4FileName;
-        foreach (var asset in ModelCatalog.ChatterboxRequiredAssets)
+        var required = this.variant == TurboVariant
+            ? ModelCatalog.TurboRequiredAssets
+            : ModelCatalog.ChatterboxRequiredAssets;
+        foreach (var asset in required)
         {
             if (this.languageModelOverride is not null
                 && (asset.FileName == ModelCatalog.LanguageModelQ4FileName
@@ -119,6 +205,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             }
         }
 
+        var lmInUse = this.languageModelOverride ?? this.variant.LmFile;
         if (!this.AssetPresent(lmInUse, null))
         {
             return $"Missing model {lmInUse} — Models tab → Download all missing.";
@@ -250,13 +337,15 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         // Greedy generation state.
         var generated = new List<long> { StartSpeechToken }; // card: generate_tokens = [[6561]]
         DenseTensor<long> attentionMask = null!;
+        DenseTensor<long>? lmPositionIds = null; // Turbo: required LM input each step
+        long turboLastPosition = 0;
         // KV cache MUST be an ordered list: the card relies on Python dict insertion
         // order (layer-major, key-then-value) to zip the model's positional present
         // outputs back by name. A .NET Dictionary iterates in hash order, which
         // scrambles the layers and feeds the model garbage from step 2 on — the
         // generation never emits STOP and the decoder renders noise.
-        var pastNames = new List<string>(NumHiddenLayers * 2);
-        var pastTensors = new List<DenseTensor<float>>(NumHiddenLayers * 2);
+        var pastNames = new List<string>(this.variant.Layers * 2);
+        var pastTensors = new List<DenseTensor<float>>(this.variant.Layers * 2);
 
         for (var step = 0; step < MaxNewTokens; step++)
         {
@@ -265,7 +354,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             float[] textEmbeds;
             using (var embedOutputs = RunSession(
                 eng.EmbedTokens,
-                EmbedInput(eng.EmbedTokens, embedIds, embedPositions, exaggerationTensor)))
+                EmbedInput(eng.EmbedTokens, embedIds, this.variant.EmbedTakesPositions ? embedPositions : null, this.variant.EmbedTakesExaggeration ? exaggerationTensor : null)))
             {
                 textEmbeds = TensorSpan(unwrap<float>(embedOutputs[0])).ToArray();
             }
@@ -282,7 +371,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
                 textEmbeds.AsSpan().CopyTo(
                     inputsEmbeds.Buffer.Span[(condFrames * EmbedWidth(eng.EmbedTokens))..]);
                 // Card: zeros [B, 16, 0, 64] per layer/key-value before the first LM step.
-                for (var layer = 0; layer < NumHiddenLayers; layer++)
+                for (var layer = 0; layer < this.variant.Layers; layer++)
                 {
                     pastNames.Add($"past_key_values.{layer}.key");
                     pastTensors.Add(new DenseTensor<float>([1, NumKvHeads, 0, HeadDim]));
@@ -294,6 +383,17 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
                 for (var i = 0; i < attentionMask.Dimensions[1]; i++)
                 {
                     attentionMask[0, i] = 1;
+                }
+
+                if (this.variant.LmTakesPositions)
+                {
+                    // Turbo reference: position_ids = arange(seq_len) over cond+text.
+                    turboLastPosition = inputsEmbeds.Dimensions[1] - 1;
+                    lmPositionIds = new DenseTensor<long>([1, inputsEmbeds.Dimensions[1]]);
+                    for (var i = 0; i < lmPositionIds.Dimensions[1]; i++)
+                    {
+                        lmPositionIds[0, i] = i;
+                    }
                 }
             }
             else
@@ -307,6 +407,10 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
                 NamedOnnxValue.CreateFromTensor("inputs_embeds", inputsEmbeds),
                 NamedOnnxValue.CreateFromTensor("attention_mask", attentionMask),
             };
+            if (lmPositionIds is not null)
+            {
+                lmInputs.Add(NamedOnnxValue.CreateFromTensor("position_ids", lmPositionIds));
+            }
             for (var j = 0; j < pastNames.Count; j++)
             {
                 lmInputs.Add(NamedOnnxValue.CreateFromTensor(pastNames[j], pastTensors[j]));
@@ -352,6 +456,13 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             embedIds[0, 0] = nextToken;
             embedPositions = new DenseTensor<long>([1, 1]);
             embedPositions[0, 0] = step + 1;
+            if (this.variant.LmTakesPositions)
+            {
+                // Turbo reference: position_ids = position_ids[:, -1:] + 1.
+                turboLastPosition++;
+                lmPositionIds = new DenseTensor<long>([1, 1]);
+                lmPositionIds[0, 0] = turboLastPosition;
+            }
             attentionMask = AppendOnes(attentionMask);
         }
 
@@ -360,7 +471,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         // is exhausted, so the last generated token is discarded in that case too).
         var speechOnly = generated.Skip(1).Take(Math.Max(0, generated.Count - 2)).ToArray();
         var promptTokens = reference.PromptToken;
-        var speechTokens = new DenseTensor<long>([1, promptTokens.Length + speechOnly.Length]);
+        var speechTokens = new DenseTensor<long>([1, promptTokens.Length + speechOnly.Length + this.variant.SilenceSuffixCount]);
         for (var i = 0; i < promptTokens.Length; i++)
         {
             speechTokens[0, i] = promptTokens[i];
@@ -369,6 +480,15 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         for (var i = 0; i < speechOnly.Length; i++)
         {
             speechTokens[0, promptTokens.Length + i] = speechOnly[i];
+        }
+
+        if (this.variant.SilenceSuffixCount > 0)
+        {
+            // Turbo reference: silence_tokens = full((n, 3), SILENCE) appended at the end.
+            for (var i = 0; i < this.variant.SilenceSuffixCount; i++)
+            {
+                speechTokens[0, speechTokens.Dimensions[1] - this.variant.SilenceSuffixCount + i] = TurboSilenceToken;
+            }
         }
 
         var decoderInputs = new List<NamedOnnxValue>
@@ -458,13 +578,13 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
                 message => this.log?.Info(message),
                 this.intraOpThreads);
             options = epOptions;
-            encoder = this.CreateSession(ModelCatalog.SpeechEncoderFileName, epOptions);
+            encoder = this.CreateSession(this.variant.EncoderFile, epOptions);
             created.Add(encoder);
-            embed = this.CreateSession(ModelCatalog.EmbedTokensFileName, epOptions);
+            embed = this.CreateSession(this.variant.EmbedFile, epOptions);
             created.Add(embed);
-            lm = this.CreateSession(this.languageModelOverride ?? ModelCatalog.LanguageModelQ4FileName, epOptions);
+            lm = this.CreateSession(this.languageModelOverride ?? this.variant.LmFile, epOptions);
             created.Add(lm);
-            decoder = this.CreateSession(ModelCatalog.ConditionalDecoderFileName, epOptions);
+            decoder = this.CreateSession(this.variant.DecoderFile, epOptions);
             created.Add(decoder);
             this.log?.Info($"Chatterbox sessions initialized on EP '{ep}'.");
             return new Engine(encoder, embed, lm, decoder, ep, options);
@@ -481,10 +601,10 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
             options?.Dispose();
             var cpuOptions = EpSelector.CreateSessionOptions("cpu", intraOpThreads: this.intraOpThreads).Options;
-            encoder = this.CreateSession(ModelCatalog.SpeechEncoderFileName, cpuOptions);
-            embed = this.CreateSession(ModelCatalog.EmbedTokensFileName, cpuOptions);
-            lm = this.CreateSession(this.languageModelOverride ?? ModelCatalog.LanguageModelQ4FileName, cpuOptions);
-            decoder = this.CreateSession(ModelCatalog.ConditionalDecoderFileName, cpuOptions);
+            encoder = this.CreateSession(this.variant.EncoderFile, cpuOptions);
+            embed = this.CreateSession(this.variant.EmbedFile, cpuOptions);
+            lm = this.CreateSession(this.languageModelOverride ?? this.variant.LmFile, cpuOptions);
+            decoder = this.CreateSession(this.variant.DecoderFile, cpuOptions);
             return new Engine(encoder, embed, lm, decoder, "cpu", cpuOptions);
         }
     }
@@ -503,13 +623,25 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     private static IReadOnlyList<NamedOnnxValue> EmbedInput(
         InferenceSession embedSession,
         DenseTensor<long> inputIds,
-        DenseTensor<long> positionIds,
-        DenseTensor<float> exaggeration) =>
-        [
+        DenseTensor<long>? positionIds,
+        DenseTensor<float>? exaggeration)
+    {
+        var inputs = new List<NamedOnnxValue>
+        {
             NamedOnnxValue.CreateFromTensor("input_ids", inputIds),
-            NamedOnnxValue.CreateFromTensor("position_ids", positionIds),
-            NamedOnnxValue.CreateFromTensor("exaggeration", exaggeration),
-        ];
+        };
+        if (positionIds is not null)
+        {
+            inputs.Add(NamedOnnxValue.CreateFromTensor("position_ids", positionIds));
+        }
+
+        if (exaggeration is not null)
+        {
+            inputs.Add(NamedOnnxValue.CreateFromTensor("exaggeration", exaggeration));
+        }
+
+        return inputs;
+    }
 
     private static IDisposableReadOnlyCollection<DisposableNamedOnnxValue> RunSession(
         InferenceSession session,
