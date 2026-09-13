@@ -51,7 +51,7 @@ Download `latest.zip` from the [releases page](https://github.com/mihaiflorentin
 Requires the .NET 10 SDK and a Dalamud development checkout for assembly references.
 
 ```sh
-git clone <this repository>
+git clone https://github.com/mihaiflorentin/ffxiv-ai-va.git
 cd ffxiv-ai-va
 
 # Dalamud reference assemblies (also used by CI):
