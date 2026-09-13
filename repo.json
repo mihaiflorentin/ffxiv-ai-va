@@ -1,0 +1,34 @@
+[
+  {
+    "Author": "Mihai",
+    "Name": "AI Voice Acting",
+    "Punchline": "Local AI voice acting for FFXIV dialogue, cutscenes, and chat.",
+    "Description": "Voice-acts quest dialogue, BattleTalk, cutscene lines, and chat channels with local AI voices. Every character keeps a persistent, deterministic voice; delivery is shaped by dialogue context; and the game's own voiced lines always win.",
+    "InternalName": "AIVoiceActing",
+    "AssemblyVersion": "0.0.1",
+    "TestingAssemblyVersion": "0.0.1",
+    "RepoUrl": "https://github.com/mihaiflorentin/ffxiv-ai-va",
+    "ApplicableVersion": "any",
+    "DalamudApiLevel": 15,
+    "TestingDalamudApiLevel": 15,
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "DownloadCount": 0,
+    "LastUpdate": 1789260564,
+    "DownloadLinkInstall": "https://github.com/mihaiflorentin/ffxiv-ai-va/releases/download/v0.0.1/latest.zip",
+    "DownloadLinkTesting": "https://github.com/mihaiflorentin/ffxiv-ai-va/releases/download/v0.0.1/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/mihaiflorentin/ffxiv-ai-va/releases/download/v0.0.1/latest.zip",
+    "LoadPriority": 0,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "SupportsProfiles": true,
+    "ImageUrls": null,
+    "IconUrl": "https://raw.githubusercontent.com/mihaiflorentin/ffxiv-ai-va/main/src/AIVoiceActing/icon.png",
+    "Tags": [
+      "tts",
+      "voice acting",
+      "accessibility"
+    ]
+  }
+]
