@@ -94,7 +94,11 @@ public static class Controls
     public static void Combo(string label, IReadOnlyList<string> items, Func<int> get, Action<int> apply, string? tooltip = null)
     {
         var index = Math.Clamp(get(), 0, items.Count - 1);
-        if (ImGui.Combo(label, ref index, items))
+        // Array + count on purpose: the raw span overload is the pattern every working
+        // combo here uses (KeyCombo, preset switcher); the generated IReadOnlyList
+        // binding path rendered selections that never committed.
+        var array = items as string[] ?? items.ToArray();
+        if (ImGui.Combo(label, ref index, array, array.Length))
         {
             apply(index);
         }
@@ -109,9 +113,10 @@ public static class Controls
     public static void Combo(string label, IReadOnlyList<string> items, Func<string> get, Action<string> apply, string? tooltip = null)
     {
         var index = Math.Max(0, items.ToList().IndexOf(get()));
-        if (ImGui.Combo(label, ref index, items))
+        var array = items as string[] ?? items.ToArray();
+        if (ImGui.Combo(label, ref index, array, array.Length))
         {
-            apply(items[index]);
+            apply(array[index]);
         }
 
         if (tooltip is not null)
