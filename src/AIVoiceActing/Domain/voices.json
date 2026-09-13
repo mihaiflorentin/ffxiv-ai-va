@@ -43,24 +43,26 @@
   ],
   "deepMale": [
    {
-    "id": "am_onyx"
+    "id": "am_onyx",
+    "pitch": 0.88,
+    "speed": 0.95
    },
    {
-    "id": "am_fenrir"
-   },
-   {
-    "id": "am_adam"
+    "id": "am_fenrir",
+    "pitch": 0.88,
+    "speed": 0.95
    }
   ],
   "deepFemale": [
    {
-    "id": "af_alloy"
+    "id": "af_alloy",
+    "pitch": 0.92,
+    "speed": 0.97
    },
    {
-    "id": "af_river"
-   },
-   {
-    "id": "af_kore"
+    "id": "af_river",
+    "pitch": 0.92,
+    "speed": 0.97
    }
   ],
   "childMale": [
@@ -204,6 +206,18 @@
    {
     "id": "jf_alpha"
    }
+  ],
+  "hrothgarMale": [
+   {
+    "id": "am_fenrir",
+    "pitch": 0.82,
+    "speed": 0.92
+   },
+   {
+    "id": "am_onyx",
+    "pitch": 0.82,
+    "speed": 0.92
+   }
   ]
  },
  "raceVariants": {
@@ -219,7 +233,7 @@
   "5|Female": "deepFemale",
   "6|Male": "japaneseMale",
   "6|Female": "japaneseFemale",
-  "7|Male": "deepMale",
+  "7|Male": "hrothgarMale",
   "7|Female": "deepFemale",
   "8|Male": "italianMale",
   "8|Female": "italianFemale"
