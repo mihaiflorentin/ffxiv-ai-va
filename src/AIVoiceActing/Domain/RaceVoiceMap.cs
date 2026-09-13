@@ -3,10 +3,12 @@ namespace AIVoiceActing.Domain;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-/// <summary>One reference-voice slot: clip id plus the slot's exaggeration bias (additive, 0..1).</summary>
-public sealed record VoiceSlot(
-    string Id,
-    float ExaggerationBias);
+/// <summary>
+/// One voice slot: id plus per-slot performance knobs. <paramref name="Pitch"/> is a
+/// playback multiplier (1 = natural; Lalafell/child-like sets use ~1.18) applied by the
+/// synthesizer as a resample.
+/// </summary>
+public sealed record VoiceSlot(string Id, float ExaggerationBias = 0f, float Pitch = 1f);
 
 /// <summary>
 /// Maps voice groups (with race nuances) to bundled reference-voice slots, loaded from

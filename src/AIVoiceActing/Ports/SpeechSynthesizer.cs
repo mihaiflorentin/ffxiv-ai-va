@@ -15,7 +15,8 @@ public sealed record SynthesisRequest(
     string ReferenceVoiceId,
     string Text,
     float Exaggeration,
-    IReadOnlyList<string> Tags);
+    IReadOnlyList<string> Tags,
+    float Pitch = 1f);
 
 /// <summary>Rendered speech: mono PCM samples at a fixed sample rate.</summary>
 public sealed record SynthesisResult(float[] Samples, int SampleRate);

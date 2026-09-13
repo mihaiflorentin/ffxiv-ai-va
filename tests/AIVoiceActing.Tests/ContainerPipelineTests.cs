@@ -123,6 +123,34 @@ public sealed class ContainerPipelineTests
         Assert.True(File.Exists(temp.Path("voice-assignments.json")));
     }
 
+    [Fact]
+    public void RetiredVoiceIds_AreRepaired_FromTheCurrentVoiceBank()
+    {
+        using var temp = new TempDir();
+        using var container = new ServiceContainer(
+            logSinkOverride: new FakeLogSink(),
+            profileStorePathFactory: () => temp.Path("voice-assignments.json"),
+            voicesManifestFactory: VoicesManifestPath,
+            speechQueueFactory: () => new FakeSpeechQueue());
+
+        var speaker = new SpeakerIdentity("npc: sibold", "Sibold", Race: 1, Tribe: 1, Sex: 0, World: null);
+
+        // Seed the store the way the Chatterbox era left it: a retired clip id.
+        container.ProfileStore.SetOverride(speaker.Key, "default", 0f);
+
+        var profile = container.ResolveProfile(speaker);
+        var maleIds = container.VoiceMap.SlotsFor(VoiceGroup.Male, speaker.Race).Select(s => s.Id).ToHashSet();
+        Assert.Contains(profile.ReferenceVoiceId, maleIds);
+
+        // The repair persists: a fresh store over the same file stays repaired.
+        using var second = new ServiceContainer(
+            logSinkOverride: new FakeLogSink(),
+            profileStorePathFactory: () => temp.Path("voice-assignments.json"),
+            voicesManifestFactory: VoicesManifestPath,
+            speechQueueFactory: () => new FakeSpeechQueue());
+        Assert.Equal(profile.ReferenceVoiceId, second.ResolveProfile(speaker).ReferenceVoiceId);
+    }
+
     private sealed class TempDir : IDisposable
     {
         public TempDir() => this.Root = Directory.CreateTempSubdirectory("aiva-tests").FullName;

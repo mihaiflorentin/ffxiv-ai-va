@@ -21,7 +21,8 @@ public sealed class JsonProfileStore : IProfileStore
         [property: JsonPropertyName("referenceVoiceId")] string ReferenceVoiceId,
         [property: JsonPropertyName("exaggerationBias")] float ExaggerationBias,
         [property: JsonPropertyName("createdUtc")] DateTimeOffset CreatedUtc,
-        [property: JsonPropertyName("custom")] bool Custom);
+        [property: JsonPropertyName("custom")] bool Custom,
+        [property: JsonPropertyName("pitch")] float Pitch = 1f);
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
@@ -50,7 +51,6 @@ public sealed class JsonProfileStore : IProfileStore
             }
         }
     }
-
     public VoiceProfile GetOrCreate(
         string speakerKey,
         Func<VoiceSlot[]> candidateVoiceSlots,
@@ -63,7 +63,7 @@ public sealed class JsonProfileStore : IProfileStore
             this.EnsureLoadedUnlocked();
             if (this.entries.TryGetValue(speakerKey, out var existing))
             {
-                return existing; // never reassigned
+                return existing; // never reassigned; stale ids are repaired by the container
             }
 
             var slots = candidateVoiceSlots();
@@ -84,15 +84,20 @@ public sealed class JsonProfileStore : IProfileStore
         lock (this.gate)
         {
             this.EnsureLoadedUnlocked();
+            // Voice/bias overrides don't touch pitch: keep the slot-derived pitch when
+            // the speaker already has one (manual overrides on child-pitch races stay child-pitched).
+            var pitch = this.entries.TryGetValue(speakerKey, out var previous) ? previous.Pitch : 1f;
             this.entries[speakerKey] = new VoiceProfile(
                 speakerKey,
                 referenceVoiceId,
                 Math.Clamp(exaggerationBias, 0f, 1f),
                 DateTimeOffset.UtcNow,
-                Custom: true);
+                Custom: true,
+                pitch);
             this.SaveUnlocked();
         }
     }
+
 
     public bool Remove(string speakerKey)
     {
@@ -134,7 +139,8 @@ public sealed class JsonProfileStore : IProfileStore
                     dto.ReferenceVoiceId ?? throw new JsonException($"Entry \"{key}\" has no voice id."),
                     dto.ExaggerationBias,
                     dto.CreatedUtc,
-                    dto.Custom);
+                    dto.Custom,
+                    dto.Pitch);
             }
         }
         catch (Exception e) when (e is JsonException or FormatException or InvalidOperationException)
@@ -174,7 +180,8 @@ public sealed class JsonProfileStore : IProfileStore
                             kv.Value.ReferenceVoiceId,
                             kv.Value.ExaggerationBias,
                             kv.Value.CreatedUtc,
-                            kv.Value.Custom)),
+                            kv.Value.Custom,
+                            kv.Value.Pitch)),
                     JsonOptions));
             File.Move(temp, FilePath, overwrite: true);
         }

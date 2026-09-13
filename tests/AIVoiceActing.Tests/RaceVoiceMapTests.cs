@@ -57,16 +57,29 @@ public sealed class RaceVoiceMapTests
     }
 
     [Fact]
-    public void RoegadynVieraAndHrothgarMales_UseDeepSet()
+    public void RoegadynAndHrothgarMales_UseDeepSet_VieraStaysUK()
     {
         var map = LoadDefault();
         var baseMaleIds = map.SlotsFor(VoiceGroup.Male, race: null).Select(s => s.Id).ToHashSet();
-        foreach (var race in new byte?[] { 5, 7, 8 })
+        foreach (var race in new byte?[] { 5, 8 })
         {
             var ids = map.SlotsFor(VoiceGroup.Male, race).Select(s => s.Id).ToArray();
             Assert.Empty(ids.ToHashSet().Intersect(baseMaleIds));
             Assert.All(ids, id => Assert.StartsWith("am_", id));
         }
+
+        // Viera (7): the requested Icelandic accent does not exist in Kokoro v1.0 —
+        // they ride the standard UK male bank.
+        Assert.All(map.SlotsFor(VoiceGroup.Male, 7).Select(s => s.Id), id => Assert.StartsWith("bm_", id));
+    }
+
+    [Fact]
+    public void LalafellSets_CarryChildPitch_BaseSetsStayNatural()
+    {
+        var map = LoadDefault();
+        Assert.All(map.SlotsFor(VoiceGroup.Male, 3), slot => Assert.True(slot.Pitch > 1.1f));
+        Assert.All(map.SlotsFor(VoiceGroup.Female, 3), slot => Assert.True(slot.Pitch > 1.1f));
+        Assert.All(map.SlotsFor(VoiceGroup.Male, race: null), slot => Assert.Equal(1f, slot.Pitch));
     }
 
     [Fact]

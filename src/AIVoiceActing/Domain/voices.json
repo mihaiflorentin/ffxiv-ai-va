@@ -2,16 +2,46 @@
  "sets": {
   "male": [
    {
-    "id": "am_michael"
+    "id": "bm_lewis"
    },
    {
-    "id": "am_puck"
+    "id": "bm_fable"
    },
    {
-    "id": "am_echo"
+    "id": "bm_daniel"
    },
    {
-    "id": "am_liam"
+    "id": "bm_george"
+   }
+  ],
+  "female": [
+   {
+    "id": "bf_lily"
+   },
+   {
+    "id": "bf_alice"
+   },
+   {
+    "id": "bf_emma"
+   },
+   {
+    "id": "bf_isabella"
+   }
+  ],
+  "poshMale": [
+   {
+    "id": "bm_george"
+   },
+   {
+    "id": "bm_daniel"
+   }
+  ],
+  "poshFemale": [
+   {
+    "id": "bf_isabella"
+   },
+   {
+    "id": "bf_emma"
    }
   ],
   "deepMale": [
@@ -25,65 +55,44 @@
     "id": "am_fenrir"
    }
   ],
-  "female": [
-   {
-    "id": "af_heart"
-   },
-   {
-    "id": "af_nicole"
-   },
-   {
-    "id": "af_sarah"
-   },
-   {
-    "id": "af_nova"
-   }
-  ],
-  "highPitchFemale": [
-   {
-    "id": "af_sky"
-   },
-   {
-    "id": "af_bella"
-   },
-   {
-    "id": "af_kore"
-   }
-  ],
-  "britishMale": [
-   {
-    "id": "bm_george"
-   },
-   {
-    "id": "bm_daniel"
-   },
-   {
-    "id": "bm_fable"
-   },
-   {
-    "id": "bm_lewis"
-   }
-  ],
-  "britishFemale": [
-   {
-    "id": "bf_emma"
-   },
-   {
-    "id": "bf_isabella"
-   },
-   {
-    "id": "bf_lily"
-   },
-   {
-    "id": "bf_alice"
-   }
-  ],
-  "ungendered": [
+  "deepFemale": [
    {
     "id": "af_alloy"
    },
    {
     "id": "af_river"
+   }
+  ],
+  "childMale": [
+   {
+    "id": "am_liam",
+    "pitch": 1.18
+   },
+   {
+    "id": "am_puck",
+    "pitch": 1.18
+   }
+  ],
+  "childFemale": [
+   {
+    "id": "af_sky",
+    "pitch": 1.18
+   },
+   {
+    "id": "af_bella",
+    "pitch": 1.18
+   },
+   {
+    "id": "af_kore",
+    "pitch": 1.18
+   }
+  ],
+  "ungendered": [
+   {
+    "id": "bf_lily"
+   },
+   {
+    "id": "af_sarah"
    },
    {
     "id": "am_eric"
@@ -91,13 +100,21 @@
   ]
  },
  "raceVariants": {
-  "2|Female": "britishFemale",
-  "2|Male": "britishMale",
-  "3|Female": "highPitchFemale",
+  "1|Male": "male",
+  "1|Female": "female",
+  "2|Female": "poshFemale",
+  "2|Male": "poshMale",
+  "3|Female": "childFemale",
+  "3|Male": "childMale",
+  "4|Female": "poshFemale",
+  "4|Male": "poshMale",
+  "5|Female": "deepFemale",
   "5|Male": "deepMale",
-  "6|Male": "deepMale",
-  "7|Male": "deepMale",
-  "8|Male": "deepMale",
-  "8|Female": "highPitchFemale"
+  "6|Female": "poshFemale",
+  "6|Male": "poshMale",
+  "7|Female": "female",
+  "7|Male": "male",
+  "8|Female": "deepFemale",
+  "8|Male": "deepMale"
  }
 }

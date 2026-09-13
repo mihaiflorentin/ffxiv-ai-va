@@ -560,13 +560,32 @@ public sealed class ServiceContainer : IDisposable
         var group = racePresets
             ? VoiceGroupResolver.Resolve(speaker.Race, speaker.Tribe, speaker.Sex, null, null)
             : VoiceGroup.Ungendered;
-        return this.ProfileStoreUnlocked().GetOrCreate(
+        var store = this.ProfileStoreUnlocked();
+        var profile = store.GetOrCreate(
             speaker.Key,
             // Presets off: the ungendered bucket has no race variants (race is null).
             () => this.VoiceMapUnlocked().SlotsFor(group, racePresets ? speaker.Race : null),
             speaker.Race,
             speaker.Tribe,
             speaker.Sex);
+
+        // Engine migrations (Chatterbox clip ids → Kokoro voice names) retire ids that
+        // the store's never-reassign invariant would keep forever; a retired id can
+        // never synthesize, so re-derive deterministically from the current bank.
+        if (!this.VoiceMapUnlocked().DistinctVoiceIds().Contains(profile.ReferenceVoiceId))
+        {
+            this.LogSinkUnlocked().Info(
+                $"Reassigning \"{speaker.Key}\" from retired voice \"{profile.ReferenceVoiceId}\".");
+            store.Remove(speaker.Key);
+            profile = store.GetOrCreate(
+                speaker.Key,
+                () => this.VoiceMapUnlocked().SlotsFor(group, racePresets ? speaker.Race : null),
+                speaker.Race,
+                speaker.Tribe,
+                speaker.Sex)!;
+        }
+
+        return profile;
     }
 
     private RaceVoiceMap VoiceMapUnlocked() =>

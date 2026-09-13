@@ -109,7 +109,8 @@ public sealed class SpeechRequestHandler
             plan,
             profile.ReferenceVoiceId,
             processed,
-            profile.ExaggerationBias);
+            profile.ExaggerationBias,
+            profile.Pitch);
 
         SynthesisResult audio;
         try

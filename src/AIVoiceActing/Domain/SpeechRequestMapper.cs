@@ -13,10 +13,12 @@ public static class SpeechRequestMapper
         EmotionPlan plan,
         string referenceVoiceId,
         string text,
-        float exaggerationBias = 0f) =>
+        float exaggerationBias = 0f,
+        float pitch = 1f) =>
         new(
             ReferenceVoiceId: referenceVoiceId,
             Text: text,
             Exaggeration: Math.Clamp(plan.Exaggeration + exaggerationBias, 0f, 1f),
-            Tags: plan.Tags);
+            Tags: plan.Tags,
+            Pitch: pitch);
 }

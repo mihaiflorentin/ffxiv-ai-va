@@ -135,7 +135,14 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        return new SynthesisResult(Pcm16ToFloat(pcm16), KokoroSampleRate);
+
+        var samples = Pcm16ToFloat(pcm16);
+        if (Math.Abs(request.Pitch - 1f) > 0.01f)
+        {
+            samples = ResamplePitch(samples, request.Pitch);
+        }
+
+        return new SynthesisResult(samples, KokoroSampleRate);
     }
 
     /// <summary>
@@ -169,6 +176,32 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
             this.engine?.Dispose();
             this.engine = null;
         }
+    }
+
+    /// <summary>
+    /// Naive pitch shift by resampling: output[i] = input[i * pitch]. Above 1 the sample
+    /// stream shortens and plays brighter/faster (the child-voice lift); below 1 it
+    /// lengthens and deepens. Linear interpolation; good enough for character colouring.
+    /// </summary>
+    private static float[] ResamplePitch(float[] samples, float pitch)
+    {
+        if (samples.Length == 0)
+        {
+            return samples;
+        }
+
+        var outputLength = Math.Max(1, (int)(samples.Length / pitch));
+        var output = new float[outputLength];
+        for (var i = 0; i < outputLength; i++)
+        {
+            var source = i * pitch;
+            var i0 = (int)source;
+            var i1 = Math.Min(i0 + 1, samples.Length - 1);
+            var frac = source - i0;
+            output[i] = (samples[i0] * (1f - frac)) + (samples[i1] * frac);
+        }
+
+        return output;
     }
 
     private KokoroWavSynthesizer EnsureEngine()
