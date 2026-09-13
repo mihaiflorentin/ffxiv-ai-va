@@ -40,11 +40,11 @@ public sealed class ContainerVoicePresetTests
             using var container = Container(racePresets: true, root);
             var profile = container.ResolveProfile(Speaker());
 
-            var maleBiases = container.VoiceMap.SlotsFor(VoiceGroup.Male, 1).Select(s => s.ExaggerationBias);
-            var ungenderedBiases = container.VoiceMap.SlotsFor(VoiceGroup.Ungendered, null).Select(s => s.ExaggerationBias);
+            var maleIds = container.VoiceMap.SlotsFor(VoiceGroup.Male, 1).Select(s => s.Id).ToHashSet();
+            var ungenderedIds = container.VoiceMap.SlotsFor(VoiceGroup.Ungendered, null).Select(s => s.Id).ToHashSet();
 
-            Assert.Contains(profile.ExaggerationBias, maleBiases);
-            Assert.DoesNotContain(profile.ExaggerationBias, ungenderedBiases);
+            Assert.Contains(profile.ReferenceVoiceId, maleIds);
+            Assert.DoesNotContain(profile.ReferenceVoiceId, ungenderedIds);
         }
         finally
         {
@@ -61,11 +61,11 @@ public sealed class ContainerVoicePresetTests
             using var container = Container(racePresets: false, root);
             var profile = container.ResolveProfile(Speaker());
 
-            var ungenderedBiases = container.VoiceMap.SlotsFor(VoiceGroup.Ungendered, null).Select(s => s.ExaggerationBias);
-            var maleBiases = container.VoiceMap.SlotsFor(VoiceGroup.Male, 1).Select(s => s.ExaggerationBias);
+            var ungenderedIds = container.VoiceMap.SlotsFor(VoiceGroup.Ungendered, null).Select(s => s.Id).ToHashSet();
+            var maleIds = container.VoiceMap.SlotsFor(VoiceGroup.Male, 1).Select(s => s.Id).ToHashSet();
 
-            Assert.Contains(profile.ExaggerationBias, ungenderedBiases);
-            Assert.DoesNotContain(profile.ExaggerationBias, maleBiases);
+            Assert.Contains(profile.ReferenceVoiceId, ungenderedIds);
+            Assert.DoesNotContain(profile.ReferenceVoiceId, maleIds);
         }
         finally
         {

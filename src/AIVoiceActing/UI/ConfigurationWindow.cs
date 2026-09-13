@@ -139,6 +139,12 @@ public sealed class ConfigurationWindow : Window
             ImGui.EndTabItem();
         }
 
+        if (ImGui.BeginTabItem("Status"))
+        {
+            this.DrawStatusTab();
+            ImGui.EndTabItem();
+        }
+
         if (ImGui.BeginTabItem("Player Voices"))
         {
             this.DrawVoicesTab(playerTab: true);
@@ -250,12 +256,37 @@ public sealed class ConfigurationWindow : Window
                     : this.synthesizer.NotReadyReason;
             ImGui.TextUnformatted($"Voice engine: {status}");
             Controls.Combo(
-                "Execution provider",
+                "Engine",
+                ["kokoro", "chatterbox"],
+                () => c.SelectedEngine,
+                v => { c.SelectedEngine = v; save(); });
+            ImGui.SameLine();
+            Controls.HelpMarker(
+                "kokoro: CPU real-time with 54 accent voices (default). chatterbox: voice cloning, much slower.");
+            Controls.Combo(
+                "Execution provider (chatterbox only)",
                 ExecutionProviders,
                 () => c.SelectedEp,
                 v => { c.SelectedEp = v; save(); });
+            Controls.Combo(
+                "CPU impact",
+                ["low", "medium", "high"],
+                () => c.CpuImpact,
+                v => { c.CpuImpact = v; save(); });
+            ImGui.SameLine();
+            Controls.HelpMarker(
+                "ONNX synthesis threads: low = 2, medium = 4, high = 8. Lower protects framerate, higher shortens waits.");
+            Controls.DragFloat(
+                "Drop lines older than (seconds)",
+                0f, 120f,
+                () => c.StaleLineSeconds,
+                v => c.StaleLineSeconds = (int)MathF.Round(v),
+                save);
+            ImGui.SameLine();
+            Controls.HelpMarker(
+                "If a line finishes synthesizing after the conversation moved on, skip it instead of playing it late. 0 keeps everything.");
             Controls.Checkbox(
-                "Use fp32 language model (stability)",
+                "Use fp32 language model (chatterbox stability)",
                 "Avoids q4 int4 kernels that hard-crash on some CPUs (Zen 5 + AVX-512) and the q4 static-on-short-lines failure. Download the two optional fp32 rows on the Models tab first (~2 GB).",
                 () => c.UseFp32LanguageModel,
                 v => { c.UseFp32LanguageModel = v; save(); });
@@ -369,6 +400,72 @@ public sealed class ConfigurationWindow : Window
 
             ImGui.EndTable();
         }
+    }
+
+    // ---- Tab 3: Status ----
+
+    private long statusModelsDirBytes;
+    private DateTime statusModelsDirBytesAt;
+
+    private void DrawStatusTab()
+    {
+        ImGui.TextUnformatted("Engine");
+        ImGui.Separator();
+        var ready = this.synthesizer.IsReady;
+        ImGui.BulletText($"Selected engine: {this.config.SelectedEngine}");
+        ImGui.BulletText(
+            ready ? "State: ready" : $"State: NOT ready — {this.EngineReason()}");
+        ImGui.BulletText(
+            $"Execution provider: {(this.config.SelectedEngine == "kokoro" ? "cpu (Kokoro is CPU-only)" : this.config.SelectedEp)}");
+        ImGui.BulletText(
+            $"CPU impact: {this.config.CpuImpact} ({this.config.CpuImpact switch { "low" => 2, "high" => 8, _ => 4 }} synthesis threads)");
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Playback");
+        ImGui.Separator();
+        ImGui.BulletText($"Queue depth: {this.queue.Depth}");
+        ImGui.BulletText(
+            this.config.StaleLineSeconds > 0
+                ? $"Stale lines dropped after {this.config.StaleLineSeconds}s"
+                : "Stale-line dropping disabled");
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Resources");
+        ImGui.Separator();
+        using (var process = System.Diagnostics.Process.GetCurrentProcess())
+        {
+            ImGui.BulletText($"Plugin process memory: {process.WorkingSet64 / (1024.0 * 1024.0):0} MB");
+        }
+
+        var downloaded = this.modelAssets().Count(a => this.modelStore().IsDownloaded(a.FileName));
+        ImGui.BulletText($"Model assets: {downloaded}/{this.modelAssets().Count} downloaded");
+        ImGui.BulletText($"Models directory: {this.ModelsDirBytes() / (1024.0 * 1024.0):0} MB");
+        ImGui.BulletText(
+            $"Voice bank: {this.voiceMap().DistinctVoiceIds().Length} distinct voices (race/gender mapped)");
+    }
+
+    /// <summary>Total size of the models directory, recomputed at most every 2s.</summary>
+    private long ModelsDirBytes()
+    {
+        if ((DateTime.UtcNow - this.statusModelsDirBytesAt).TotalSeconds < 2)
+        {
+            return this.statusModelsDirBytes;
+        }
+
+        this.statusModelsDirBytesAt = DateTime.UtcNow;
+        long total = 0;
+        try
+        {
+            total = Directory.EnumerateFiles(this.modelsDir(), "*", SearchOption.AllDirectories)
+                .Sum(file => new FileInfo(file).Length);
+        }
+        catch (Exception)
+        {
+            // Directory missing or unreadable: report zero rather than drawing errors.
+        }
+
+        this.statusModelsDirBytes = total;
+        return total;
     }
 
     /// <summary>

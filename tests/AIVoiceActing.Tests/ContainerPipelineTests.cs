@@ -116,7 +116,10 @@ public sealed class ContainerPipelineTests
             speaker.Tribe,
             speaker.Sex);
 
-        Assert.Equal("default", profile.ReferenceVoiceId);
+        // The manifest now maps race/gender to Kokoro voice names; the exact slot is a
+        // deterministic hash pick within the speaker's group set.
+        var maleIds = container.VoiceMap.SlotsFor(VoiceGroup.Male, speaker.Race).Select(s => s.Id).ToHashSet();
+        Assert.Contains(profile.ReferenceVoiceId, maleIds);
         Assert.True(File.Exists(temp.Path("voice-assignments.json")));
     }
 

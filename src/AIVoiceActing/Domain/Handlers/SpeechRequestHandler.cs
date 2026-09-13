@@ -61,6 +61,9 @@ public sealed class SpeechRequestHandler
         string text,
         CancellationToken cancellationToken)
     {
+        // Staleness is measured from ARRIVAL (pre-synthesis): slow engines must not
+        // push finished audio for a conversation that already moved on.
+        var requestedAtTicks = Environment.TickCount64;
         var profile = this.profileLookup(speaker);
         if (profile is null)
         {
@@ -123,7 +126,7 @@ public sealed class SpeechRequestHandler
             return;
         }
 
-        this.queue.Enqueue(new SpeechItem(speaker, request, audio));
+        this.queue.Enqueue(new SpeechItem(speaker, request, audio, requestedAtTicks));
     }
 
     /// <summary>Director tags keep their order and win duplicates; extracted tags append.</summary>

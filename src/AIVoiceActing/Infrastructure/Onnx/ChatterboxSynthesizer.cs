@@ -33,6 +33,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     private readonly string executionProvider;
     private readonly string? languageModelOverride;
     private readonly ILogSink? log;
+    private readonly int? intraOpThreads;
     private readonly Lazy<Engine> engine;
     // Unbounded by design: one entry is a few MB (condition embedding + prompt tokens +
     // speaker tensors) and the voice population per session is small (tens — race/gender
@@ -58,7 +59,8 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         Func<ITextTokenizer>? tokenizerFactory = null,
         string executionProvider = "auto",
         ILogSink? log = null,
-        string? languageModelOverride = null)
+        string? languageModelOverride = null,
+        int? intraOpThreads = null)
     {
         this.modelsDir = modelsDir;
         this.voicePathResolver = voicePathResolver;
@@ -68,6 +70,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
                 Path.Combine(modelsDirLocal, ModelCatalog.TokenizerJsonFileName)));
         this.executionProvider = executionProvider;
         this.languageModelOverride = languageModelOverride;
+        this.intraOpThreads = intraOpThreads;
         this.log = log;
         this.engine = new Lazy<Engine>(this.CreateEngine, LazyThreadSafetyMode.ExecutionAndPublication);
     }
@@ -76,6 +79,13 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     public string EffectiveEp => this.engine.IsValueCreated ? this.engine.Value.Ep : "not initialized";
 
     public bool IsReady => this.FindNotReadyReason() is null;
+
+    /// <summary>Builds all sessions ahead of the first line; no-ops once initialized.</summary>
+    public Task WarmUpAsync(CancellationToken cancellationToken)
+    {
+        _ = this.engine.Value;
+        return Task.CompletedTask;
+    }
 
     /// <summary>Human-readable reason IsReady is false; empty when ready.</summary>
     public string NotReadyReason => this.FindNotReadyReason() ?? string.Empty;
@@ -444,7 +454,9 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         try
         {
             var (epOptions, ep) = EpSelector.CreateSessionOptions(
-                this.executionProvider, message => this.log?.Info(message));
+                this.executionProvider,
+                message => this.log?.Info(message),
+                this.intraOpThreads);
             options = epOptions;
             encoder = this.CreateSession(ModelCatalog.SpeechEncoderFileName, epOptions);
             created.Add(encoder);
@@ -468,7 +480,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             }
 
             options?.Dispose();
-            var cpuOptions = EpSelector.CreateSessionOptions("cpu").Options;
+            var cpuOptions = EpSelector.CreateSessionOptions("cpu", intraOpThreads: this.intraOpThreads).Options;
             encoder = this.CreateSession(ModelCatalog.SpeechEncoderFileName, cpuOptions);
             embed = this.CreateSession(ModelCatalog.EmbedTokensFileName, cpuOptions);
             lm = this.CreateSession(this.languageModelOverride ?? ModelCatalog.LanguageModelQ4FileName, cpuOptions);

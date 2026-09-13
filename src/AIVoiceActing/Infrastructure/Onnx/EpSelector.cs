@@ -38,14 +38,17 @@ public static class EpSelector
     /// </summary>
     public static (SessionOptions Options, string EffectiveEp) CreateSessionOptions(
         string requested,
-        Action<string>? log = null)
+        Action<string>? log = null,
+        int? intraOpThreads = null)
     {
-        // Leave half the logical cores for the game: ORT defaults to using them all,
-        // and CPU-fallback synthesis pinned the whole machine (the "framerate dropped"
-        // report). Half keeps synthesis fast enough while the game stays playable.
-        static SessionOptions BareOptions() => new()
+        // Explicit CPU-impact knob when set; otherwise leave half the logical cores
+        // for the game: ORT defaults to using them all, and CPU-fallback synthesis
+        // pinned the whole machine (the "framerate dropped" report).
+        SessionOptions BareOptions() => new()
         {
-            IntraOpNumThreads = Math.Max(2, Environment.ProcessorCount / 2),
+            IntraOpNumThreads = intraOpThreads is { } threads && threads > 0
+                ? threads
+                : Math.Max(2, Environment.ProcessorCount / 2),
         };
 
         var ep = requested.Trim().ToLowerInvariant();

@@ -1,80 +1,103 @@
 {
-  "sets": {
-    "male": [
-      {
-        "id": "default",
-        "exaggerationBias": 0.05
-      },
-      {
-        "id": "default",
-        "exaggerationBias": 0.1
-      },
-      {
-        "id": "default",
-        "exaggerationBias": 0.15
-      }
-    ],
-    "deepMale": [
-      {
-        "id": "default",
-        "exaggerationBias": 0.05
-      },
-      {
-        "id": "default",
-        "exaggerationBias": 0.08
-      },
-      {
-        "id": "default",
-        "exaggerationBias": 0.12
-      }
-    ],
-    "female": [
-      {
-        "id": "default",
-        "exaggerationBias": 0.1
-      },
-      {
-        "id": "default",
-        "exaggerationBias": 0.15
-      },
-      {
-        "id": "default",
-        "exaggerationBias": 0.2
-      }
-    ],
-    "highPitchFemale": [
-      {
-        "id": "default",
-        "exaggerationBias": 0.15
-      },
-      {
-        "id": "default",
-        "exaggerationBias": 0.2
-      },
-      {
-        "id": "default",
-        "exaggerationBias": 0.25
-      }
-    ],
-    "ungendered": [
-      {
-        "id": "default",
-        "exaggerationBias": 0.08
-      },
-      {
-        "id": "default",
-        "exaggerationBias": 0.14
-      },
-      {
-        "id": "default",
-        "exaggerationBias": 0.2
-      }
-    ]
-  },
-  "raceVariants": {
-    "3|Female": "highPitchFemale",
-    "8|Female": "highPitchFemale",
-    "5|Male": "deepMale",
-    "7|Male": "deepMale"
-  }
+ "sets": {
+  "male": [
+   {
+    "id": "am_michael"
+   },
+   {
+    "id": "am_puck"
+   },
+   {
+    "id": "am_echo"
+   },
+   {
+    "id": "am_liam"
+   }
+  ],
+  "deepMale": [
+   {
+    "id": "am_onyx"
+   },
+   {
+    "id": "am_adam"
+   },
+   {
+    "id": "am_fenrir"
+   }
+  ],
+  "female": [
+   {
+    "id": "af_heart"
+   },
+   {
+    "id": "af_nicole"
+   },
+   {
+    "id": "af_sarah"
+   },
+   {
+    "id": "af_nova"
+   }
+  ],
+  "highPitchFemale": [
+   {
+    "id": "af_sky"
+   },
+   {
+    "id": "af_bella"
+   },
+   {
+    "id": "af_kore"
+   }
+  ],
+  "britishMale": [
+   {
+    "id": "bm_george"
+   },
+   {
+    "id": "bm_daniel"
+   },
+   {
+    "id": "bm_fable"
+   },
+   {
+    "id": "bm_lewis"
+   }
+  ],
+  "britishFemale": [
+   {
+    "id": "bf_emma"
+   },
+   {
+    "id": "bf_isabella"
+   },
+   {
+    "id": "bf_lily"
+   },
+   {
+    "id": "bf_alice"
+   }
+  ],
+  "ungendered": [
+   {
+    "id": "af_alloy"
+   },
+   {
+    "id": "af_river"
+   },
+   {
+    "id": "am_eric"
+   }
+  ]
+ },
+ "raceVariants": {
+  "2|Female": "britishFemale",
+  "2|Male": "britishMale",
+  "3|Female": "highPitchFemale",
+  "5|Male": "deepMale",
+  "6|Male": "deepMale",
+  "7|Male": "deepMale",
+  "8|Male": "deepMale",
+  "8|Female": "highPitchFemale"
+ }
 }

@@ -19,17 +19,24 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
 {
     private readonly IAudioSink sink;
     private readonly Func<float> volume;
+    private readonly Func<long>? staleAfterMsFactory;
     private readonly ILogSink? log;
     private readonly Channel<SpeechItem> channel =
         Channel.CreateUnbounded<SpeechItem>(new UnboundedChannelOptions { SingleReader = true });
     private readonly CancellationTokenSource disposal = new();
+    private int depth;
     private readonly Task worker;
     private bool disposed;
 
-    public PlaybackSpeechQueue(IAudioSink sink, Func<float>? volumeFactory = null, ILogSink? log = null)
+    public PlaybackSpeechQueue(
+        IAudioSink sink,
+        Func<float>? volumeFactory = null,
+        ILogSink? log = null,
+        Func<long>? staleAfterMsFactory = null)
     {
         this.sink = sink ?? throw new ArgumentNullException(nameof(sink));
         this.volume = volumeFactory ?? (() => 1f);
+        this.staleAfterMsFactory = staleAfterMsFactory;
         this.log = log;
         this.worker = Task.Run(this.PlayLoopAsync);
     }
@@ -41,8 +48,14 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
             return;
         }
 
-        this.channel.Writer.TryWrite(item);
+        if (this.channel.Writer.TryWrite(item))
+        {
+            Interlocked.Increment(ref this.depth);
+        }
     }
+
+    public int Depth => Volatile.Read(ref this.depth);
+
 
     /// <summary>Stops the item currently being spoken; queued items are kept.</summary>
     public void CancelCurrent() => this.sink.Cancel();
@@ -74,6 +87,7 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
             {
                 while (this.channel.Reader.TryRead(out var item))
                 {
+                    Interlocked.Decrement(ref this.depth);
                     this.PlayItem(item);
                 }
             }
@@ -86,6 +100,18 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
 
     private void PlayItem(SpeechItem item)
     {
+        var staleAfterMs = this.staleAfterMsFactory?.Invoke() ?? 0;
+        if (item.RequestedAtTicks != 0 && staleAfterMs > 0)
+        {
+            var ageMs = Environment.TickCount64 - item.RequestedAtTicks;
+            if (ageMs > staleAfterMs)
+            {
+                this.log?.Info(
+                    $"Dropping stale line for \"{item.Speaker.Key}\" ({ageMs / 1000.0:0}s old; limit {staleAfterMs / 1000.0:0}s).");
+                return;
+            }
+        }
+
         if (!this.sink.IsSupported)
         {
             // mac / no output device: dequeue without audio so the pipeline keeps flowing.

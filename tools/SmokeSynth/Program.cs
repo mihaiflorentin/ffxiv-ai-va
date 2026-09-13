@@ -1,6 +1,7 @@
 namespace SmokeSynth;
 
 using System.Diagnostics;
+using AIVoiceActing.Infrastructure.Kokoro;
 using AIVoiceActing.Infrastructure.Onnx;
 using AIVoiceActing.Ports;
 
@@ -15,6 +16,7 @@ internal static class Program
     {
         string? text = null;
         string? reference = null;
+        string? engine = null;
         string? executionProvider = null;
         string? output = null;
         string? modelsDir = null;
@@ -51,6 +53,9 @@ internal static class Program
                 case "--ep" when i + 1 < args.Length:
                     executionProvider = args[++i];
                     break;
+                case "--engine" when i + 1 < args.Length:
+                    engine = args[++i];
+                    break;
                 case "--models" when i + 1 < args.Length:
                     modelsDir = args[++i];
                     break;
@@ -82,33 +87,51 @@ internal static class Program
             Console.Error.WriteLine("--exaggeration must be within 0.0..1.0.");
             return 1;
         }
-
-        // Default reference: the bundled MIT fallback clip copied next to the binary.
-        reference ??= Path.Combine(AppContext.BaseDirectory, "voices", "default_voice.wav");
-        if (!File.Exists(reference))
+        // Chatterbox default reference: the bundled MIT fallback clip. Kokoro takes a
+        // voice NAME here (--ref af_heart); a path is tolerated and reduced to its stem.
+        if (engine != "kokoro")
         {
-            Console.Error.WriteLine($"Reference voice not found: {reference}");
-            return 1;
+            reference ??= Path.Combine(AppContext.BaseDirectory, "voices", "default_voice.wav");
+            if (!File.Exists(reference))
+            {
+                Console.Error.WriteLine($"Reference voice not found: {reference}");
+                return 1;
+            }
+        }
+        else if (reference is not null && (reference.Contains('/') || reference.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)))
+        {
+            reference = Path.GetFileNameWithoutExtension(reference);
         }
 
         modelsDir ??= "models";
         try
         {
             var log = new ConsoleLogSink();
-            var tokenizer = new TokenizersDotNetTokenizer(
-                Path.Combine(modelsDir, ModelCatalog.TokenizerJsonFileName));
-            Console.WriteLine(
-                $"text ids: [{string.Join(", ", tokenizer.Encode(ChatterboxSynthesizer.BuildPromptText([.. tags], text)))}]");
-            var synthesizer = new ChatterboxSynthesizer(
-                modelsDir: modelsDir,
-                voicePathResolver: _ => reference,
-                tokenizerFactory: () => tokenizer,
-                executionProvider: executionProvider ?? "auto",
-                log: log,
-                languageModelOverride: lmOverride);
+            ISpeechSynthesizer synthesizer;
+            if (engine == "kokoro")
+            {
+                synthesizer = new KokoroSynthesizer(
+                    () => modelsDir!,
+                    () => 4,
+                    log);
+            }
+            else
+            {
+                var tokenizer = new TokenizersDotNetTokenizer(
+                    Path.Combine(modelsDir, ModelCatalog.TokenizerJsonFileName));
+                Console.WriteLine(
+                    $"text ids: [{string.Join(", ", tokenizer.Encode(ChatterboxSynthesizer.BuildPromptText([.. tags], text)))}]");
+                synthesizer = new ChatterboxSynthesizer(
+                    modelsDir: modelsDir,
+                    voicePathResolver: _ => reference,
+                    tokenizerFactory: () => tokenizer,
+                    executionProvider: executionProvider ?? "auto",
+                    log: log,
+                    languageModelOverride: lmOverride);
+            }
 
             var request = new SynthesisRequest(
-                ReferenceVoiceId: "default",
+                ReferenceVoiceId: engine == "kokoro" ? (reference ?? "af_heart") : "default",
                 Text: text,
                 Exaggeration: (float)exaggeration,
                 Tags: tags);
@@ -122,7 +145,7 @@ internal static class Program
             WavCodec.WriteMono24k(output, result.Samples);
             var durationSeconds = result.Samples.Length / (double)result.SampleRate;
 
-            Console.WriteLine($"ep:          {synthesizer.EffectiveEp}");
+            Console.WriteLine($"ep:          {(synthesizer is ChatterboxSynthesizer chatterbox ? chatterbox.EffectiveEp : "cpu")}");
             Console.WriteLine($"audio:       {durationSeconds:0.00} s ({result.Samples.Length} samples @ {result.SampleRate} Hz)");
             Console.WriteLine($"out:         {output}");
             if (printRealTimeFactor)

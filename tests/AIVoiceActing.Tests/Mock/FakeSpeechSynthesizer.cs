@@ -13,6 +13,8 @@ public sealed class FakeSpeechSynthesizer : ISpeechSynthesizer
     public bool IsReady { get; set; } = true;
     public string NotReadyReason { get; set; } = "";
 
+    public int WarmUpCalls { get; private set; }
+
     public Exception? Throw { get; set; }
 
     public Func<SynthesisRequest, CancellationToken, SynthesisResult>? SynthesizeFunc { get; set; }
@@ -41,5 +43,11 @@ public sealed class FakeSpeechSynthesizer : ISpeechSynthesizer
         }
 
         return Task.FromResult(new SynthesisResult([0f, 0.5f, -0.5f], 24000));
+    }
+
+    public Task WarmUpAsync(CancellationToken cancellationToken)
+    {
+        this.WarmUpCalls++;
+        return Task.CompletedTask;
     }
 }

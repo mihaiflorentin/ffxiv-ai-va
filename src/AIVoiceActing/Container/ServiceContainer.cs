@@ -44,6 +44,8 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<float>? defaultExaggerationFactory;
     private readonly Func<string>? selectedEpFactory;
     private readonly Func<bool>? useFp32LanguageModelFactory;
+    private readonly Func<string>? selectedEngineFactory;
+    private readonly Func<int>? cpuThreadsFactory;
     private readonly Func<IEmotionDirector?>? llmDirectorFactory;
     private readonly Func<bool>? nameNpcWithSayFactory;
     private readonly Func<bool>? disallowMultipleSayFactory;
@@ -118,6 +120,8 @@ public sealed class ServiceContainer : IDisposable
         Func<float>? defaultExaggerationFactory = null,
         Func<string>? selectedEpFactory = null,
         Func<bool>? useFp32LanguageModelFactory = null,
+        Func<string>? selectedEngineFactory = null,
+        Func<int>? cpuThreadsFactory = null,
         Func<IEmotionDirector?>? llmDirectorFactory = null,
         Func<bool>? cutsceneActiveFactory = null,
         Func<bool>? talkVisibleFactory = null,
@@ -153,6 +157,8 @@ public sealed class ServiceContainer : IDisposable
         this.cutsceneActiveFactory = cutsceneActiveFactory;
         this.selectedEpFactory = selectedEpFactory;
         this.useFp32LanguageModelFactory = useFp32LanguageModelFactory;
+        this.selectedEngineFactory = selectedEngineFactory;
+        this.cpuThreadsFactory = cpuThreadsFactory;
         this.llmDirectorFactory = llmDirectorFactory;
         this.talkVisibleFactory = talkVisibleFactory;
         this.useRaceVoicePresetsFactory = useRaceVoicePresetsFactory;
@@ -196,30 +202,49 @@ public sealed class ServiceContainer : IDisposable
         }
     }
 
-    /// <summary>Local Chatterbox synthesizer; sessions load lazily on first synthesis.</summary>
+    /// <summary>
+    /// The configured speech engine: "kokoro" (CPU real-time, default) or "chatterbox"
+    /// (voice cloning, slower). Sessions load lazily on first use / warm-up.
+    /// </summary>
     public ISpeechSynthesizer SpeechSynthesizer
     {
         get
         {
             lock (this.gate)
             {
-                return this.speechSynthesizer ??= this.RegisterDisposable(
-                    new ChatterboxSynthesizer(
-                        this.ModelsDir,
-                        // Convention: the provisioner writes catalog assets flat, so the
-                        // bundled fallback clip id "default" resolves to
-                        // ModelsDir/default_voice.wav; plugin-installed clips live under
-                        // ModelsDir/voices/{id}.wav (wired in Steps 5-6).
-                        voicePathResolver: voiceId => voiceId == "default"
-                            ? Path.Combine(this.ModelsDir, "default_voice.wav")
-                            : Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav"),
-                        executionProvider: this.selectedEpFactory?.Invoke() ?? "auto",
-                        // fp32 override replaces the q4 LM session entirely (int4 kernels
-                        // and their Zen5/AVX-512 native crashes go with it).
-                        languageModelOverride: this.useFp32LanguageModelFactory?.Invoke() == true
-                            ? Infrastructure.Onnx.ModelCatalog.LanguageModelFp32FileName
-                            : null,
-                        log: this.LogSinkUnlocked()));
+                if (this.speechSynthesizer is { } existing)
+                {
+                    return existing;
+                }
+
+                var threads = this.cpuThreadsFactory?.Invoke();
+                if (this.selectedEngineFactory?.Invoke() == "chatterbox")
+                {
+                    return this.speechSynthesizer = this.RegisterDisposable(
+                        new ChatterboxSynthesizer(
+                            this.ModelsDir,
+                            // Convention: the provisioner writes catalog assets flat, so the
+                            // bundled fallback clip id "default" resolves to
+                            // ModelsDir/default_voice.wav; plugin-installed clips live under
+                            // ModelsDir/voices/{id}.wav.
+                            voicePathResolver: voiceId => voiceId == "default"
+                                ? Path.Combine(this.ModelsDir, "default_voice.wav")
+                                : Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav"),
+                            executionProvider: this.selectedEpFactory?.Invoke() ?? "auto",
+                            // fp32 override replaces the q4 LM session entirely (int4 kernels
+                            // and their Zen5/AVX-512 native crashes go with it).
+                            languageModelOverride: this.useFp32LanguageModelFactory?.Invoke() == true
+                                ? Infrastructure.Onnx.ModelCatalog.LanguageModelFp32FileName
+                                : null,
+                            intraOpThreads: threads,
+                            log: this.LogSinkUnlocked()));
+                }
+
+                return this.speechSynthesizer = this.RegisterDisposable(
+                    new Infrastructure.Kokoro.KokoroSynthesizer(
+                        () => this.ModelsDir,
+                        () => Math.Max(1, threads ?? 4),
+                        this.LogSinkUnlocked()));
             }
         }
     }
@@ -610,9 +635,14 @@ public sealed class ServiceContainer : IDisposable
 
     /// <summary>Placeholder queue until the audio sink wires a real one (review round 1):
     /// playback calls are no-ops; the first resolution warns once.</summary>
-    private sealed class NoopSpeechQueue(Action warnOnce) : ISpeechQueue
+    private sealed class NoopSpeechQueue : ISpeechQueue
     {
+        private readonly Action warnOnce;
         private bool warned;
+
+        public NoopSpeechQueue(Action warnOnce) => this.warnOnce = warnOnce;
+
+        public int Depth => 0;
 
         public void Enqueue(SpeechItem item) => this.Warn();
 
@@ -632,7 +662,8 @@ public sealed class ServiceContainer : IDisposable
             }
 
             this.warned = true;
-            warnOnce();
+            this.warnOnce();
         }
     }
 }
+

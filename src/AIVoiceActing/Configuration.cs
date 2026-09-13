@@ -105,6 +105,16 @@ public class Configuration
     /// </summary>
     public bool UseFp32LanguageModel { get; set; }
 
+    // ---- Engine selection & performance ----
+    /// <summary>"kokoro" (fast, default) or "chatterbox" (voice cloning, slower, heavier).</summary>
+    public string SelectedEngine { get; set; } = "kokoro";
+
+    /// <summary>Lines older than this are dropped at playback instead of played late. 0 keeps everything.</summary>
+    public int StaleLineSeconds { get; set; } = 20;
+
+    /// <summary>ONNX intra-op thread budget: "low" = 2, "medium" = 4, "high" = 8. Lower protects framerate.</summary>
+    public string CpuImpact { get; set; } = "medium";
+
     // ---- Triggers / exclusions (an exclusion wins) ----
     public IList<TriggerSpec> Triggers { get; set; } = new List<TriggerSpec>();
     public IList<TriggerSpec> Exclusions { get; set; } = new List<TriggerSpec>();

@@ -16,4 +16,6 @@ public sealed class FakeSpeechQueue : ISpeechQueue
     public void CancelCurrent() => this.CancelCurrentCalls++;
 
     public void Clear() => this.ClearCalls++;
+
+    public int Depth => this.Enqueued.Count;
 }

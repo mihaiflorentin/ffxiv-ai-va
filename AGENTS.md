@@ -40,19 +40,27 @@ Every command that builds the plugin or the tests needs the Dalamud assemblies:
 ```bash
 export DALAMUD_HOME="$HOME/Workspace/ffxiv-ai-va/.dalamud/dev"
 
-dotnet build AIVoiceActing.sln -c Release
-dotnet test tests/AIVoiceActing.Tests/AIVoiceActing.Tests.csproj -c Release
-dotnet publish src/AIVoiceActing/AIVoiceActing.csproj -c Release   # produces latest.zip (DalamudPackager)
+# Distro SDK (10.0.12) lacks PrunePackageData, hence AllowMissingPrunePackageData.
+dotnet build src/AIVoiceActing/AIVoiceActing.csproj -c Release -p:AllowMissingPrunePackageData=true
+dotnet test tests/AIVoiceActing.Tests/AIVoiceActing.Tests.csproj -c Release -p:NetCoreTargetingPackRoot=$HOME/.cache/dotnet-official-packs/packs
+dotnet publish src/AIVoiceActing/AIVoiceActing.csproj -c Release -p:AllowMissingPrunePackageData=true   # produces latest.zip (DalamudPackager)
 
-# Engine smoke harness (no Dalamud needed):
-dotnet run --project tools/SmokeSynth -- --text "Life is but a dream." \
-  --ref voices/default_voice.wav --exaggeration 0.5 --out /tmp/aiva-test.wav --rtf
+# Engine smoke harness (no Dalamud needed). --engine kokoro is the default in-game
+# engine (needs --models pointing at a dir with kokoro-v1.0.onnx and --ref <voice name>
+# such as af_heart); omit --engine for the legacy Chatterbox path:
+dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMissingPrunePackageData=true -- \
+  --engine kokoro --text "Life is but a dream." --ref af_heart \
+  --models "$HOME/.cache/aiva-kokoro" --out /tmp/aiva-test.wav --rtf
 ```
 
-The tests project and the SmokeSynth tool must NOT reference Dalamud or OnnxRuntime; the
-plugin project's csproj carries the runtime packages (OnnxRuntime, DirectML, NAudio,
-Tokenizers.DotNet, Standart.Hash.xxHash). NuGet packages are added in the csproj that owns
+The tests project and the SmokeSynth tool must NOT reference Dalamud; the plugin project's
+csproj carries the runtime packages (OnnxRuntime, DirectML, NAudio, Tokenizers.DotNet,
+Standart.Hash.xxHash, KokoroSharp). NuGet packages are added in the csproj that owns
 their runtime use, never transitively "while convenient".
+
+# Dev install (no GitHub releases): unzip latest.zip into
+# ~/.xlcore/installedPlugins/AIVoiceActing/<version>/ (boot scan) and
+# ~/.xlcore/devPlugins/AIVoiceActing/ ("Scan Dev Plugins" in the installer).
 
 ## Conventions
 

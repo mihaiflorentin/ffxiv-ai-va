@@ -29,11 +29,11 @@ public sealed class RaceVoiceMapTests
     [InlineData(VoiceGroup.Female)]
     [InlineData(VoiceGroup.Ungendered)]
     [InlineData(VoiceGroup.Unknown)]
-    public void SlotBiases_AreDistinctWithinSet_AndWithinRange(VoiceGroup group)
+    public void SlotIds_AreDistinctWithinSet_AndAreKokoroVoices(VoiceGroup group)
     {
-        var biases = LoadDefault().SlotsFor(group, race: null).Select(slot => slot.ExaggerationBias).ToArray();
-        Assert.Equal(biases.Length, biases.Distinct().Count());
-        Assert.All(biases, bias => Assert.InRange(bias, 0.05f, 0.25f));
+        var ids = LoadDefault().SlotsFor(group, race: null).Select(slot => slot.Id).ToArray();
+        Assert.Equal(ids.Length, ids.Distinct().Count());
+        Assert.All(ids, id => Assert.Matches("^[a-z]{2}_[a-z]+$", id));
     }
 
     [Fact]
@@ -44,33 +44,37 @@ public sealed class RaceVoiceMapTests
     }
 
     [Fact]
-    public void LalafellAndVieraFemales_UseHighPitchSet()
+    public void LalafellVieraAndHrothgarFemales_UseHighPitchSet()
     {
         var map = LoadDefault();
-        var baseFemale = map.SlotsFor(VoiceGroup.Female, race: null);
+        var baseFemaleIds = map.SlotsFor(VoiceGroup.Female, race: null).Select(s => s.Id).ToHashSet();
         foreach (var race in new byte?[] { 3, 8 })
         {
-            // High pitch → biased toward higher exaggeration in v1: min bias above base min.
-            Assert.True(
-                map.SlotsFor(VoiceGroup.Female, race).Min(slot => slot.ExaggerationBias)
-                > baseFemale.Min(slot => slot.ExaggerationBias),
-                $"race {race} female should use the high-pitch variant");
+            var ids = map.SlotsFor(VoiceGroup.Female, race).Select(s => s.Id).ToArray();
+            Assert.Empty(ids.ToHashSet().Intersect(baseFemaleIds));
+            Assert.All(ids, id => Assert.StartsWith("af_", id));
         }
     }
 
     [Fact]
-    public void RoegadynAndHrothgarMales_UseDeepSet()
+    public void RoegadynVieraAndHrothgarMales_UseDeepSet()
     {
         var map = LoadDefault();
-        var baseMale = map.SlotsFor(VoiceGroup.Male, race: null);
-        foreach (var race in new byte?[] { 5, 7 })
+        var baseMaleIds = map.SlotsFor(VoiceGroup.Male, race: null).Select(s => s.Id).ToHashSet();
+        foreach (var race in new byte?[] { 5, 7, 8 })
         {
-            // Deep voices → biased toward lower exaggeration in v1: max bias below base max.
-            Assert.True(
-                map.SlotsFor(VoiceGroup.Male, race).Max(slot => slot.ExaggerationBias)
-                < baseMale.Max(slot => slot.ExaggerationBias),
-                $"race {race} male should use the deep variant");
+            var ids = map.SlotsFor(VoiceGroup.Male, race).Select(s => s.Id).ToArray();
+            Assert.Empty(ids.ToHashSet().Intersect(baseMaleIds));
+            Assert.All(ids, id => Assert.StartsWith("am_", id));
         }
+    }
+
+    [Fact]
+    public void Elezen_UseBritishAccentSet()
+    {
+        var map = LoadDefault();
+        Assert.All(map.SlotsFor(VoiceGroup.Male, 2).Select(s => s.Id), id => Assert.StartsWith("bm_", id));
+        Assert.All(map.SlotsFor(VoiceGroup.Female, 2).Select(s => s.Id), id => Assert.StartsWith("bf_", id));
     }
 
     [Fact]

@@ -14,10 +14,43 @@ using Xunit;
 /// </summary>
 public sealed class PlaybackSpeechQueueTests
 {
-    private static SpeechItem Item(float tag) => new(
+    private static SpeechItem Item(float tag, long requestedAtTicks = 0) => new(
         new SpeakerIdentity("npc:x", "x", null, null, null, null),
         new SynthesisRequest("default", "line", 0.5f, []),
-        new SynthesisResult([tag], 24000));
+        new SynthesisResult([tag], 24000),
+        requestedAtTicks);
+
+    [Fact]
+    public void StaleItems_AreDropped_FreshOnesPlay()
+    {
+        var sink = new FakeAudioSink();
+        using var queue = new PlaybackSpeechQueue(
+            sink, staleAfterMsFactory: () => 20_000);
+
+        // Old line (arrived 60s ago) is dropped at dequeue; fresh line plays.
+        queue.Enqueue(Item(1, Environment.TickCount64 - 60_000));
+        queue.Enqueue(Item(2, Environment.TickCount64 - 1_000));
+        Assert.True(
+            SpinWait.SpinUntil(() => sink.Played.Count == 1, Seconds(5)),
+            "expected exactly the fresh item to play");
+
+        Assert.Equal([2f], sink.Played.Select(p => p.Audio.Samples[0]));
+    }
+
+    [Fact]
+    public void ZeroTimestamp_AndDisabledWindow_NeverDrop()
+    {
+        var sink = new FakeAudioSink();
+        using var queue = new PlaybackSpeechQueue(
+            sink, staleAfterMsFactory: () => 0);
+
+        // RequestedAtTicks=0 (user-initiated tests) plus a disabled window (0): both play.
+        queue.Enqueue(Item(1, Environment.TickCount64 - 600_000));
+        queue.Enqueue(Item(2, 0));
+        Assert.True(
+            SpinWait.SpinUntil(() => sink.Played.Count == 2, Seconds(5)),
+            "expected both items to play when dropping is disabled");
+    }
 
     [Fact]
     public void PlaysItemsSequentially_InEnqueueOrder_WithLiveVolume()

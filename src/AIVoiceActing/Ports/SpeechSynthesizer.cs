@@ -29,5 +29,11 @@ public interface ISpeechSynthesizer
     /// <summary>Human-readable reason <see cref="IsReady"/> is false; empty when ready.</summary>
     string NotReadyReason { get; }
 
+    /// <summary>
+    /// Builds engine sessions ahead of the first line (login pre-warm). Idempotent;
+    /// asset problems surface here exactly as in <see cref="SynthesizeAsync"/>.
+    /// </summary>
+    Task WarmUpAsync(CancellationToken cancellationToken);
+
     Task<SynthesisResult> SynthesizeAsync(SynthesisRequest request, CancellationToken cancellationToken);
 }

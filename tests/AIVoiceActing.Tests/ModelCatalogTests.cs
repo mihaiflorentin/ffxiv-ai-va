@@ -47,13 +47,21 @@ public sealed class ModelCatalogTests
     }
 
     [Fact]
-    public void RequiredGroup_HoldsExactlyTheTenEngineAssets()
+    public void RequiredGroup_HoldsExactlyTheTenChatterboxAssets_AndKokoroIsSeparate()
     {
         Assert.Equal(10, ModelCatalog.ChatterboxRequiredAssets.Count);
-        Assert.Equal(12, ModelCatalog.Assets.Count);
+        Assert.Equal(13, ModelCatalog.Assets.Count);
         Assert.All(ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.ChatterboxRequiredGroup),
             a => Assert.False(a.Asset.Optional));
         Assert.All(ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.ChatterboxFp32LmGroup), a => Assert.True(a.Asset.Optional));
+
+        var kokoro = ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.KokoroGroup).ToArray();
+        Assert.Single(kokoro);
+        Assert.False(kokoro[0].Asset.Optional);
+        Assert.NotNull(kokoro[0].Sha256);
+        Assert.Equal(
+            ModelCatalog.KokoroRepoBaseUrl + ModelCatalog.KokoroRemoteFileName,
+            ModelCatalog.UrlFor(kokoro[0].Asset));
     }
 
     [Fact]

@@ -31,10 +31,22 @@ public static class ModelCatalog
     /// Optional fp32 LM group: the readme pipeline's full-precision model. The Step 3 gate
     /// found the q4 export degenerating on short prompts (immediate STOP); fp32 is the
     /// known-good fallback at ~2 GB. Optional — q4 stays the small default download.
-    /// </summary>
     public const string ChatterboxFp32LmGroup = "chatterbox-fp32-lm";
     public const string LanguageModelFp32FileName = "onnx/language_model.onnx";
     public const string LanguageModelFp32DataFileName = "onnx/language_model.onnx_data";
+
+    /// <summary>
+    /// Kokoro-82M v1.0 (Apache-2.0) from KokoroSharpBinaries: the CPU real-time engine.
+    /// This export names its inputs tokens/style/speed — what KokoroSharp's Infer feeds.
+    /// (The onnx-community/kokoro-82M-v1.0-ONNX export names the input "input_ids" and is
+    /// NOT loadable by KokoroSharp.) fp32 on purpose — quantized exports hit the
+    /// MatMulNBits native-kernel class that crashed under Zen 5/AVX-512. Voice banks ship
+    /// in the KokoroSharp NuGet package, so the model file is the only provisioned asset.
+    /// </summary>
+    public const string KokoroGroup = "kokoro";
+    public const string KokoroModelFileName = "kokoro-v1.0.onnx";
+    public const string KokoroRepoBaseUrl = "https://github.com/Lyrcaxis/KokoroSharpBinaries/releases/download/v2.0.0/";
+    public const string KokoroRemoteFileName = "kokoro.onnx";
 
     /// <summary>One pinned catalog entry: the port asset plus integrity metadata.</summary>
     /// <param name="Asset">Port-level asset (name, file, size, optionality).</param>
@@ -93,13 +105,22 @@ public static class ModelCatalog
             new ModelAsset("Language model weights (fp32)", LanguageModelFp32DataFileName, 2080632832, Optional: true),
             "efe9a1173c40d50bc651cb96ebff9f23d6f20d5b3a11b0685510e3a3facdbcf1",
             ChatterboxFp32LmGroup),
+        new(
+            new ModelAsset("Kokoro model (fp32)", KokoroModelFileName, 325508342),
+            "0cfd5e79aab70a3d8c1a57dc639835110ddb32c9f5ff4fdd1f4db202ea43bb05",
+            KokoroGroup),
     ];
 
     /// <summary>Required Chatterbox assets (the whole engine; optionals would be excluded).</summary>
     public static IReadOnlyList<ModelAsset> ChatterboxRequiredAssets { get; } =
         Assets.Where(a => a.Group == ChatterboxRequiredGroup).Select(a => a.Asset).ToArray();
 
-    public static string UrlFor(ModelAsset asset) => RepoBaseUrl + asset.FileName;
+    /// <summary>Resolve URLs are RepoBaseUrl + ModelAsset.FileName; Kokoro's remote file
+    /// is a GitHub release asset named kokoro.onnx while the local layout stays flat.</summary>
+    public static string UrlFor(ModelAsset asset) =>
+        asset.FileName == KokoroModelFileName
+            ? KokoroRepoBaseUrl + KokoroRemoteFileName
+            : RepoBaseUrl + asset.FileName;
 
     public static string? Sha256For(string fileName) =>
         Assets.FirstOrDefault(a => a.Asset.FileName == fileName)?.Sha256;

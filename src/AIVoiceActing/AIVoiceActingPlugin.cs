@@ -126,7 +126,8 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             lexiconEntriesFactory: () => Infrastructure.Text.LexiconFileLoader.Load(
                 config.Lexicons, new DalamudLogSink(PluginLog)),
             speechQueueFactory: () => new PlaybackSpeechQueue(
-                sink, () => config.GlobalVolume, new DalamudLogSink(PluginLog)),
+                sink, () => config.GlobalVolume, new DalamudLogSink(PluginLog),
+                staleAfterMsFactory: () => (long)config.StaleLineSeconds * 1000),
             enabledChatTypesFactory: () => config.CurrentPreset?.EnabledChatTypes as IReadOnlyCollection<int>,
             enableAllChatTypesFactory: () => config.CurrentPreset?.EnableAllChatTypes ?? false,
             triggersFactory: () => config.Triggers.AsReadOnly(),
@@ -148,6 +149,13 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             defaultExaggerationFactory: () => config.DefaultExaggeration,
             selectedEpFactory: () => config.SelectedEp,
             useFp32LanguageModelFactory: () => config.UseFp32LanguageModel,
+            selectedEngineFactory: () => config.SelectedEngine,
+            cpuThreadsFactory: () => config.CpuImpact switch
+            {
+                "low" => 2,
+                "high" => 8,
+                _ => 4,
+            },
             llmDirectorFactory: () => config.DirectorEnabled ? this.TryGetLlmDirector() : null,
             useRaceVoicePresetsFactory: () => config.UseRaceVoicePresets,
             adHocStyleTagsFactory: () => config.AdHocStyleTagsEnabled,
@@ -270,6 +278,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         this.battleTalkSource.SpeechInterrupted += this.OnSpeechInterrupted;
 
         Framework.Update += this.OnFrameworkUpdate;
+        // Pre-warm: build the engine's ONNX sessions the moment a character logs in, so
+        // the first spoken line doesn't pay the init cost mid-conversation.
+        ClientState.Login += this.OnClientLogin;
 
         _ = this.services.Pipeline;
         this.talkSource.Start();
@@ -282,6 +293,23 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             $"AIVoiceActing loaded: capture sources and pipeline armed (volume " +
             $"{config.GlobalVolume * 100f:0}%, EP \"{config.SelectedEp}\").");
     }
+
+    private void OnClientLogin()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await this.services.SpeechSynthesizer.WarmUpAsync(CancellationToken.None);
+                this.services.LogSink.Info("Speech engine pre-warm complete.");
+            }
+            catch (Exception ex)
+            {
+                this.services.LogSink.Warn($"Speech engine pre-warm failed (will retry on first line): {ex.Message}");
+            }
+        });
+    }
+
 
     private void RegisterCommands()
     {
@@ -380,17 +408,20 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     private static string ExtractVoicesManifest(string configDir)
     {
         var path = Path.Combine(configDir, "voices.json");
-        if (File.Exists(path))
+        using var stream = typeof(AIVoiceActingPlugin).Assembly.GetManifestResourceStream(
+            "AIVoiceActing.Domain.voices.json")
+            ?? throw new InvalidOperationException("Embedded voices.json manifest is missing.");
+        using var reader = new StreamReader(stream);
+        var embedded = reader.ReadToEnd();
+
+        // Overwrite on content drift so engine upgrades (e.g. Chatterbox clip ids →
+        // Kokoro voice names) replace the stale manifest instead of hiding behind it.
+        if (File.Exists(path) && File.ReadAllText(path) == embedded)
         {
             return path;
         }
 
-        Directory.CreateDirectory(configDir);
-        using var stream = typeof(AIVoiceActingPlugin).Assembly.GetManifestResourceStream(
-            "AIVoiceActing.Domain.voices.json")
-            ?? throw new InvalidOperationException("Embedded voices.json manifest is missing.");
-        using var file = File.Create(path);
-        stream.CopyTo(file);
+        File.WriteAllText(path, embedded);
         return path;
     }
 
@@ -403,6 +434,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         uiBuilder.OpenConfigUi -= this.openConfigUiHook;
         this.windowSystem.RemoveAllWindows();
         Framework.Update -= this.OnFrameworkUpdate;
+        ClientState.Login -= this.OnClientLogin;
         foreach (var name in CommandNames)
         {
             CommandManager.RemoveHandler(name);
