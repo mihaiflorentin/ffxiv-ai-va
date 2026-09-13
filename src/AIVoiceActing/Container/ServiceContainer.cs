@@ -213,6 +213,24 @@ public sealed class ServiceContainer : IDisposable
     /// (CPU real-time fallback), or "chatterbox" (legacy cloning). Sessions load lazily
     /// on first use / warm-up.
     /// </summary>
+    /// <summary>
+    /// Drops the cached synthesizer so the next access rebuilds it from the current
+    /// engine/EP selection. All adapters dispose idempotently, so disposing here and
+    /// again at teardown is safe.
+    /// </summary>
+    public void InvalidateSpeechSynthesizer()
+    {
+        lock (this.gate)
+        {
+            if (this.speechSynthesizer is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+
+            this.speechSynthesizer = null;
+        }
+    }
+
     public ISpeechSynthesizer SpeechSynthesizer
     {
         get

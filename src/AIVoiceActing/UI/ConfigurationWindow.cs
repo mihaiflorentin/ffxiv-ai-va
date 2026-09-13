@@ -36,10 +36,14 @@ public sealed class ConfigurationWindow : Window
     private readonly Configuration config;
     private readonly Action save;
     private readonly SpeechRequestHandler speech;
-    private readonly ISpeechSynthesizer synthesizer;
+    private readonly Func<ISpeechSynthesizer> synthesizer;
+    private readonly Action invalidateSynthesizer;
+
+    /// <summary>Live synthesizer for the selected engine (rebuilt when engine/EP changes).</summary>
+    private ISpeechSynthesizer Synth => this.synthesizer();
     private readonly ISpeechQueue queue;
     private readonly IProfileStore profiles;
-    private readonly Func<IReadOnlyList<ModelAsset>> modelAssets;
+    private readonly Func<IReadOnlyList<(ModelAsset Asset, string Group)>> modelAssets;
     private readonly Func<IModelProvisioner> provisioner;
     private readonly Func<IModelStore> modelStore;
     private readonly Func<RaceVoiceMap> voiceMap;
@@ -65,10 +69,11 @@ public sealed class ConfigurationWindow : Window
         Configuration config,
         Action save,
         SpeechRequestHandler speech,
-        ISpeechSynthesizer synthesizer,
+        Func<ISpeechSynthesizer> synthesizer,
+        Action invalidateSynthesizer,
         ISpeechQueue queue,
         IProfileStore profiles,
-        Func<IReadOnlyList<ModelAsset>> modelAssets,
+        Func<IReadOnlyList<(ModelAsset Asset, string Group)>> modelAssets,
         Func<IModelProvisioner> provisioner,
         Func<IModelStore> modelStore,
         Func<RaceVoiceMap> voiceMap,
@@ -84,6 +89,7 @@ public sealed class ConfigurationWindow : Window
         this.save = save;
         this.speech = speech;
         this.synthesizer = synthesizer;
+        this.invalidateSynthesizer = invalidateSynthesizer;
         this.queue = queue;
         this.profiles = profiles;
         this.modelAssets = modelAssets;
@@ -109,7 +115,7 @@ public sealed class ConfigurationWindow : Window
         SetOverride = this.profiles.SetOverride,
         Remove = key => this.profiles.Remove(key),
         SpeakTest = profile => this.SpeakVoiceTest(profile),
-        EngineReady = () => this.synthesizer.IsReady,
+        EngineReady = () => this.Synth.IsReady,
         EngineNotReadyReason = () => this.EngineReason(),
     };
 
@@ -264,17 +270,22 @@ public sealed class ConfigurationWindow : Window
 
         if (ImGui.CollapsingHeader("Engine", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            var status = this.synthesizer.IsReady
+            var status = this.Synth.IsReady
                 ? "ready"
-                : string.IsNullOrWhiteSpace(this.synthesizer.NotReadyReason)
+                : string.IsNullOrWhiteSpace(this.Synth.NotReadyReason)
                     ? $"models missing ({this.RequiredAssetCount()})"
-                    : this.synthesizer.NotReadyReason;
+                    : this.Synth.NotReadyReason;
             ImGui.TextUnformatted($"Voice engine: {status}");
             Controls.Combo(
                 "Engine",
                 ["kokoro", "f5", "turbo", "chatterbox"],
                 () => c.SelectedEngine,
-                v => { c.SelectedEngine = v; save(); });
+                v =>
+                {
+                    c.SelectedEngine = v;
+                    save();
+                    this.invalidateSynthesizer();
+                });
             ImGui.SameLine();
             Controls.HelpMarker(
                 "f5: voice-acting quality via reference-clip cloning (download on the Models tab, ~1.4 GB). " +
@@ -295,6 +306,7 @@ public sealed class ConfigurationWindow : Window
                     {
                         c.SelectedEp = v;
                         save();
+                        this.invalidateSynthesizer();
                     },
                     "Where synthesis runs: cpu always works; directml uses your GPU (Windows only, falls back to CPU when unavailable, e.g. under Wine).");
             }
@@ -337,13 +349,30 @@ public sealed class ConfigurationWindow : Window
 
     /// <summary>Live not-ready reason for tooltips; falls back to the generic hint.</summary>
     private string EngineReason() =>
-        this.synthesizer.IsReady
+        this.Synth.IsReady
             ? ModelsTabModel.EngineNotReadyHint
-            : string.IsNullOrWhiteSpace(this.synthesizer.NotReadyReason)
+            : string.IsNullOrWhiteSpace(this.Synth.NotReadyReason)
                 ? ModelsTabModel.EngineNotReadyHint
-                : this.synthesizer.NotReadyReason;
+                : this.Synth.NotReadyReason;
 
     // ---- Tab 2: Models ----
+
+    // Section copy for the Models tab. Keys line up with the catalog group names so
+    // the rows can be listed without the UI knowing engine internals.
+    private static readonly (string Key, string Title, string Blurb)[] EngineSections =
+    [
+        ("kokoro", "Kokoro — fast narration (default)",
+            "One 310 MB model; the 50+ voice banks ship inside the plugin. Robotic but instant — good for chat."),
+        ("turbo", "Chatterbox Turbo — quality + speed",
+            "Official ResembleAI export (~1.9 GB). Real voice acting with [laugh]/[chuckle] tags, about 6x slower than real time on CPU."),
+        ("f5", "F5-TTS — voice-acting quality (slow)",
+            "Reference-clip cloning (~1.4 GB). Best delivery, but about 10x slower than real time on CPU — opt-in showcase engine."),
+        ("chatterbox", "Legacy chatterbox (cloning)",
+            "The original cloning engine (~1 GB). Kept for existing setups; Turbo supersedes it."),
+    ];
+
+    private static readonly string[] ChatterboxSectionGroups =
+        [Infrastructure.Onnx.ModelCatalog.ChatterboxRequiredGroup, Infrastructure.Onnx.ModelCatalog.ChatterboxFp32LmGroup];
 
     private void DrawModelsTab()
     {
@@ -351,8 +380,9 @@ public sealed class ConfigurationWindow : Window
         var anyDownload = this.downloading is not null;
 
         ImGui.TextWrapped(
-            "Kokoro engine: one 310 MB model — the 50+ voice banks ship inside the plugin. " +
-            "Downloads go to the plugin's models directory and run only when you press a button.");
+            "Every engine is downloadable here regardless of which one is active — switch " +
+            "engines on the Speech Settings tab. Downloads go to the plugin's models " +
+            "directory and run only when you press a button.");
 
         if (anyDownload)
         {
@@ -380,78 +410,82 @@ public sealed class ConfigurationWindow : Window
         // F5 assets, chatterbox shows every non-Kokoro catalog row. Downloads target
         // the active engine's full required set, so "Download" provisions what the
         // engine actually needs.
-        var assets = this.modelAssets().Where(this.IsActiveEngineAsset).ToList();
-        if (ImGui.BeginTable("##models", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
+        var assets = this.modelAssets();
+        foreach (var (key, title, blurb) in EngineSections)
         {
-            ImGui.TableSetupScrollFreeze(0, 1);
-            ImGui.TableSetupColumn("Asset", ImGuiTableColumnFlags.WidthStretch, 3f);
-            ImGui.TableSetupColumn("Size", ImGuiTableColumnFlags.WidthFixed, 90f);
-            ImGui.TableSetupColumn("Status", ImGuiTableColumnFlags.WidthFixed, 150f);
-            ImGui.TableSetupColumn("##action", ImGuiTableColumnFlags.WidthFixed, 100f);
-            ImGui.TableHeadersRow();
-
-            foreach (var asset in assets)
+            var groupKeys = key == "chatterbox" ? ChatterboxSectionGroups : [key];
+            var sectionAssets = assets.Where(a => groupKeys.Contains(a.Group)).ToList();
+            var downloadedCount = sectionAssets.Count(a => provisioner.IsDownloaded(a.Asset));
+            var active = this.config.SelectedEngine == key ? " — ACTIVE" : string.Empty;
+            if (!ImGui.CollapsingHeader($"{title} ({downloadedCount}/{sectionAssets.Count}){active}##models-{key}"))
             {
-                var row = ModelsTabModel.Row(asset, provisioner.IsDownloaded(asset));
-                ImGui.TableNextRow();
-                ImGui.TableNextColumn();
-                ImGui.TextUnformatted(row.Name);
-                ImGui.TableNextColumn();
-                ImGui.TextUnformatted($"{row.SizeMb:0.0} MB");
-                ImGui.TableNextColumn();
-                var status = this.downloading?.FileName == asset.FileName
-                    ? "downloading…"
-                    : ModelsTabModel.StatusLabel(row);
-                ImGui.TextUnformatted(status);
-                ImGui.TableNextColumn();
-                if (row.Downloaded)
-                {
-                    if (Controls.Button("Remove##" + asset.FileName, !anyDownload, anyDownload ? "A download is in progress." : null))
-                    {
-                        this.modelStore().Remove(asset.FileName);
-                    }
-                }
-                else if (Controls.Button(
-                    "Download##" + asset.FileName,
-                    ModelsTabModel.CanDownload(anyDownload, row),
-                    anyDownload ? "A download is already in progress." : null))
-                {
-                    this.StartDownloads(assets);
-                }
+                Controls.Tooltip(blurb);
+                continue;
             }
 
-            ImGui.EndTable();
+            Controls.Tooltip(blurb);
+            ImGui.TextWrapped(blurb);
+            ImGui.Spacing();
+
+            if (ImGui.BeginTable("##models-" + key, 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
+            {
+                ImGui.TableSetupScrollFreeze(0, 1);
+                ImGui.TableSetupColumn("Asset", ImGuiTableColumnFlags.WidthStretch, 3f);
+                ImGui.TableSetupColumn("Size", ImGuiTableColumnFlags.WidthFixed, 90f);
+                ImGui.TableSetupColumn("Status", ImGuiTableColumnFlags.WidthFixed, 150f);
+                ImGui.TableSetupColumn("##action", ImGuiTableColumnFlags.WidthFixed, 100f);
+                ImGui.TableHeadersRow();
+
+                foreach (var (asset, _) in sectionAssets)
+                {
+                    var row = ModelsTabModel.Row(asset, provisioner.IsDownloaded(asset));
+                    ImGui.TableNextRow();
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted(asset.Optional ? $"{row.Name} (optional)" : row.Name);
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted($"{row.SizeMb:0.0} MB");
+                    ImGui.TableNextColumn();
+                    var status = this.downloading?.FileName == asset.FileName
+                        ? "downloading…"
+                        : ModelsTabModel.StatusLabel(row);
+                    ImGui.TextUnformatted(status);
+                    ImGui.TableNextColumn();
+                    if (row.Downloaded)
+                    {
+                        if (Controls.Button("Remove##" + asset.FileName, !anyDownload, anyDownload ? "A download is in progress." : null))
+                        {
+                            this.modelStore().Remove(asset.FileName);
+                        }
+                    }
+                    else if (Controls.Button(
+                        "Download##" + asset.FileName,
+                        ModelsTabModel.CanDownload(anyDownload, row),
+                        anyDownload ? "A download is already in progress." : null))
+                    {
+                        this.StartDownloads([.. sectionAssets.Select(a => a.Asset)]);
+                    }
+                }
+
+                ImGui.EndTable();
+            }
+
+            ImGui.Spacing();
         }
     }
 
-    /// <summary>True when the asset belongs to the engine selected in Speech Settings.
-    /// Matches the catalog's local file name (the port layer has no engine concept).</summary>
     private const string KokoroModelFileName = "kokoro-v1.0.onnx";
 
-    private bool IsActiveEngineAsset(ModelAsset asset)
+    /// <summary>Missing required assets for the SELECTED engine (Status tab hint).</summary>
+    private int RequiredAssetCount()
     {
-        // File-name prefixes double as engine groups: turbo-* rows are Turbo-only,
-        // f5-* rows are F5-only, the Kokoro row is Kokoro-only, and legacy chatterbox
-        // shows every remaining catalog row.
-        if (Infrastructure.Onnx.ModelCatalog.IsTurboAsset(asset.FileName))
-        {
-            return this.config.SelectedEngine == "turbo";
-        }
-
-        return this.config.SelectedEngine switch
-        {
-            "chatterbox" => asset.FileName != KokoroModelFileName
-                && !asset.FileName.StartsWith("f5-", StringComparison.Ordinal),
-            "turbo" => false,
-            "f5" => asset.FileName.StartsWith("f5-", StringComparison.Ordinal),
-            _ => asset.FileName == KokoroModelFileName,
-        };
+        var groups = this.config.SelectedEngine == "chatterbox"
+            ? ChatterboxSectionGroups
+            : [this.config.SelectedEngine];
+        return this.modelAssets()
+            .Count(a => groups.Contains(a.Group)
+                && !a.Asset.Optional
+                && !this.modelStore().IsDownloaded(a.Asset.FileName));
     }
-
-    private int RequiredAssetCount() => this.modelAssets()
-        .Count(a => this.IsActiveEngineAsset(a)
-            && !a.Optional
-            && !this.modelStore().IsDownloaded(a.FileName));
 
     // ---- Tab 3: Status ----
 
@@ -463,7 +497,7 @@ public sealed class ConfigurationWindow : Window
     {
         ImGui.TextUnformatted("Engine");
         ImGui.Separator();
-        var ready = this.synthesizer.IsReady;
+        var ready = this.Synth.IsReady;
         ImGui.BulletText($"Selected engine: {this.config.SelectedEngine}");
         ImGui.BulletText(
             this.warmingEngine ? "State: loading the model…"
@@ -480,7 +514,7 @@ public sealed class ConfigurationWindow : Window
             {
                 try
                 {
-                    await this.synthesizer.WarmUpAsync(CancellationToken.None);
+                    await this.Synth.WarmUpAsync(CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
@@ -521,8 +555,12 @@ public sealed class ConfigurationWindow : Window
             ImGui.BulletText($"Plugin process memory: {process.WorkingSet64 / (1024.0 * 1024.0):0} MB");
         }
 
-        var downloaded = this.modelAssets().Count(a => this.modelStore().IsDownloaded(a.FileName));
-        ImGui.BulletText($"Model assets: {downloaded}/{this.modelAssets().Count} downloaded");
+        var groups = this.config.SelectedEngine == "chatterbox"
+            ? ChatterboxSectionGroups
+            : [this.config.SelectedEngine];
+        var selected = this.modelAssets().Where(a => groups.Contains(a.Group)).ToList();
+        var downloaded = selected.Count(a => this.modelStore().IsDownloaded(a.Asset.FileName));
+        ImGui.BulletText($"Model assets ({this.config.SelectedEngine}): {downloaded}/{selected.Count} downloaded");
         ImGui.BulletText($"Models directory: {this.ModelsDirBytes() / (1024.0 * 1024.0):0} MB");
         ImGui.BulletText(
             $"Voice bank: {this.voiceMap().DistinctVoiceIds().Length} distinct voices (race/gender mapped)");
@@ -729,7 +767,9 @@ public sealed class ConfigurationWindow : Window
                 foreach (var (category, channels) in ChannelNames.ByCategory())
                 {
                     var enabledCount = channels.Count(ch => enabled.Contains(ch.Id));
-                    var header = $"{category} ({enabledCount}/{channels.Count})";
+                    // The ##-suffix pins the ImGui ID: the displayed count changes with
+                    // every tick, and an ID derived from it would collapse the section.
+                    var header = $"{category} ({enabledCount}/{channels.Count})##cat-{category}";
                     if (!ImGui.CollapsingHeader(header))
                     {
                         Controls.Tooltip(ChannelNames.CategoryDescription(category));
@@ -804,7 +844,7 @@ public sealed class ConfigurationWindow : Window
 
     private void DrawTestTab()
     {
-        var ready = this.synthesizer.IsReady;
+        var ready = this.Synth.IsReady;
         var reason = this.EngineReason();
 
         var text = this.test.Text;
@@ -893,7 +933,7 @@ public sealed class ConfigurationWindow : Window
     /// game pipeline (SpeechRequestHandler), reused for forced-emotion auditions.</summary>
     private async Task SpeakDirect(SpeakerIdentity speaker, SynthesisRequest request)
     {
-        var audio = await this.synthesizer.SynthesizeAsync(request, CancellationToken.None);
+        var audio = await this.Synth.SynthesizeAsync(request, CancellationToken.None);
         this.queue.Enqueue(new SpeechItem(speaker, request, audio));
     }
 
