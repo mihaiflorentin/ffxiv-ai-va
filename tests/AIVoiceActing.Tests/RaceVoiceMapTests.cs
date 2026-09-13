@@ -54,12 +54,21 @@ public sealed class RaceVoiceMapTests
     }
 
     [Fact]
-    public void Viera_UsesItalianBank()
+    public void Viera_UsesSpanishMale_PortugueseFemale()
     {
         var map = LoadDefault();
-        // Icelandic does not exist in Kokoro v1.0; the melodic Italian bank stands in.
-        Assert.All(map.SlotsFor(VoiceGroup.Male, 8).Select(s => s.Id), id => Assert.Equal("im_nicola", id));
-        Assert.All(map.SlotsFor(VoiceGroup.Female, 8).Select(s => s.Id), id => Assert.Equal("if_sara", id));
+        // Kokoro-only casting (2026-09-14): user-picked from the full-bank audition.
+        Assert.All(map.SlotsFor(VoiceGroup.Male, 8).Select(s => s.Id), id => Assert.Equal("em_alex", id));
+        Assert.All(map.SlotsFor(VoiceGroup.Female, 8).Select(s => s.Id), id => Assert.Equal("pf_dora", id));
+    }
+
+    [Fact]
+    public void AuRa_UsesChineseBank()
+    {
+        var map = LoadDefault();
+        // zf_/zm_ voices verified by ear on the v1.0 model; jf_/jm_ stay parked.
+        Assert.All(map.SlotsFor(VoiceGroup.Male, 6).Select(s => s.Id), id => Assert.Equal("zm_yunjian", id));
+        Assert.All(map.SlotsFor(VoiceGroup.Female, 6).Select(s => s.Id), id => Assert.Equal("zf_xiaoxiao", id));
     }
 
     [Fact]

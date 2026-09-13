@@ -106,16 +106,6 @@
     "id": "ff_siwis"
    }
   ],
-  "italianMale": [
-   {
-    "id": "im_nicola"
-   }
-  ],
-  "italianFemale": [
-   {
-    "id": "if_sara"
-   }
-  ],
   "midlanderMale": [
    {
     "id": "bm_fable"
@@ -207,6 +197,26 @@
     "pitch": 0.82,
     "speed": 0.92
    }
+  ],
+  "vieraMale": [
+   {
+    "id": "em_alex"
+   }
+  ],
+  "vieraFemale": [
+   {
+    "id": "pf_dora"
+   }
+  ],
+  "chineseMale": [
+   {
+    "id": "zm_yunjian"
+   }
+  ],
+  "chineseFemale": [
+   {
+    "id": "zf_xiaoxiao"
+   }
   ]
  },
  "raceVariants": {
@@ -220,15 +230,15 @@
   "4|Female": "poshFemale",
   "5|Male": "deepMale",
   "5|Female": "deepFemale",
-  "6|Male": "poshMale",
-  "6|Female": "poshFemale",
+  "6|Male": "chineseMale",
+  "6|Female": "chineseFemale",
   "7|Male": "hrothgarMale",
   "7|Female": "deepFemale",
-  "8|Male": "italianMale",
-  "8|Female": "italianFemale"
+  "8|Male": "vieraMale",
+  "8|Female": "vieraFemale"
  },
  "disabledSets": {
-  "why": "Parked accent implementations, kept here on purpose. NEVER remove them: they are the casting work for accents the active bank cannot produce, and for the beast tribes / allied societies and NPC archetypes (Garlean, dragon). They are NOT shown in the UI because each needs a model id bound in overridenModelIds.txt ('<id> ; <Name> ; <setKey>') \u2014 the voice-resolution log now prints race/tribe/sex/model for every speaker, so talk to a tribe member, read the model id from the log, add the line, and that tribe is voiced. Enabling is a data change, never a rewrite. NOTE: the jf_/jm_ (Japanese) and zf_/zm_ (Chinese) banks garble English on the v1.0 model \u2014 they are language voices, not English-accent voices \u2014 so any cast using them stays parked.",
+  "why": "Parked casts: activation = append 'modelId ; Name ; setKey' to overridenModelIds.txt. The jf_/jm_ (Japanese) bank garbles English on the v1.0 model (user-reported in game), so any cast using it stays parked. The zf_/zm_ (Chinese) bank was auditioned by the user on 2026-09-14 and is now ACTIVE for Au Ra. F5-clip casting (Piper-generated accents) was dropped the same day: play stays Kokoro-only.",
   "sets": {
    "icelandicMale": [
     {
@@ -509,6 +519,16 @@
    "japaneseFemale": [
     {
      "id": "jf_alpha"
+    }
+   ],
+   "setItalianmale": [
+    {
+     "id": "im_nicola"
+    }
+   ],
+   "setItalianfemale": [
+    {
+     "id": "if_sara"
     }
    ]
   },
