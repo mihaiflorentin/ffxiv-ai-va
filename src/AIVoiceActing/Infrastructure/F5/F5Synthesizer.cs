@@ -56,6 +56,10 @@ public sealed class F5Synthesizer : ISpeechSynthesizer, IDisposable
     /// map engine-agnostic ids onto clips. Unknown ids fall back to the default clip.
     /// Child clips are pre-pitched at record time, so VoiceSlot.Pitch stays Kokoro-only.
     /// </summary>
+    /// <summary>Kokoro voice id → bundled F5 clip id (shared with the other clip engines).</summary>
+    public static string ClipIdFor(string voiceId) =>
+        voiceId is not null && ClipAliases.TryGetValue(voiceId, out var clip) ? clip : DefaultVoiceId;
+
     private static readonly Dictionary<string, string> ClipAliases = new(StringComparer.Ordinal)
     {
         ["bm_lewis"] = "uk_male_casual",

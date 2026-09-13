@@ -252,9 +252,7 @@ public sealed class ServiceContainer : IDisposable
                             // bundled fallback clip id "default" resolves to
                             // ModelsDir/default_voice.wav; plugin-installed clips live under
                             // ModelsDir/voices/{id}.wav.
-                            voicePathResolver: voiceId => voiceId == "default"
-                                ? Path.Combine(this.ModelsDir, "default_voice.wav")
-                                : Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav"),
+                            voicePathResolver: this.ClippingResolver("default_voice.wav"),
                             executionProvider: this.selectedEpFactory?.Invoke() ?? "auto",
                             // fp32 override replaces the q4 LM session entirely (int4 kernels
                             // and their Zen5/AVX-512 native crashes go with it).
@@ -270,9 +268,7 @@ public sealed class ServiceContainer : IDisposable
                     return this.speechSynthesizer = this.RegisterDisposable(
                         Infrastructure.Onnx.ChatterboxSynthesizer.CreateTurbo(
                             this.ModelsDir,
-                            voicePathResolver: voiceId => voiceId == "default"
-                                ? Path.Combine(this.ModelsDir, "turbo-default-voice.wav")
-                                : Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav"),
+                            voicePathResolver: this.ClippingResolver("turbo-default-voice.wav"),
                             executionProvider: this.selectedEpFactory?.Invoke() ?? "cpu",
                             intraOpThreads: threads,
                             log: this.LogSinkUnlocked()));
@@ -385,6 +381,43 @@ public sealed class ServiceContainer : IDisposable
         "sink is wired (pass speechQueueFactory).");
 
     /// <summary>Speech pipeline: lexicon → stutter removal → director → synthesis → queue.</summary>
+    /// <summary>
+    /// Reference-clip resolution for the cloning engines (turbo/legacy): profiles carry
+    /// Kokoro voice ids, which only exist as files when the user adds clip overrides.
+    /// Fall back to the bundled F5 bank clip for that id, then to the engine default —
+    /// a missing clip must degrade to the default voice, never error the line.
+    /// </summary>
+    private Func<string, string> ClippingResolver(string defaultClipFileName)
+    {
+        var f5Dir = this.f5VoicesDirFactory?.Invoke();
+        return voiceId =>
+        {
+            if (!string.IsNullOrWhiteSpace(voiceId) && voiceId != "default")
+            {
+                var userClip = Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav");
+                if (File.Exists(userClip))
+                {
+                    return userClip;
+                }
+
+                if (!string.IsNullOrWhiteSpace(f5Dir))
+                {
+                    var bundled = Path.Combine(
+                        f5Dir, $"{Infrastructure.F5.F5Synthesizer.ClipIdFor(voiceId)}.wav");
+                    if (File.Exists(bundled))
+                    {
+                        return bundled;
+                    }
+                }
+            }
+
+            var defaultClip = Path.Combine(this.ModelsDir, defaultClipFileName);
+            return File.Exists(defaultClip)
+                ? defaultClip
+                : Path.Combine(this.ModelsDir, "default_voice.wav");
+        };
+    }
+
     public SpeechRequestHandler SpeechHandler
     {
         get
