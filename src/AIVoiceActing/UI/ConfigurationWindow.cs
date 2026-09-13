@@ -276,8 +276,10 @@ public sealed class ConfigurationWindow : Window
                     ? $"models missing ({this.RequiredAssetCount()})"
                     : this.Synth.NotReadyReason;
             ImGui.TextUnformatted($"Voice engine: {status}");
+            // ##-suffix: the section header above is also labeled "Engine" — identical
+            // labels in one ID scope collide, and the combo's clicks went to the header.
             Controls.Combo(
-                "Engine",
+                "Engine##engine-pick",
                 ["kokoro", "f5", "turbo", "chatterbox"],
                 () => c.SelectedEngine,
                 v =>
