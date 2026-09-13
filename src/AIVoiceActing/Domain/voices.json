@@ -68,18 +68,18 @@
   "childMale": [
    {
     "id": "bm_fable",
-    "pitch": 1.18,
-    "speed": 1.1
+    "pitch": 1.12,
+    "speed": 1.05
    },
    {
     "id": "bm_lewis",
-    "pitch": 1.18,
-    "speed": 1.1
+    "pitch": 1.12,
+    "speed": 1.05
    },
    {
     "id": "bm_george",
-    "pitch": 1.18,
-    "speed": 1.1
+    "pitch": 1.12,
+    "speed": 1.05
    }
   ],
   "childFemale": [
