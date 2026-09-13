@@ -44,50 +44,69 @@ public sealed class RaceVoiceMapTests
     }
 
     [Fact]
-    public void LalafellVieraAndHrothgarFemales_UseHighPitchSet()
+    public void Elezen_UseFrenchVoice()
     {
         var map = LoadDefault();
-        var baseFemaleIds = map.SlotsFor(VoiceGroup.Female, race: null).Select(s => s.Id).ToHashSet();
-        foreach (var race in new byte?[] { 3, 8 })
+        // Ishgardian Elezen: ff_siwis is the bank's French voice; males ride it pitched down.
+        Assert.All(map.SlotsFor(VoiceGroup.Male, 2).Select(s => s.Id), id => Assert.Equal("ff_siwis", id));
+        Assert.All(map.SlotsFor(VoiceGroup.Female, 2).Select(s => s.Id), id => Assert.Equal("ff_siwis", id));
+        Assert.All(map.SlotsFor(VoiceGroup.Male, 2), slot => Assert.True(slot.Pitch < 1f));
+    }
+
+    [Fact]
+    public void Viera_UsesItalianBank()
+    {
+        var map = LoadDefault();
+        // Icelandic does not exist in Kokoro v1.0; the melodic Italian bank stands in.
+        Assert.All(map.SlotsFor(VoiceGroup.Male, 8).Select(s => s.Id), id => Assert.Equal("im_nicola", id));
+        Assert.All(map.SlotsFor(VoiceGroup.Female, 8).Select(s => s.Id), id => Assert.Equal("if_sara", id));
+    }
+
+    [Fact]
+    public void RoegadynAndHrothgar_UseDeepSet()
+    {
+        var map = LoadDefault();
+        foreach (var race in new byte?[] { 5, 7 })
         {
-            var ids = map.SlotsFor(VoiceGroup.Female, race).Select(s => s.Id).ToArray();
-            Assert.Empty(ids.ToHashSet().Intersect(baseFemaleIds));
-            Assert.All(ids, id => Assert.StartsWith("af_", id));
+            Assert.All(map.SlotsFor(VoiceGroup.Male, race).Select(s => s.Id), id => Assert.StartsWith("am_", id));
+            Assert.All(map.SlotsFor(VoiceGroup.Female, race).Select(s => s.Id), id => Assert.StartsWith("af_", id));
         }
     }
 
     [Fact]
-    public void RoegadynAndHrothgarMales_UseDeepSet_VieraStaysUK()
+    public void LalafellSets_CarryChildPitchAndSpeed_BaseSetsStayNatural()
     {
         var map = LoadDefault();
-        var baseMaleIds = map.SlotsFor(VoiceGroup.Male, race: null).Select(s => s.Id).ToHashSet();
-        foreach (var race in new byte?[] { 5, 8 })
+        Assert.All(map.SlotsFor(VoiceGroup.Male, 3), slot =>
         {
-            var ids = map.SlotsFor(VoiceGroup.Male, race).Select(s => s.Id).ToArray();
-            Assert.Empty(ids.ToHashSet().Intersect(baseMaleIds));
-            Assert.All(ids, id => Assert.StartsWith("am_", id));
-        }
-
-        // Viera (7): the requested Icelandic accent does not exist in Kokoro v1.0 —
-        // they ride the standard UK male bank.
-        Assert.All(map.SlotsFor(VoiceGroup.Male, 7).Select(s => s.Id), id => Assert.StartsWith("bm_", id));
-    }
-
-    [Fact]
-    public void LalafellSets_CarryChildPitch_BaseSetsStayNatural()
-    {
-        var map = LoadDefault();
-        Assert.All(map.SlotsFor(VoiceGroup.Male, 3), slot => Assert.True(slot.Pitch > 1.1f));
-        Assert.All(map.SlotsFor(VoiceGroup.Female, 3), slot => Assert.True(slot.Pitch > 1.1f));
+            Assert.True(slot.Pitch > 1.1f);
+            Assert.True(slot.Speed > 1f);
+        });
+        Assert.All(map.SlotsFor(VoiceGroup.Female, 3), slot =>
+        {
+            Assert.True(slot.Pitch > 1.1f);
+            Assert.True(slot.Speed > 1f);
+        });
         Assert.All(map.SlotsFor(VoiceGroup.Male, race: null), slot => Assert.Equal(1f, slot.Pitch));
+        Assert.All(map.SlotsFor(VoiceGroup.Male, race: null), slot => Assert.Equal(1f, slot.Speed));
     }
 
     [Fact]
-    public void Elezen_UseBritishAccentSet()
+    public void DisabledSets_StayParsedButOutOfTheUI()
     {
         var map = LoadDefault();
-        Assert.All(map.SlotsFor(VoiceGroup.Male, 2).Select(s => s.Id), id => Assert.StartsWith("bm_", id));
-        Assert.All(map.SlotsFor(VoiceGroup.Female, 2).Select(s => s.Id), id => Assert.StartsWith("bf_", id));
+        Assert.NotNull(map.Disabled);
+        Assert.NotEmpty(map.Disabled!.Sets);
+        Assert.Contains("icelandicMale", map.Disabled.Sets.Keys);
+
+        // Parked accents must never leak into the picker or any active slot lookup.
+        var activeIds = map.DistinctVoiceIds();
+        Assert.Empty(map.Disabled.Sets.Values.SelectMany(slots => slots).Select(s => s.Id)
+            .Where(id => activeIds.Contains(id)));
+
+        // A race whose accent is parked (e.g. 9) would fall back to the base set, never
+        // to a parked one: every active variant resolves inside the active sets.
+        Assert.All(map.RaceVariants.Values, variant => Assert.Contains(variant, map.Sets.Keys));
     }
 
     [Fact]

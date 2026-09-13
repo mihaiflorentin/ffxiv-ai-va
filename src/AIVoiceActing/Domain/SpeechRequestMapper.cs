@@ -14,11 +14,13 @@ public static class SpeechRequestMapper
         string referenceVoiceId,
         string text,
         float exaggerationBias = 0f,
-        float pitch = 1f) =>
+        float pitch = 1f,
+        float speed = 1f) =>
         new(
             ReferenceVoiceId: referenceVoiceId,
             Text: text,
             Exaggeration: Math.Clamp(plan.Exaggeration + exaggerationBias, 0f, 1f),
             Tags: plan.Tags,
-            Pitch: pitch);
+            Pitch: pitch,
+            Speed: speed);
 }

@@ -69,9 +69,14 @@ public static class VoiceAssigner
         }
 
         var slot = slots[AssignIndex(speakerKey, slots.Length)];
-        return NewProfile(speakerKey, slot.Id, slot.ExaggerationBias, slot.Pitch);
+        return NewProfile(speakerKey, slot.Id, slot.ExaggerationBias, slot.Pitch, slot.Speed);
     }
 
-    private static VoiceProfile NewProfile(string speakerKey, string voiceId, float exaggerationBias, float pitch = 1f) =>
-        new(speakerKey, voiceId, Math.Clamp(exaggerationBias, 0f, 1f), DateTimeOffset.UtcNow, Custom: false, pitch);
+    private static VoiceProfile NewProfile(
+        string speakerKey,
+        string voiceId,
+        float exaggerationBias,
+        float pitch = 1f,
+        float speed = 1f) =>
+        new(speakerKey, voiceId, Math.Clamp(exaggerationBias, 0f, 1f), DateTimeOffset.UtcNow, Custom: false, pitch, speed);
 }

@@ -8,10 +8,7 @@
     "id": "bm_fable"
    },
    {
-    "id": "bm_daniel"
-   },
-   {
-    "id": "bm_george"
+    "id": "am_eric"
    }
   ],
   "female": [
@@ -22,18 +19,15 @@
     "id": "bf_alice"
    },
    {
-    "id": "bf_emma"
-   },
-   {
-    "id": "bf_isabella"
+    "id": "af_sarah"
    }
   ],
   "poshMale": [
    {
-    "id": "bm_george"
+    "id": "bm_daniel"
    },
    {
-    "id": "bm_daniel"
+    "id": "bm_george"
    }
   ],
   "poshFemale": [
@@ -49,9 +43,6 @@
     "id": "am_onyx"
    },
    {
-    "id": "am_adam"
-   },
-   {
     "id": "am_fenrir"
    }
   ],
@@ -65,34 +56,115 @@
   ],
   "childMale": [
    {
-    "id": "am_liam",
-    "pitch": 1.18
+    "id": "bm_fable",
+    "pitch": 1.18,
+    "speed": 1.1
    },
    {
-    "id": "am_puck",
-    "pitch": 1.18
+    "id": "bm_lewis",
+    "pitch": 1.18,
+    "speed": 1.1
    }
   ],
   "childFemale": [
    {
-    "id": "af_sky",
-    "pitch": 1.18
+    "id": "bf_alice",
+    "pitch": 1.18,
+    "speed": 1.1
    },
    {
-    "id": "af_bella",
-    "pitch": 1.18
-   },
-   {
-    "id": "af_kore",
-    "pitch": 1.18
+    "id": "bf_isabella",
+    "pitch": 1.18,
+    "speed": 1.1
    }
   ],
-  "ungendered": [
+  "frenchMale": [
+   {
+    "id": "ff_siwis",
+    "pitch": 0.93
+   }
+  ],
+  "frenchFemale": [
+   {
+    "id": "ff_siwis"
+   }
+  ],
+  "italianMale": [
+   {
+    "id": "im_nicola"
+   }
+  ],
+  "italianFemale": [
+   {
+    "id": "if_sara"
+   }
+  ],
+  "midlanderMale": [
+   {
+    "id": "bm_fable"
+   },
+   {
+    "id": "bm_george"
+   }
+  ],
+  "midlanderFemale": [
    {
     "id": "bf_lily"
    },
    {
+    "id": "bf_alice"
+   }
+  ],
+  "highlanderMale": [
+   {
+    "id": "am_michael"
+   },
+   {
+    "id": "am_adam"
+   }
+  ],
+  "highlanderFemale": [
+   {
     "id": "af_sarah"
+   },
+   {
+    "id": "af_aoede"
+   }
+  ],
+  "keeperMale": [
+   {
+    "id": "am_echo"
+   },
+   {
+    "id": "am_eric"
+   }
+  ],
+  "keeperFemale": [
+   {
+    "id": "af_nicole"
+   },
+   {
+    "id": "af_sarah"
+   }
+  ],
+  "ungendered": [
+   {
+    "id": "ef_dora"
+   },
+   {
+    "id": "em_alex"
+   },
+   {
+    "id": "pf_dora"
+   },
+   {
+    "id": "hf_alpha"
+   },
+   {
+    "id": "hm_omega"
+   },
+   {
+    "id": "af_heart"
    },
    {
     "id": "am_eric"
@@ -100,21 +172,70 @@
   ]
  },
  "raceVariants": {
-  "1|Male": "male",
-  "1|Female": "female",
-  "2|Female": "poshFemale",
-  "2|Male": "poshMale",
-  "3|Female": "childFemale",
+  "1|Male": "midlanderMale",
+  "1|Female": "midlanderFemale",
+  "2|Male": "frenchMale",
+  "2|Female": "frenchFemale",
   "3|Male": "childMale",
-  "4|Female": "poshFemale",
+  "3|Female": "childFemale",
   "4|Male": "poshMale",
-  "5|Female": "deepFemale",
+  "4|Female": "poshFemale",
   "5|Male": "deepMale",
-  "6|Female": "poshFemale",
+  "5|Female": "deepFemale",
   "6|Male": "poshMale",
-  "7|Female": "female",
-  "7|Male": "male",
-  "8|Female": "deepFemale",
-  "8|Male": "deepMale"
+  "6|Female": "poshFemale",
+  "7|Male": "deepMale",
+  "7|Female": "deepFemale",
+  "8|Male": "italianMale",
+  "8|Female": "italianFemale"
+ },
+ "disabledSets": {
+  "why": "Parked accent implementations, kept here on purpose. NEVER remove them: they are the casting work for the accents the Kokoro v1.0 bank cannot produce (true Icelandic, Scottish, Scouse, Nordic, Japanese-flavoured voices). They are NOT shown in the UI because each needs an F5-TTS reference clip (generated from e.g. Piper is_IS / gd / nb_NO voices reading English) plus per-tribe model-id wiring in the speaker resolver; enabling one is a matter of moving its slots up into 'sets' and adding the clip ids to assets/voices-f5. Auditions of the experimental Japanese/Chinese banks live in /tmp/aiva-audition (jf_alpha, zf_xiaoxiao) — they synthesize on the v1.0 model but accent quality is unverified.",
+  "sets": {
+   "icelandicMale": [
+    {
+     "id": "f5clip_is_male"
+    }
+   ],
+   "icelandicFemale": [
+    {
+     "id": "f5clip_is_female"
+    }
+   ],
+   "scottishMale": [
+    {
+     "id": "f5clip_gd_male"
+    }
+   ],
+   "scouseMale": [
+    {
+     "id": "f5clip_lpool_male"
+    }
+   ],
+   "nordicMale": [
+    {
+     "id": "f5clip_no_male"
+    }
+   ],
+   "japaneseFlavourFemale": [
+    {
+     "id": "jf_alpha"
+    }
+   ],
+   "japaneseFlavourMale": [
+    {
+     "id": "jm_kumo"
+    }
+   ]
+  },
+  "raceVariants": {
+   "8|Male": "icelandicMale",
+   "8|Female": "icelandicFemale",
+   "5|Male": "scottishMale",
+   "1|Male": "scouseMale",
+   "7|Male": "nordicMale",
+   "6|Female": "japaneseFlavourFemale",
+   "6|Male": "japaneseFlavourMale"
+  }
  }
 }

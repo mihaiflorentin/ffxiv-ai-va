@@ -18,7 +18,8 @@ public sealed record VoiceProfile(
     float ExaggerationBias,
     DateTimeOffset CreatedUtc,
     bool Custom,
-    float Pitch = 1f);
+    float Pitch = 1f,
+    float Speed = 1f);
 
 /// <summary>Driven port over the persistent voice-assignment store.</summary>
 public interface IProfileStore

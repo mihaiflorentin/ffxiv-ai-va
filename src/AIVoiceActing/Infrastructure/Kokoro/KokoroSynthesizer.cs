@@ -145,7 +145,8 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
             }
 
             // Exaggeration maps to pace: flat reads stay brisk, theatrical ones slow down.
-            var speed = 1.05f - (0.20f * Math.Clamp(request.Exaggeration, 0f, 1f));
+            // The per-speaker slot speed (Lalafell bubbly 1.1) scales on top.
+            var speed = request.Speed * (1.05f - (0.20f * Math.Clamp(request.Exaggeration, 0f, 1f)));
 
             byte[] pcm16;
             try

@@ -80,12 +80,24 @@ public sealed class F5Synthesizer : ISpeechSynthesizer, IDisposable
         ["bm_lewis"] = "uk_male_casual",
         ["bm_fable"] = "uk_male_casual",
         ["am_eric"] = "uk_male_casual",
+        ["am_echo"] = "uk_male_casual",
+        ["im_nicola"] = "uk_male_casual",
+        ["em_alex"] = "uk_male_casual",
         ["default"] = "uk_male_casual",
         ["bm_daniel"] = "uk_male_posh",
         ["bm_george"] = "uk_male_posh",
+        ["am_michael"] = "uk_male_posh",
+        ["hm_omega"] = "uk_male_posh",
         ["bf_lily"] = "uk_female_soft",
         ["bf_alice"] = "uk_female_soft",
         ["af_sarah"] = "uk_female_soft",
+        ["af_nicole"] = "uk_female_soft",
+        ["af_heart"] = "uk_female_soft",
+        ["if_sara"] = "uk_female_soft",
+        ["ef_dora"] = "uk_female_soft",
+        ["pf_dora"] = "uk_female_soft",
+        ["hf_alpha"] = "uk_female_soft",
+        ["ff_siwis"] = "uk_female_posh",
         ["bf_emma"] = "uk_female_posh",
         ["bf_isabella"] = "uk_female_posh",
         ["am_onyx"] = "deep_male",
@@ -93,11 +105,7 @@ public sealed class F5Synthesizer : ISpeechSynthesizer, IDisposable
         ["am_fenrir"] = "deep_male",
         ["af_alloy"] = "deep_female",
         ["af_river"] = "deep_female",
-        ["am_liam"] = "child_male",
-        ["am_puck"] = "child_male",
-        ["af_sky"] = "child_female",
-        ["af_bella"] = "child_female",
-        ["af_kore"] = "child_female",
+        ["af_aoede"] = "deep_female"
     };
 
     /// <summary>Directory holding the reference-clip bank shipped with the plugin.</summary>
@@ -193,7 +201,7 @@ public sealed class F5Synthesizer : ISpeechSynthesizer, IDisposable
                 this.log?.Info(
                     $"F5 synthesis start: voice \"{request.ReferenceVoiceId}\" → clip {clipPath} " +
                     $"({(prepared ? "prepared" : "cached voice")}, {text.Length} chars).");
-                var result = await voice.SynthesizeAsync(text).ConfigureAwait(false);
+                var result = await voice.SynthesizeAsync(text, new F5TtsOptions { Speed = request.Speed }).ConfigureAwait(false);
                 pcm = result.Samples;
                 this.log?.Info($"F5 synthesis complete: {pcm.Length} samples ({pcm.Length / (float)F5SampleRate:0.0} s of audio).");
             }
