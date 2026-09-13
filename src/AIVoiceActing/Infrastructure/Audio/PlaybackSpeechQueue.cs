@@ -120,7 +120,7 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
 
         try
         {
-            this.sink.Play(item.Audio, Math.Clamp(this.volume(), 0f, 2f));
+            this.sink.Play(item.Audio, Math.Clamp(this.volume() * item.Request.Volume, 0f, 2f));
         }
         catch (Exception ex)
         {

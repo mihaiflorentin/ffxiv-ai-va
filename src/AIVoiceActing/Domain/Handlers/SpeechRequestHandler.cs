@@ -116,7 +116,8 @@ public sealed class SpeechRequestHandler
             processed,
             profile.ExaggerationBias,
             profile.Pitch,
-            profile.Speed);
+            profile.Speed,
+            profile.Volume);
 
         SynthesisResult audio;
         try

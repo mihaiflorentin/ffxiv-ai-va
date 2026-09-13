@@ -36,6 +36,9 @@
    },
    {
     "id": "bf_emma"
+   },
+   {
+    "id": "bf_alice"
    }
   ],
   "deepMale": [
@@ -44,6 +47,9 @@
    },
    {
     "id": "am_fenrir"
+   },
+   {
+    "id": "am_adam"
    }
   ],
   "deepFemale": [
@@ -52,6 +58,9 @@
    },
    {
     "id": "af_river"
+   },
+   {
+    "id": "af_kore"
    }
   ],
   "childMale": [
@@ -62,6 +71,11 @@
    },
    {
     "id": "bm_lewis",
+    "pitch": 1.18,
+    "speed": 1.1
+   },
+   {
+    "id": "bm_george",
     "pitch": 1.18,
     "speed": 1.1
    }
@@ -81,7 +95,8 @@
   "frenchMale": [
    {
     "id": "ff_siwis",
-    "pitch": 0.93
+    "pitch": 0.84,
+    "note": "No French male voice exists in Kokoro v1.0 \u2014 ff_siwis deepened to read male; if too feminine, swap to em_alex (Spanish male) or park for an F5 French-male clip."
    }
   ],
   "frenchFemale": [
@@ -105,6 +120,9 @@
    },
    {
     "id": "bm_george"
+   },
+   {
+    "id": "am_echo"
    }
   ],
   "midlanderFemale": [
@@ -113,6 +131,9 @@
    },
    {
     "id": "bf_alice"
+   },
+   {
+    "id": "af_nova"
    }
   ],
   "highlanderMale": [
@@ -129,6 +150,9 @@
    },
    {
     "id": "af_aoede"
+   },
+   {
+    "id": "af_jessica"
    }
   ],
   "keeperMale": [
@@ -169,6 +193,17 @@
    {
     "id": "am_eric"
    }
+  ],
+  "japaneseMale": [
+   {
+    "id": "jm_kumo",
+    "pitch": 0.97
+   }
+  ],
+  "japaneseFemale": [
+   {
+    "id": "jf_alpha"
+   }
   ]
  },
  "raceVariants": {
@@ -182,15 +217,15 @@
   "4|Female": "poshFemale",
   "5|Male": "deepMale",
   "5|Female": "deepFemale",
-  "6|Male": "poshMale",
-  "6|Female": "poshFemale",
+  "6|Male": "japaneseMale",
+  "6|Female": "japaneseFemale",
   "7|Male": "deepMale",
   "7|Female": "deepFemale",
   "8|Male": "italianMale",
   "8|Female": "italianFemale"
  },
  "disabledSets": {
-  "why": "Parked accent implementations, kept here on purpose. NEVER remove them: they are the casting work for accents the active bank cannot produce, and for the beast tribes / allied societies and NPC archetypes (Garlean, dragon). They are NOT shown in the UI because each needs a model id bound in overridenModelIds.txt ('<id> ; <Name> ; <setKey>') — the voice-resolution log now prints race/tribe/sex/model for every speaker, so talk to a tribe member, read the model id from the log, add the line, and that tribe is voiced. Enabling is a data change, never a rewrite.",
+  "why": "Parked accent implementations, kept here on purpose. NEVER remove them: they are the casting work for accents the active bank cannot produce, and for the beast tribes / allied societies and NPC archetypes (Garlean, dragon). They are NOT shown in the UI because each needs a model id bound in overridenModelIds.txt ('<id> ; <Name> ; <setKey>') \u2014 the voice-resolution log now prints race/tribe/sex/model for every speaker, so talk to a tribe member, read the model id from the log, add the line, and that tribe is voiced. Enabling is a data change, never a rewrite.",
   "sets": {
    "icelandicMale": [
     {
@@ -312,10 +347,11 @@
    ],
    "setKojin": [
     {
-     "id": "hm_omega"
+     "id": "jf_gongitsune"
     },
     {
-     "id": "hm_psi"
+     "id": "jm_kumo",
+     "pitch": 0.95
     }
    ],
    "setAnanta": [
@@ -330,12 +366,12 @@
    ],
    "setNamazu": [
     {
-     "id": "am_puck",
-     "pitch": 1.2,
+     "id": "jf_nezumi",
+     "pitch": 1.25,
      "speed": 1.2
     },
     {
-     "id": "af_sky",
+     "id": "am_puck",
      "pitch": 1.2,
      "speed": 1.2
     }
@@ -444,10 +480,11 @@
    ],
    "setGarlean": [
     {
-     "id": "bm_daniel"
+     "id": "im_nicola",
+     "pitch": 0.95
     },
     {
-     "id": "bf_emma"
+     "id": "bm_daniel"
     }
    ],
    "setDragon": [

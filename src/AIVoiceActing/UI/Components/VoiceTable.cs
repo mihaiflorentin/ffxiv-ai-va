@@ -7,9 +7,9 @@ using AIVoiceActing.UI.State;
 using Dalamud.Bindings.ImGui;
 
 /// <summary>
-/// Override voice table ([trash] | Name | (World) | Voice | Bias | ▶ Test) plus its add
-/// form. Removal is deferred to after the table (collection mutation mid-draw is unsafe);
-/// the add form is owned by the pure <see cref="VoiceEntryForm"/>; transient voice/bias
+/// Override voice table ([trash] | Name | (World) | Voice | Bias | Vol | ▶ Test) plus its
+/// add form. Removal is deferred to after the table (collection mutation mid-draw is unsafe);
+/// the add form is owned by the pure <see cref="VoiceEntryForm"/>; transient voice/bias/volume
 /// edits persist once per completed interaction, not per dragged frame. The ▶ Test button
 /// routes through the injected speak delegate — the same ports the game path uses — and
 /// is disabled with a reason while models are missing or a request is in flight.
@@ -22,8 +22,8 @@ public sealed class VoiceTable
     private readonly Action save;
 
     /// <summary>Transient edits not yet persisted; released on interaction end so dragging
-    /// the bias slider never writes the store per frame.</summary>
-    private readonly Dictionary<string, (string VoiceId, float Bias)> pending = new(StringComparer.Ordinal);
+    /// the sliders never writes the store per frame.</summary>
+    private readonly Dictionary<string, (string VoiceId, float Bias, float Volume)> pending = new(StringComparer.Ordinal);
 
     /// <param name="showWorld">Player tables show the World column (parsed from the key).</param>
     /// <param name="save">Kept for symmetry with the other widgets; the profile store
@@ -35,7 +35,7 @@ public sealed class VoiceTable
     }
 
     /// <summary>Records a manual override in the profile store (the store persists itself).</summary>
-    public required Action<string, string, float> SetOverride { get; init; }
+    public required Action<string, string, float, float> SetOverride { get; init; }
 
     /// <summary>Deletes the stored entry for a speaker.</summary>
     public required Action<string> Remove { get; init; }
@@ -56,7 +56,7 @@ public sealed class VoiceTable
         IReadOnlyList<string> voiceIds)
     {
         var removeKey = default(string?);
-        var columnCount = this.showWorld ? 6 : 5;
+        var columnCount = this.showWorld ? 7 : 6;
 
         // Explicit height + ScrollY: scrolling lives INSIDE the table, so the header row
         // freezes and the window layout stays put regardless of row count.
@@ -72,7 +72,8 @@ public sealed class VoiceTable
             }
 
             ImGui.TableSetupColumn("Voice", ImGuiTableColumnFlags.WidthStretch, 2f);
-            ImGui.TableSetupColumn("Bias", ImGuiTableColumnFlags.WidthFixed, 140f);
+            ImGui.TableSetupColumn("Bias", ImGuiTableColumnFlags.WidthFixed, 110f);
+            ImGui.TableSetupColumn("Vol", ImGuiTableColumnFlags.WidthFixed, 80f);
             ImGui.TableSetupColumn("Test", ImGuiTableColumnFlags.WidthFixed, 48f);
             ImGui.TableHeadersRow();
 
@@ -98,14 +99,14 @@ public sealed class VoiceTable
                 }
 
                 ImGui.TableNextColumn();
-                var (voiceId, bias) = this.pending.TryGetValue(profile.SpeakerKey, out var edit)
+                var (voiceId, bias, volume) = this.pending.TryGetValue(profile.SpeakerKey, out var edit)
                     ? edit
-                    : (profile.ReferenceVoiceId, profile.ExaggerationBias);
+                    : (profile.ReferenceVoiceId, profile.ExaggerationBias, profile.Volume);
                 ImGui.SetNextItemWidth(-1);
                 if (this.DrawVoiceCombo("##voice", voiceIds, voiceId, out var pickedVoice))
                 {
                     this.pending.Remove(profile.SpeakerKey);
-                    this.SetOverride(profile.SpeakerKey, pickedVoice, Math.Clamp(bias, 0f, 1f));
+                    this.SetOverride(profile.SpeakerKey, pickedVoice, Math.Clamp(bias, 0f, 1f), Math.Clamp(volume, 0f, 2f));
                 }
 
                 ImGui.TableNextColumn();
@@ -114,15 +115,34 @@ public sealed class VoiceTable
                 {
                     // Defer while dragging: the release frame reports deactivated WITHOUT a
                     // value change, so the commit happens below, outside the changed branch.
-                    this.pending[profile.SpeakerKey] = (voiceId, Math.Clamp(bias, 0f, 1f));
+                    this.pending[profile.SpeakerKey] = (voiceId, Math.Clamp(bias, 0f, 1f), volume);
                 }
 
                 Controls.Tooltip("Exaggeration bias added on top of the default for this speaker: 0 follows the global setting, higher is more theatrical.");
 
                 if (ImGui.IsItemDeactivatedAfterEdit()
-                    && this.pending.Remove(profile.SpeakerKey, out var committed))
+                    && this.pending.TryGetValue(profile.SpeakerKey, out var committedBias)
+                    && committedBias.Bias == Math.Clamp(bias, 0f, 1f))
                 {
-                    this.SetOverride(profile.SpeakerKey, committed.VoiceId, committed.Bias);
+                    this.SetOverride(profile.SpeakerKey, voiceId, committedBias.Bias, committedBias.Volume);
+                    this.pending.Remove(profile.SpeakerKey);
+                }
+
+                ImGui.TableNextColumn();
+                ImGui.SetNextItemWidth(-1);
+                if (ImGui.SliderFloat("##vol", ref volume, 0f, 2f, "%.2f"))
+                {
+                    this.pending[profile.SpeakerKey] = (voiceId, bias, Math.Clamp(volume, 0f, 2f));
+                }
+
+                Controls.Tooltip("Per-speaker loudness multiplier: 1 plays as synthesized, up to 2 boosts quiet voices.");
+
+                if (ImGui.IsItemDeactivatedAfterEdit()
+                    && this.pending.TryGetValue(profile.SpeakerKey, out var committedVol)
+                    && committedVol.Volume == Math.Clamp(volume, 0f, 2f))
+                {
+                    this.SetOverride(profile.SpeakerKey, voiceId, Math.Clamp(bias, 0f, 1f), committedVol.Volume);
+                    this.pending.Remove(profile.SpeakerKey);
                 }
 
                 ImGui.TableNextColumn();
@@ -201,7 +221,7 @@ public sealed class VoiceTable
             && form.TryBuildKey(out var key, out _)
             && !existing.Contains(key)) // duplicates surface via the Validate line below
         {
-            this.SetOverride(key, voiceIds.Count > 0 ? voiceIds[0] : "default", 0f);
+            this.SetOverride(key, voiceIds.Count > 0 ? voiceIds[0] : "default", 0f, 1f);
             form.Reset();
         }
 

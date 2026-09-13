@@ -79,21 +79,26 @@ public sealed class JsonProfileStore : IProfileStore
         }
     }
 
-    public void SetOverride(string speakerKey, string referenceVoiceId, float exaggerationBias)
+    public void SetOverride(string speakerKey, string referenceVoiceId, float exaggerationBias, float volume = 1f)
     {
         lock (this.gate)
         {
             this.EnsureLoadedUnlocked();
-            // Voice/bias overrides don't touch pitch: keep the slot-derived pitch when
-            // the speaker already has one (manual overrides on child-pitch races stay child-pitched).
-            var pitch = this.entries.TryGetValue(speakerKey, out var previous) ? previous.Pitch : 1f;
+            // Voice/bias overrides don't touch pitch/speed: keep the slot-derived values
+            // when the speaker already has them (manual overrides on child-pitch races
+            // stay child-pitched).
+            var previous = this.entries.TryGetValue(speakerKey, out var existing) ? existing : null;
+            var pitch = previous?.Pitch ?? 1f;
+            var speed = previous?.Speed ?? 1f;
             this.entries[speakerKey] = new VoiceProfile(
                 speakerKey,
                 referenceVoiceId,
                 Math.Clamp(exaggerationBias, 0f, 1f),
                 DateTimeOffset.UtcNow,
                 Custom: true,
-                pitch);
+                pitch,
+                speed,
+                Math.Clamp(volume, 0f, 2f));
             this.SaveUnlocked();
         }
     }

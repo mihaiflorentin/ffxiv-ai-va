@@ -7,9 +7,15 @@ using System.Text.Json.Serialization;
 /// One voice slot: id plus per-slot performance knobs. <paramref name="Pitch"/> is a
 /// playback multiplier (1 = natural; Lalafell/child-like sets use ~1.18) applied by the
 /// synthesizer as a resample. <paramref name="Speed"/> paces the read (1 = natural;
-/// the Lalafell sets use 1.1 for the cheerful, bubbly cadence).
+/// the Lalafell sets use 1.1 for the cheerful, bubbly cadence). <paramref name="Volume"/>
+/// is a linear loudness multiplier (1 = natural, up to 2) applied at playback.
 /// </summary>
-public sealed record VoiceSlot(string Id, float ExaggerationBias = 0f, float Pitch = 1f, float Speed = 1f);
+public sealed record VoiceSlot(
+    string Id,
+    float ExaggerationBias = 0f,
+    float Pitch = 1f,
+    float Speed = 1f,
+    float Volume = 1f);
 
 /// <summary>
 /// Maps voice groups (with per-race accent variants) to bundled reference-voice slots,

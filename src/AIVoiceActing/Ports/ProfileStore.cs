@@ -19,7 +19,8 @@ public sealed record VoiceProfile(
     DateTimeOffset CreatedUtc,
     bool Custom,
     float Pitch = 1f,
-    float Speed = 1f);
+    float Speed = 1f,
+    float Volume = 1f);
 
 /// <summary>Driven port over the persistent voice-assignment store.</summary>
 public interface IProfileStore
@@ -43,8 +44,9 @@ public interface IProfileStore
         byte? tribe,
         byte? sex);
 
-    /// <summary>Records a manual override; overrides win over deterministic assignment and persist.</summary>
-    void SetOverride(string speakerKey, string referenceVoiceId, float exaggerationBias);
+    /// <summary>Records a manual override; overrides win over deterministic assignment and
+    /// persist. <paramref name="volume"/> is a linear loudness multiplier (1 = natural, up to 2).</summary>
+    void SetOverride(string speakerKey, string referenceVoiceId, float exaggerationBias, float volume = 1f);
 
     /// <summary>
     /// Deletes any persisted entry (override or deterministic slot) for

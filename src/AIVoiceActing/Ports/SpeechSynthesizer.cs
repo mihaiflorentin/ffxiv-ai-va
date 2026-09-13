@@ -20,13 +20,17 @@ public sealed class SpeechSynthesisEngineDisposedException : SpeechSynthesisExce
 /// <param name="Text">Text to perform. Style tags must be supplied via <see cref="Tags"/>, not inline.</param>
 /// <param name="Exaggeration">Performance intensity, 0..1 (0 = flat read, 1 = theatrical).</param>
 /// <param name="Tags">Paralinguistic directions, e.g. "laughs", "sighs".</param>
+/// <param name="Pitch">Playback pitch multiplier (1 = natural).</param>
+/// <param name="Speed">Pace multiplier (1 = natural).</param>
+/// <param name="Volume">Linear loudness multiplier (1 = natural, up to 2 = boosted).</param>
 public sealed record SynthesisRequest(
     string ReferenceVoiceId,
     string Text,
     float Exaggeration,
     IReadOnlyList<string> Tags,
     float Pitch = 1f,
-    float Speed = 1f);
+    float Speed = 1f,
+    float Volume = 1f);
 
 /// <summary>Rendered speech: mono PCM samples at a fixed sample rate.</summary>
 public sealed record SynthesisResult(float[] Samples, int SampleRate);

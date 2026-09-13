@@ -154,7 +154,7 @@ public sealed class ConfigurationWindow : Window
 
     private VoiceTable CreateTable(bool showWorld) => new(showWorld, this.save)
     {
-        SetOverride = this.profiles.SetOverride,
+        SetOverride = (key, voiceId, bias, volume) => this.profiles.SetOverride(key, voiceId, bias, volume),
         Remove = key => this.profiles.Remove(key),
         SpeakTest = profile => this.SpeakVoiceTest(profile),
         EngineReady = () => this.Synth.IsReady && this.activeRequests == 0,
@@ -334,7 +334,16 @@ public sealed class ConfigurationWindow : Window
             "mid-line: the line in flight finishes on the old engine, the next line uses the new one.");
 
         var assets = this.modelAssets();
-        foreach (var (key, title, blurb) in EngineSections)
+
+        // PARKED ENGINES: f5, turbo, and legacy chatterbox are hidden from the UI.
+        // Kokoro is the only engine we stand behind in-game right now: real-time on
+        // CPU, no DirectML dependency, crash-free lifecycle. Re-enabling an engine is
+        // a ONE-LINE change to visibleEngines below; NEVER delete the renderer, the
+        // EngineSections entries, or the synthesizer adapters — the voice map's F5 clip
+        // aliases and existing configs depend on them. Power users can still switch
+        // engines via Configuration.json ("SelectedEngine").
+        var visibleEngines = new[] { "kokoro" };
+        foreach (var (key, title, blurb) in EngineSections.Where(section => visibleEngines.Contains(section.Key)))
         {
             this.DrawEngineCard(key, title, blurb, assets, anyDownload);
         }
