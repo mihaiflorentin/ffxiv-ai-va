@@ -3,7 +3,7 @@
   <PropertyGroup>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>0.0.11</Version>
+    <Version>0.0.13</Version>
     <AssemblyName>AIVoiceActing</AssemblyName>
     <Description>AI voice acting for FFXIV - local neural TTS with emotion-aware delivery.</Description>
     <IsPackable>false</IsPackable>
@@ -26,6 +26,15 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.24.4" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
+    <!-- MUST ship with the plugin: Dalamud's ManagedLoadContext has no deferral entry
+         for System.Numerics.Tensors (verified against Dalamud.dll 15.0.3.4 strings:
+         System.Numerics and System.Numerics.Vectors are listed, Tensors is not), the
+         game runtime does not expose the framework copy to collectible plugin ALCs, and
+         the ALC's not-found fallback throws NotSupportedException("Resolving to a
+         collectible assembly is not supported") — which escapes as an AppDomain
+         unhandled exception and CRASHES THE GAME on the first ORT tensor conversion.
+         The plugin entry also preloads it explicitly at init. Never ExcludeAssets=runtime. -->
+    <PackageReference Include="System.Numerics.Tensors" Version="9.0.5" />
     <PackageReference Include="NAudio" Version="2.4.0" />
     <PackageReference Include="Tokenizers.DotNet" Version="1.4.1" />
     <PackageReference Include="Tokenizers.DotNet.runtime.osx-arm64" Version="1.4.1" />

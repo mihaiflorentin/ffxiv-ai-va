@@ -3,8 +3,17 @@ namespace AIVoiceActing.Ports;
 using AIVoiceActing.Domain;
 
 /// <summary>Thrown by <see cref="ISpeechSynthesizer.SynthesizeAsync"/> when speech synthesis fails.</summary>
-public sealed class SpeechSynthesisException(string message, Exception? inner = null)
+public class SpeechSynthesisException(string message, Exception? inner = null)
     : Exception(message, inner);
+
+/// <summary>Thrown when the synthesizer was disposed mid-flight (engine switched or plugin stopped). The request may be retried against the current engine.</summary>
+public sealed class SpeechSynthesisEngineDisposedException : SpeechSynthesisException
+{
+    public SpeechSynthesisEngineDisposedException()
+        : base("The speech engine was switched or stopped while this line was starting.")
+    {
+    }
+}
 
 /// <summary>One requested utterance for the synthesizer.</summary>
 /// <param name="ReferenceVoiceId">Reference clip id resolving to a bundled voice; the timbre seed.</param>

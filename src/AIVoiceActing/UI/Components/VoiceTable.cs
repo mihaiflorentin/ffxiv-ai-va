@@ -12,12 +12,13 @@ using Dalamud.Bindings.ImGui;
 /// the add form is owned by the pure <see cref="VoiceEntryForm"/>; transient voice/bias
 /// edits persist once per completed interaction, not per dragged frame. The ▶ Test button
 /// routes through the injected speak delegate — the same ports the game path uses — and
-/// is disabled with a reason while models are missing.
+/// is disabled with a reason while models are missing or a request is in flight.
+/// Voice ids are computed once per frame by the owner and passed in — the table never
+/// re-resolves them per row.
 /// </summary>
 public sealed class VoiceTable
 {
     private readonly bool showWorld;
-    private readonly Func<IReadOnlyList<string>> voiceOptions;
     private readonly Action save;
 
     /// <summary>Transient edits not yet persisted; released on interaction end so dragging
@@ -25,17 +26,15 @@ public sealed class VoiceTable
     private readonly Dictionary<string, (string VoiceId, float Bias)> pending = new(StringComparer.Ordinal);
 
     /// <param name="showWorld">Player tables show the World column (parsed from the key).</param>
-    /// <param name="voiceOptions">Reference-voice ids for the combo.</param>
-    /// <param name="save">Config persist delegate; the store persists SetOverride itself —
-    /// this is called once per completed interaction.</param>
-    public VoiceTable(bool showWorld, Func<IReadOnlyList<string>> voiceOptions, Action save)
+    /// <param name="save">Kept for symmetry with the other widgets; the profile store
+    /// persists SetOverride itself, so the table no longer saves per edit.</param>
+    public VoiceTable(bool showWorld, Action save)
     {
         this.showWorld = showWorld;
-        this.voiceOptions = voiceOptions;
         this.save = save;
     }
 
-    /// <summary>Records a manual override in the profile store.</summary>
+    /// <summary>Records a manual override in the profile store (the store persists itself).</summary>
     public required Action<string, string, float> SetOverride { get; init; }
 
     /// <summary>Deletes the stored entry for a speaker.</summary>
@@ -53,12 +52,16 @@ public sealed class VoiceTable
         string tableId,
         IReadOnlyCollection<VoiceProfile> entries,
         Func<VoiceProfile, SpeakerKeyView> view,
-        VoiceEntryForm form)
+        VoiceEntryForm form,
+        IReadOnlyList<string> voiceIds)
     {
         var removeKey = default(string?);
         var columnCount = this.showWorld ? 6 : 5;
 
-        if (ImGui.BeginTable(tableId, columnCount, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
+        // Explicit height + ScrollY: scrolling lives INSIDE the table, so the header row
+        // freezes and the window layout stays put regardless of row count.
+        var flags = ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY;
+        if (ImGui.BeginTable(tableId, columnCount, flags, new Vector2(-1, 260)))
         {
             ImGui.TableSetupScrollFreeze(0, 1);
             ImGui.TableSetupColumn("##trash", ImGuiTableColumnFlags.WidthFixed, 24f);
@@ -95,17 +98,14 @@ public sealed class VoiceTable
                 }
 
                 ImGui.TableNextColumn();
-                var voices = this.voiceOptions();
                 var (voiceId, bias) = this.pending.TryGetValue(profile.SpeakerKey, out var edit)
                     ? edit
                     : (profile.ReferenceVoiceId, profile.ExaggerationBias);
-                var voiceIndex = Math.Max(0, voices.ToList().IndexOf(voiceId));
                 ImGui.SetNextItemWidth(-1);
-                if (ImGui.Combo("##voice", ref voiceIndex, voices))
+                if (this.DrawVoiceCombo("##voice", voiceIds, voiceId, out var pickedVoice))
                 {
                     this.pending.Remove(profile.SpeakerKey);
-                    this.SetOverride(profile.SpeakerKey, voices[voiceIndex], Math.Clamp(bias, 0f, 1f));
-                    this.save();
+                    this.SetOverride(profile.SpeakerKey, pickedVoice, Math.Clamp(bias, 0f, 1f));
                 }
 
                 ImGui.TableNextColumn();
@@ -119,12 +119,10 @@ public sealed class VoiceTable
 
                 Controls.Tooltip("Exaggeration bias added on top of the default for this speaker: 0 follows the global setting, higher is more theatrical.");
 
-
                 if (ImGui.IsItemDeactivatedAfterEdit()
                     && this.pending.Remove(profile.SpeakerKey, out var committed))
                 {
                     this.SetOverride(profile.SpeakerKey, committed.VoiceId, committed.Bias);
-                    this.save();
                 }
 
                 ImGui.TableNextColumn();
@@ -149,10 +147,31 @@ public sealed class VoiceTable
         }
 
         ImGui.Separator();
-        this.DrawAddForm(entries, form);
+        this.DrawAddForm(entries, form, voiceIds);
     }
 
-    private void DrawAddForm(IReadOnlyCollection<VoiceProfile> entries, VoiceEntryForm form)
+    /// <summary>
+    /// Array+count combo (the IReadOnlyList binding never commits selections). A stored id
+    /// missing from the bank is APPENDED as a "(missing)" placeholder so the stored value
+    /// stays visible and selectable — appending (not prepending) means committing can
+    /// never accidentally pick the placeholder; any real pick commits a real voice.
+    /// </summary>
+    private bool DrawVoiceCombo(string label, IReadOnlyList<string> voiceIds, string voiceId, out string picked)
+    {
+        var display = voiceIds as string[] ?? [.. voiceIds];
+        var index = Array.IndexOf(display, voiceId);
+        if (index < 0)
+        {
+            display = [.. display, $"{voiceId} (missing)"];
+            index = display.Length - 1;
+        }
+
+        var changed = ImGui.Combo(label, ref index, display, display.Length);
+        picked = display[index];
+        return changed;
+    }
+
+    private void DrawAddForm(IReadOnlyCollection<VoiceProfile> entries, VoiceEntryForm form, IReadOnlyList<string> voiceIds)
     {
         var existing = entries.Select(e => e.SpeakerKey).ToHashSet(StringComparer.Ordinal);
         ImGui.SetNextItemWidth(180f);
@@ -182,9 +201,7 @@ public sealed class VoiceTable
             && form.TryBuildKey(out var key, out _)
             && !existing.Contains(key)) // duplicates surface via the Validate line below
         {
-            var voices = this.voiceOptions();
-            this.SetOverride(key, voices.Count > 0 ? voices[0] : "default", 0f);
-            this.save();
+            this.SetOverride(key, voiceIds.Count > 0 ? voiceIds[0] : "default", 0f);
             form.Reset();
         }
 

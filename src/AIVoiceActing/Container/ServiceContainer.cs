@@ -215,19 +215,35 @@ public sealed class ServiceContainer : IDisposable
     /// </summary>
     /// <summary>
     /// Drops the cached synthesizer so the next access rebuilds it from the current
-    /// engine/EP selection. All adapters dispose idempotently, so disposing here and
-    /// again at teardown is safe.
+    /// engine/EP selection. The retired instance is disposed on the thread pool, NOT
+    /// here: a synchronous dispose while a background line is inside native inference
+    /// is the engine-switch AV. The drain bound lives in each adapter's Dispose.
+    /// Teardown still disposes it (adapters dispose idempotently).
     /// </summary>
     public void InvalidateSpeechSynthesizer()
     {
+        ISpeechSynthesizer? retired;
         lock (this.gate)
         {
-            if (this.speechSynthesizer is IDisposable disposable)
-            {
-                disposable.Dispose();
-            }
-
+            retired = this.speechSynthesizer;
             this.speechSynthesizer = null;
+        }
+
+        if (retired is IDisposable disposable)
+        {
+            this.LogSinkOptional?.Info(
+                $"Retiring engine instance {retired.GetType().Name}; dispose continues in background.");
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    disposable.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    this.LogSinkOptional?.Warn($"Retired engine dispose failed: {ex.Message}");
+                }
+            });
         }
     }
 
@@ -243,55 +259,49 @@ public sealed class ServiceContainer : IDisposable
                 }
 
                 var threads = this.cpuThreadsFactory?.Invoke();
-                if (this.selectedEngineFactory?.Invoke() == "chatterbox")
+                var engine = this.selectedEngineFactory?.Invoke() ?? "f5";
+                ISpeechSynthesizer created = engine switch
                 {
-                    return this.speechSynthesizer = this.RegisterDisposable(
-                        new ChatterboxSynthesizer(
-                            this.ModelsDir,
-                            // Convention: the provisioner writes catalog assets flat, so the
-                            // bundled fallback clip id "default" resolves to
-                            // ModelsDir/default_voice.wav; plugin-installed clips live under
-                            // ModelsDir/voices/{id}.wav.
-                            voicePathResolver: this.ClippingResolver("default_voice.wav"),
-                            executionProvider: this.selectedEpFactory?.Invoke() ?? "auto",
-                            // fp32 override replaces the q4 LM session entirely (int4 kernels
-                            // and their Zen5/AVX-512 native crashes go with it).
-                            languageModelOverride: this.useFp32LanguageModelFactory?.Invoke() == true
-                                ? Infrastructure.Onnx.ModelCatalog.LanguageModelFp32FileName
-                                : null,
-                            intraOpThreads: threads,
-                            log: this.LogSinkUnlocked()));
-                }
-
-                if (this.selectedEngineFactory?.Invoke() == "turbo")
-                {
-                    return this.speechSynthesizer = this.RegisterDisposable(
-                        Infrastructure.Onnx.ChatterboxSynthesizer.CreateTurbo(
-                            this.ModelsDir,
-                            voicePathResolver: this.ClippingResolver("turbo-default-voice.wav"),
-                            executionProvider: this.selectedEpFactory?.Invoke() ?? "cpu",
-                            intraOpThreads: threads,
-                            log: this.LogSinkUnlocked()));
-                }
-
-                if (this.selectedEngineFactory?.Invoke() == "kokoro")
-                {
-                    return this.speechSynthesizer = this.RegisterDisposable(
-                        new Infrastructure.Kokoro.KokoroSynthesizer(
-                            () => this.ModelsDir,
-                            () => Math.Max(1, threads ?? 4),
-                            this.LogSinkUnlocked(),
-                            voicesDirFactory: this.kokoroVoicesDirFactory));
-                }
-
-                return this.speechSynthesizer = this.RegisterDisposable(
-                    new Infrastructure.F5.F5Synthesizer(
+                    "chatterbox" => new ChatterboxSynthesizer(
+                        this.ModelsDir,
+                        // Convention: the provisioner writes catalog assets flat, so the
+                        // bundled fallback clip id "default" resolves to
+                        // ModelsDir/default_voice.wav; plugin-installed clips live under
+                        // ModelsDir/voices/{id}.wav.
+                        voicePathResolver: this.ClippingResolver("default_voice.wav"),
+                        executionProvider: this.selectedEpFactory?.Invoke() ?? "auto",
+                        // fp32 override replaces the q4 LM session entirely (int4 kernels
+                        // and their Zen5/AVX-512 native crashes go with it).
+                        languageModelOverride: this.useFp32LanguageModelFactory?.Invoke() == true
+                            ? Infrastructure.Onnx.ModelCatalog.LanguageModelFp32FileName
+                            : null,
+                        intraOpThreads: threads,
+                        log: this.LogSinkUnlocked()),
+                    "turbo" => Infrastructure.Onnx.ChatterboxSynthesizer.CreateTurbo(
+                        this.ModelsDir,
+                        voicePathResolver: this.ClippingResolver("turbo-default-voice.wav"),
+                        executionProvider: this.selectedEpFactory?.Invoke() ?? "cpu",
+                        intraOpThreads: threads,
+                        log: this.LogSinkUnlocked()),
+                    "kokoro" => new Infrastructure.Kokoro.KokoroSynthesizer(
+                        () => this.ModelsDir,
+                        () => Math.Max(1, threads ?? 4),
+                        this.LogSinkUnlocked(),
+                        voicesDirFactory: this.kokoroVoicesDirFactory),
+                    _ => new Infrastructure.F5.F5Synthesizer(
                         () => this.ModelsDir,
                         () => Math.Max(1, threads ?? 4),
                         this.LogSinkUnlocked(),
                         voicesDirFactory: this.f5VoicesDirFactory,
-                        executionProviderFactory: this.selectedEpFactory));
+                        executionProviderFactory: this.selectedEpFactory),
+                };
+
+                this.LogSinkUnlocked().Info(
+                    $"Speech engine instance created: {created.GetType().Name} " +
+                    $"(engine \"{engine}\", {threads ?? 4} synthesis threads).");
+                return this.speechSynthesizer = this.RegisterDisposable(created);
             }
+
         }
     }
 
@@ -387,7 +397,7 @@ public sealed class ServiceContainer : IDisposable
     /// Fall back to the bundled F5 bank clip for that id, then to the engine default —
     /// a missing clip must degrade to the default voice, never error the line.
     /// </summary>
-    private Func<string, string> ClippingResolver(string defaultClipFileName)
+    private Func<string, string?> ClippingResolver(string defaultClipFileName)
     {
         var f5Dir = this.f5VoicesDirFactory?.Invoke();
         return voiceId =>
@@ -412,9 +422,27 @@ public sealed class ServiceContainer : IDisposable
             }
 
             var defaultClip = Path.Combine(this.ModelsDir, defaultClipFileName);
-            return File.Exists(defaultClip)
-                ? defaultClip
-                : Path.Combine(this.ModelsDir, "default_voice.wav");
+            if (File.Exists(defaultClip))
+            {
+                return defaultClip;
+            }
+
+            // Plugin-bundled conversion of the pinned default clip ships with the
+            // publish output; use it before giving up (mid-reinstall race otherwise
+            // hands the engines a path that does not exist).
+            var kokoroVoicesDir = this.kokoroVoicesDirFactory?.Invoke();
+            if (!string.IsNullOrWhiteSpace(kokoroVoicesDir))
+            {
+                var bundledDefault = Path.Combine(kokoroVoicesDir, "default_voice.wav");
+                if (File.Exists(bundledDefault))
+                {
+                    return bundledDefault;
+                }
+            }
+
+            // ChatterboxSynthesizer treats a null resolution as a clean
+            // SpeechSynthesisException; a missing clip never errors the line hard.
+            return null;
         };
     }
 

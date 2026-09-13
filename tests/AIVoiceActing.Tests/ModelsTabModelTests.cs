@@ -82,4 +82,16 @@ public sealed class ModelsTabModelTests
         Assert.False(ModelsTabModel.CanDownloadAll(downloadInFlight: true, missingCount: 2));
         Assert.False(ModelsTabModel.CanDownloadAll(downloadInFlight: false, missingCount: 0));
     }
+
+    [Fact]
+    public void QueuePositionLabel_NamesFileAndBytes()
+    {
+        Assert.Equal(
+            "LM weights (file 2 of 5): 1.0 / 2.0 MB",
+            ModelsTabModel.QueuePositionLabel("LM weights", 2, 5, 1048576, 2097152));
+        // Unknown total (size-less assets): bytes only, no division by zero text.
+        Assert.Equal(
+            "Tokenizer (file 1 of 1): 1.0 MB",
+            ModelsTabModel.QueuePositionLabel("Tokenizer", 1, 1, 1048576, null));
+    }
 }

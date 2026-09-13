@@ -16,7 +16,7 @@ public static class TriggerList
         var persist = false;
         ImGui.PushID(listId);
 
-        if (ImGui.CollapsingHeader($"{listId} ({list.Count})"))
+        if (ImGui.CollapsingHeader($"{listId} ({list.Count})##{listId}"))
         {
             for (var i = list.Count - 1; i >= 0; i--)
             {

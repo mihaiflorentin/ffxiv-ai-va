@@ -26,10 +26,17 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
     private readonly ILogSink? log;
 
     private readonly object gate = new();
+
+    /// <summary>
+    /// Serializes synthesis so Dispose can drain the in-flight line before tearing
+    /// down the native session (the in-game engine-switch crash). Nesting order is
+    /// always synthesisGate → gate, never reversed.
+    /// </summary>
+    private readonly SemaphoreSlim synthesisGate = new(1, 1);
     private KokoroWavSynthesizer? engine;
     private string? initError;
     private bool initializing;
-    private bool disposed;
+    private volatile bool disposed;
 
     public KokoroSynthesizer(
         Func<string> modelsDirFactory,
@@ -72,6 +79,17 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
             && Directory.EnumerateFiles(candidate, "*.npy").Any());
     }
 
+    /// <summary>Test hook: the instance has begun its drain-and-teardown sequence.</summary>
+    public bool IsDisposed => this.disposed;
+
+    private void ThrowIfDisposed()
+    {
+        if (this.disposed)
+        {
+            throw new SpeechSynthesisEngineDisposedException();
+        }
+    }
+
     public bool IsReady => this.FindNotReadyReason() is null;
 
     public string NotReadyReason => this.FindNotReadyReason() ?? string.Empty;
@@ -111,38 +129,53 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
 
     public async Task<SynthesisResult> SynthesizeAsync(SynthesisRequest request, CancellationToken cancellationToken)
     {
-        var engine = this.EnsureEngine();
-        var voice = this.ResolveVoice(request.ReferenceVoiceId);
-        var text = StripInlineTags(request.Text);
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            throw new SpeechSynthesisException("Nothing to speak after tag stripping.");
-        }
-
-        // Exaggeration maps to pace: flat reads stay brisk, theatrical ones slow down.
-        var speed = 1.05f - (0.20f * Math.Clamp(request.Exaggeration, 0f, 1f));
-
-        byte[] pcm16;
+        this.ThrowIfDisposed();
+        await this.synthesisGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // KokoroSharp synthesizes without cancellation support; ct gates the wait below.
-            var config = new KokoroTTSPipelineConfig { Speed = speed };
-            pcm16 = await engine.SynthesizeAsync(text, voice, config).ConfigureAwait(false);
+            // Disposed while queued behind another line.
+            this.ThrowIfDisposed();
+
+            var engine = this.EnsureEngine();
+            var voice = this.ResolveVoice(request.ReferenceVoiceId);
+            var text = StripInlineTags(request.Text);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                throw new SpeechSynthesisException("Nothing to speak after tag stripping.");
+            }
+
+            // Exaggeration maps to pace: flat reads stay brisk, theatrical ones slow down.
+            var speed = 1.05f - (0.20f * Math.Clamp(request.Exaggeration, 0f, 1f));
+
+            byte[] pcm16;
+            try
+            {
+                // KokoroSharp synthesizes without cancellation support; ct gates the wait below.
+                var config = new KokoroTTSPipelineConfig { Speed = speed };
+                this.log?.Info($"Kokoro synthesis start: voice \"{voice.Name}\" ({text.Length} chars, speed {speed:0.00}).");
+                pcm16 = await engine.SynthesizeAsync(text, voice, config).ConfigureAwait(false);
+                this.log?.Info($"Kokoro synthesis complete: {pcm16.Length / 2} samples ({pcm16.Length / 2 / (float)KokoroSampleRate:0.0} s of audio).");
+            }
+            catch (Exception ex)
+            {
+                this.log?.Warn($"Kokoro synthesis failed for voice \"{voice.Name}\": {ex.GetType().Name}: {ex.Message}");
+                throw new SpeechSynthesisException($"Kokoro synthesis failed for voice \"{voice.Name}\".", ex);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var samples = Pcm16ToFloat(pcm16);
+            if (Math.Abs(request.Pitch - 1f) > 0.01f)
+            {
+                samples = ResamplePitch(samples, request.Pitch);
+            }
+
+            return new SynthesisResult(samples, KokoroSampleRate);
         }
-        catch (Exception ex)
+        finally
         {
-            throw new SpeechSynthesisException($"Kokoro synthesis failed for voice \"{voice.Name}\".", ex);
+            this.synthesisGate.Release();
         }
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var samples = Pcm16ToFloat(pcm16);
-        if (Math.Abs(request.Pitch - 1f) > 0.01f)
-        {
-            samples = ResamplePitch(samples, request.Pitch);
-        }
-
-        return new SynthesisResult(samples, KokoroSampleRate);
     }
 
     /// <summary>
@@ -173,8 +206,26 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
             }
 
             this.disposed = true;
-            this.engine?.Dispose();
-            this.engine = null;
+        }
+
+        // Bounded drain of the in-flight line so the native session never dies under
+        // inference (the engine-switch AV). New requests throw the marker at
+        // ThrowIfDisposed instead of entering the gate.
+        var drained = this.synthesisGate.Wait(TimeSpan.FromSeconds(10));
+        try
+        {
+            lock (this.gate)
+            {
+                this.engine?.Dispose();
+                this.engine = null;
+            }
+        }
+        finally
+        {
+            if (drained)
+            {
+                this.synthesisGate.Release();
+            }
         }
     }
 
@@ -215,7 +266,7 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
 
             if (this.disposed)
             {
-                throw new SpeechSynthesisException("Kokoro synthesizer was disposed.");
+                throw new SpeechSynthesisEngineDisposedException();
             }
 
             var modelPath = ModelPathFor(this.modelsDirFactory());
@@ -242,6 +293,17 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
                 if (this.ResolveVoicesDir() is { } voicesDir)
                 {
                     KokoroVoiceManager.LoadVoicesFromPath(voicesDir);
+                    try
+                    {
+                        // Latch init on an unreadable bank: GetVoice's own auto-load hits
+                        // the game dir under Wine and spits hundreds of errors per line.
+                        _ = KokoroVoiceManager.GetVoice(DefaultVoiceName);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new SpeechSynthesisException($"Kokoro voices unreadable at {voicesDir}: {ex.Message}");
+                    }
+
                     this.log?.Info($"Kokoro voices loaded from {voicesDir}.");
                 }
                 else

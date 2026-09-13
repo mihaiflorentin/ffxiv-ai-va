@@ -165,14 +165,34 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     public bool IsReady => this.FindNotReadyReason() is null;
 
     /// <summary>Builds all sessions ahead of the first line; no-ops once initialized.</summary>
-    public Task WarmUpAsync(CancellationToken cancellationToken)
+    public async Task WarmUpAsync(CancellationToken cancellationToken)
     {
-        _ = this.engine.Value;
-        return Task.CompletedTask;
+        // Session creation must not race dispose: take the synthesis gate like a line.
+        await this.synthesisGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            this.ThrowIfDisposed();
+            _ = this.engine.Value;
+        }
+        finally
+        {
+            this.synthesisGate.Release();
+        }
     }
 
     /// <summary>Human-readable reason IsReady is false; empty when ready.</summary>
     public string NotReadyReason => this.FindNotReadyReason() ?? string.Empty;
+
+    /// <summary>Test hook: the instance has begun its drain-and-teardown sequence.</summary>
+    public bool IsDisposed => this.disposed;
+
+    private void ThrowIfDisposed()
+    {
+        if (this.disposed)
+        {
+            throw new SpeechSynthesisEngineDisposedException();
+        }
+    }
 
     /// <summary>First blocking reason for readiness, or null when the engine can synthesize.</summary>
     private string? FindNotReadyReason()
@@ -245,6 +265,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     // multiply KV-cache churn (the 40 GB incident); queued requests hold only their
     // request object until the gate frees.
     private readonly SemaphoreSlim synthesisGate = new(1, 1);
+    private volatile bool disposed;
 
     public async Task<SynthesisResult> SynthesizeAsync(
         SynthesisRequest request,
@@ -253,10 +274,18 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         return await Task.Run(
             async () =>
             {
+                this.ThrowIfDisposed();
                 await this.synthesisGate.WaitAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
-                    return this.SynthesizeCore(request, cancellationToken);
+                    // Disposed while queued behind another line.
+                    this.ThrowIfDisposed();
+                    var started = Environment.TickCount64;
+                    var result = this.SynthesizeCore(request, cancellationToken);
+                    this.log?.Info(
+                        $"Chatterbox synthesis complete: {result.Samples.Length} samples @ {result.SampleRate} Hz " +
+                        $"({(Environment.TickCount64 - started)} ms, voice \"{request.ReferenceVoiceId}\").");
+                    return result;
                 }
                 finally
                 {
@@ -288,14 +317,39 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
     public void Dispose()
     {
-        if (this.engine.IsValueCreated)
+        lock (this.tokenizerGate)
         {
-            this.engine.Value.Dispose();
+            if (this.disposed)
+            {
+                return;
+            }
+
+            this.disposed = true;
+        }
+
+        // Bounded drain of the in-flight line so the native sessions never die under
+        // inference (the engine-switch AV). New requests throw the marker at
+        // ThrowIfDisposed instead of entering the gate.
+        var drained = this.synthesisGate.Wait(TimeSpan.FromSeconds(10));
+        try
+        {
+            if (this.engine.IsValueCreated)
+            {
+                this.engine.Value.Dispose();
+            }
+        }
+        finally
+        {
+            if (drained)
+            {
+                this.synthesisGate.Release();
+            }
         }
     }
 
     private SynthesisResult SynthesizeCore(SynthesisRequest request, CancellationToken ct)
     {
+        this.ThrowIfDisposed();
         var eng = this.engine.Value;
         var tokenizer = this.EnsureTokenizer()
             ?? throw new SpeechSynthesisException("Tokenizer is unavailable (failed to load).");
@@ -303,6 +357,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         var referencePath = this.voicePathResolver(request.ReferenceVoiceId)
             ?? throw new SpeechSynthesisException(
                 $"No reference wav resolves for voice id \"{request.ReferenceVoiceId}\".");
+        this.log?.Info($"Chatterbox synthesis start: voice \"{request.ReferenceVoiceId}\" → clip {referencePath}.");
         var reference = this.referenceCache.GetOrAdd(
             referencePath,
             _ => this.EncodeReference(referencePath, eng));
@@ -517,27 +572,39 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
     private ReferenceEmbeddings EncodeReference(string referencePath, Engine eng)
     {
-        var audio = WavCodec.ReadMono24k(referencePath); // 24 kHz mono floats (card: librosa sr=24000)
-        var audioValues = new DenseTensor<float>([1, audio.Length]);
-        audio.AsSpan().CopyTo(audioValues.Buffer.Span);
+        // Mid-reinstall file race: a vanished/short wav skips one line with a clean
+        // error instead of an IO stack trace.
+        try
+        {
+            var audio = WavCodec.ReadMono24k(referencePath); // 24 kHz mono floats (card: librosa sr=24000)
+            var audioValues = new DenseTensor<float>([1, audio.Length]);
+            audio.AsSpan().CopyTo(audioValues.Buffer.Span);
 
-        using var outputs = RunSession(
-            eng.Encoder,
-            [NamedOnnxValue.CreateFromTensor("audio_values", audioValues)]);
+            using var outputs = RunSession(
+                eng.Encoder,
+                [NamedOnnxValue.CreateFromTensor("audio_values", audioValues)]);
 
-        // Card destructures positionally: cond_emb, prompt_token, ref_x_vector, prompt_feat.
-        // ORT owns output memory — copy every output before the results are disposed.
-        var condEmb = unwrap<float>(outputs[0]);
-        var promptToken = unwrap<long>(outputs[1]);
-        var refXVector = CopyTensor(unwrap<float>(outputs[2]));
-        var promptFeat = CopyTensor(unwrap<float>(outputs[3]));
+            // Card destructures positionally: cond_emb, prompt_token, ref_x_vector, prompt_feat.
+            // ORT owns output memory — copy every output before the results are disposed.
+            var condEmb = unwrap<float>(outputs[0]);
+            var promptToken = unwrap<long>(outputs[1]);
+            var refXVector = CopyTensor(unwrap<float>(outputs[2]));
+            var promptFeat = CopyTensor(unwrap<float>(outputs[3]));
 
-        return new ReferenceEmbeddings(
-            TensorSpan(condEmb).ToArray(),
-            [.. condEmb.Dimensions],
-            TensorSpan(promptToken).ToArray(),
-            refXVector,
-            promptFeat);
+            return new ReferenceEmbeddings(
+                TensorSpan(condEmb).ToArray(),
+                [.. condEmb.Dimensions],
+                TensorSpan(promptToken).ToArray(),
+                refXVector,
+                promptFeat);
+        }
+        // FileLoadException derives from IOException but is an ASSEMBLY BIND failure
+        // (never "the wav is missing") — rethrow unmasked so the root cause is visible.
+        catch (IOException ex) when (ex is not FileLoadException)
+        {
+            this.log?.Warn($"Reference clip unreadable: {referencePath} ({ex.GetType().Name}: {ex.Message})");
+            throw new SpeechSynthesisException($"Reference clip unreadable: {referencePath}", ex);
+        }
     }
 
     private ITextTokenizer? EnsureTokenizer()

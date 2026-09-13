@@ -76,6 +76,29 @@ public sealed class ChatterboxSynthesizerReadyTests
         }
     }
 
+    [Fact]
+    public void IsReady_FalseWhenResolverReturnsNull()
+    {
+        try
+        {
+            CreateRequiredAssets();
+            WavCodec.WriteMono24k(Path.Combine(Dir, "default_voice.wav"), [0f]);
+            // The container's ClippingResolver may now legitimately return null (no
+            // downloadable clip anywhere); readiness must report a clean reason.
+            var synthesizer = new ChatterboxSynthesizer(
+                modelsDir: Dir,
+                voicePathResolver: _ => null,
+                tokenizerFactory: () => new FakeTokenizer(),
+                executionProvider: "cpu");
+            Assert.False(synthesizer.IsReady);
+            Assert.Contains("default reference voice", synthesizer.NotReadyReason);
+        }
+        finally
+        {
+            Directory.Delete(Dir, recursive: true);
+        }
+    }
+
     private static void CreateRequiredAssets(string? dir = null)
     {
         dir ??= Dir;

@@ -68,6 +68,7 @@ public sealed class SpeechRequestHandler
         // Staleness is measured from ARRIVAL (pre-synthesis): slow engines must not
         // push finished audio for a conversation that already moved on.
         var requestedAtTicks = Environment.TickCount64;
+        this.log?.Info($"Speak requested: \"{speaker.Key}\" ({text.Length} chars): {Truncate(text)}");
         var profile = this.profileLookup(speaker);
         if (profile is null)
         {
@@ -75,19 +76,15 @@ public sealed class SpeechRequestHandler
             return;
         }
 
-        var processed = this.lexicon.Apply(text);
-        if (this.removeStutters is not null)
-        {
-            processed = this.removeStutters(processed);
-        }
-
-        IReadOnlyList<string> styleTags = [];
-        if (this.extractStyleTags is { } extract)
-        {
-            (processed, styleTags) = extract(processed);
-        }
+        var (processed, styleTags) = this.PrepareText(text);
+        this.log?.Info(
+            $"Text prepared for \"{speaker.Key}\": {processed.Length} chars" +
+            (styleTags.Count > 0 ? $" (tags: {string.Join(", ", styleTags)})" : string.Empty));
 
         var plan = await this.PlanAsync(sessionId ?? "adhoc", speaker, processed, cancellationToken);
+        this.log?.Info(
+            $"Plan for \"{speaker.Key}\": {plan.Emotion} @ {plan.Exaggeration:0.00}" +
+            (plan.Tags.Count > 0 ? $" [{string.Join(", ", plan.Tags)}]" : string.Empty));
 
         // History excludes the current line (EmotionContext contract): the line lands in
         // the rolling window only after planning, so a context director never sees it twice.
@@ -103,9 +100,10 @@ public sealed class SpeechRequestHandler
             plan = plan with { Tags = MergeTags(plan.Tags, styleTags) };
         }
 
-        if (!this.Synth.IsReady)
+        var synth = this.Synth;
+        if (!synth.IsReady)
         {
-            this.log?.Warn($"Speech engine not ready ({this.Synth.NotReadyReason}); skipping line.");
+            this.log?.Warn($"Speech engine not ready ({synth.NotReadyReason}); skipping line for \"{speaker.Key}\".");
             return;
         }
 
@@ -119,11 +117,30 @@ public sealed class SpeechRequestHandler
         SynthesisResult audio;
         try
         {
-            audio = await this.Synth.SynthesizeAsync(request, cancellationToken);
+            audio = await synth.SynthesizeAsync(request, cancellationToken);
         }
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (SpeechSynthesisEngineDisposedException)
+        {
+            // The old engine was retired mid-line (engine switch); the Synth property
+            // re-resolves the fresh instance, so one retry lands the line.
+            this.log?.Info("Engine switched mid-line; retrying on the new engine.");
+            try
+            {
+                audio = await this.Synth.SynthesizeAsync(request, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                this.log?.Error($"Synthesis failed for \"{speaker.Key}\".", ex);
+                return;
+            }
         }
         catch (Exception ex)
         {
@@ -131,7 +148,39 @@ public sealed class SpeechRequestHandler
             return;
         }
 
+        this.log?.Info(
+            $"Queued line for \"{speaker.Key}\": {audio.Samples.Length} samples @ {audio.SampleRate} Hz " +
+            $"(voice \"{request.ReferenceVoiceId}\").");
         this.queue.Enqueue(new SpeechItem(speaker, request, audio, requestedAtTicks));
+    }
+
+    /// <summary>Log-safe preview of a line: single-line, bounded.</summary>
+    private static string Truncate(string text)
+    {
+        var flat = text.ReplaceLineEndings(" ");
+        return flat.Length <= 80 ? flat : flat[..80] + "…";
+    }
+
+    /// <summary>
+    /// Lexicon → stutter removal (config-gated) → ad-hoc style-tag extraction
+    /// (config-gated). One implementation of the game-path text chain; the Test tab's
+    /// forced-emotion audition reuses it so what you hear matches what the game says.
+    /// </summary>
+    public (string Processed, IReadOnlyList<string> Tags) PrepareText(string text)
+    {
+        var processed = this.lexicon.Apply(text);
+        if (this.removeStutters is not null)
+        {
+            processed = this.removeStutters(processed);
+        }
+
+        IReadOnlyList<string> styleTags = [];
+        if (this.extractStyleTags is { } extract)
+        {
+            (processed, styleTags) = extract(processed);
+        }
+
+        return (processed, styleTags);
     }
 
     /// <summary>Director tags keep their order and win duplicates; extracted tags append.</summary>

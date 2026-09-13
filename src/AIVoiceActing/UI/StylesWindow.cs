@@ -1,5 +1,6 @@
 namespace AIVoiceActing.UI;
 
+using System.Numerics;
 using AIVoiceActing.UI.Components;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
@@ -44,8 +45,19 @@ public sealed class StylesWindow : Window
             }
         }
 
-        ImGui.SameLine();
-        ImGui.TextDisabled($"regex: {c.StyleRegex}");
+
+        if (string.IsNullOrWhiteSpace(c.StyleTag))
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
+            ImGui.TextUnformatted("Delimiter empty — tag matching disabled.");
+            ImGui.PopStyleColor();
+        }
+        else
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled($"regex: {c.StyleRegex}");
+        }
+
         Controls.HelpMarker("The match regex is always derived from the delimiter.");
 
         Controls.Section("Preview");

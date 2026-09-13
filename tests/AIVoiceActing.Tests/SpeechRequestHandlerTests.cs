@@ -143,6 +143,19 @@ public sealed class SpeechRequestHandlerTests
     }
 
     [Fact]
+    public void PrepareText_RunsLexiconStutterTagsChain()
+    {
+        var h = Harness.Create(
+            extractStyleTags: text => (text.Replace("|laughs|", " ").Trim(), ["laughs"]));
+        h.Lexicon.ApplyFunc = text => text.Replace("FETCH", "BRING");
+
+        var (processed, tags) = h.Handler.PrepareText("P-please FETCH the sword |laughs|");
+
+        Assert.Equal("Please BRING the sword", processed);
+        Assert.Equal(["laughs"], tags);
+    }
+
+    [Fact]
     public async Task Cancellation_PropagatesIntoSynthesis_AndAborts()
     {
         var h = Harness.Create();
@@ -280,5 +293,40 @@ public sealed class SpeechRequestHandlerTests
         Assert.Equal(0.6f, h.Synthesizer.LastRequest!.Exaggeration);
         Assert.Equal(["laughs"], h.Synthesizer.LastRequest.Tags);
         Assert.Equal("haha", h.Synthesizer.LastRequest.Text);
+    }
+
+    [Fact]
+    public async Task Pipeline_RetriesOnceOnEngineDisposedMarker()
+    {
+        var h = Harness.Create();
+        h.Synthesizer.SynthesizeFunc = (_, _) =>
+        {
+            // First call: the retired engine rejects the line; second: fresh engine.
+            if (h.Synthesizer.Calls.Count == 1)
+            {
+                throw new SpeechSynthesisEngineDisposedException();
+            }
+
+            return new SynthesisResult([0f], 24000);
+        };
+
+        await h.Handler.SpeakAsync("s", Speaker, "Hello!", CancellationToken.None);
+
+        Assert.Equal(2, h.Synthesizer.Calls.Count);
+        Assert.Single(h.Queue.Enqueued);
+        Assert.Contains(h.Log.Snapshot(), c => c.Message.Contains("Engine switched mid-line"));
+    }
+
+    [Fact]
+    public async Task Pipeline_MarkerOnRetryToo_SkipsLineWithCleanError()
+    {
+        var h = Harness.Create();
+        h.Synthesizer.Throw = new SpeechSynthesisEngineDisposedException();
+
+        await h.Handler.SpeakAsync("s", Speaker, "Hello!", CancellationToken.None);
+
+        Assert.Equal(2, h.Synthesizer.Calls.Count);
+        Assert.Empty(h.Queue.Enqueued);
+        Assert.Contains(h.Log.Snapshot(), c => c.Level == "Error");
     }
 }

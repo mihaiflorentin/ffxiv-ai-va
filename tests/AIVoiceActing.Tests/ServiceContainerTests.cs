@@ -1,6 +1,7 @@
 namespace AIVoiceActing.Tests;
 
 using AIVoiceActing.Container;
+using AIVoiceActing.Infrastructure.Kokoro;
 using AIVoiceActing.Ports;
 using AIVoiceActing.Tests.Mock;
 using Xunit;
@@ -66,5 +67,49 @@ public sealed class ServiceContainerTests
         using var container = new ServiceContainer();
 
         Assert.Throws<InvalidOperationException>(() => _ = container.LogSink);
+    }
+}
+
+public static class ServiceContainerTestDirs
+{
+    public static string Create() =>
+        Path.Combine(Path.GetTempPath(), "aiva-tests-" + Guid.NewGuid().ToString("N"));
+}
+
+public sealed class ServiceContainerInvalidationTests
+{
+    [Fact]
+    public async Task Invalidate_SwapsInstances_AndDisposesRetiredEngineInBackground()
+    {
+        var modelsDir = ServiceContainerTestDirs.Create();
+        Directory.CreateDirectory(modelsDir);
+        try
+        {
+            using var container = new ServiceContainer(
+                logSinkOverride: new FakeLogSink(),
+                modelsDirFactory: () => modelsDir,
+                selectedEngineFactory: () => "kokoro");
+
+            var first = container.SpeechSynthesizer;
+            container.InvalidateSpeechSynthesizer();
+            var second = container.SpeechSynthesizer;
+
+            Assert.NotSame(first, second);
+
+            // Dispose is now asynchronous (bounded drain on the thread pool): poll.
+            var retired = Assert.IsType<KokoroSynthesizer>(first);
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (!retired.IsDisposed && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(50);
+            }
+
+            Assert.True(retired.IsDisposed);
+            Assert.False(((KokoroSynthesizer)second).IsDisposed);
+        }
+        finally
+        {
+            Directory.Delete(modelsDir, recursive: true);
+        }
     }
 }

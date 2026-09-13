@@ -1,5 +1,6 @@
 namespace AIVoiceActing.Infrastructure.F5;
 
+using System.Collections.Concurrent;
 using AIVoiceActing.Infrastructure.Onnx;
 using AIVoiceActing.Ports;
 using Horus.F5Tts.Onnx;
@@ -29,8 +30,22 @@ public sealed class F5Synthesizer : ISpeechSynthesizer, IDisposable
     private F5TtsModel? model;
     private string? initError;
     private bool initializing;
-    private bool disposed;
+    private volatile bool disposed;
     private readonly Func<string?>? executionProviderFactory;
+
+    /// <summary>
+    /// Serializes synthesis so Dispose can drain the in-flight line before tearing
+    /// down the native sessions (the in-game engine-switch crash). Nesting order is
+    /// always synthesisGate → gate, never reversed.
+    /// </summary>
+    private readonly SemaphoreSlim synthesisGate = new(1, 1);
+
+    /// <summary>
+    /// Prepared voices are the re-encoded reference clips — the expensive part of each
+    /// line — keyed by clip path; without the cache F5 re-encodes the same wav every
+    /// line. Model-bound: cleared before the model is disposed.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, PreparedVoice> voiceCache = new();
 
     public F5Synthesizer(
         Func<string> modelsDirFactory,
@@ -106,6 +121,17 @@ public sealed class F5Synthesizer : ISpeechSynthesizer, IDisposable
 
     public string NotReadyReason => this.FindNotReadyReason() ?? string.Empty;
 
+    /// <summary>Test hook: the instance has begun its drain-and-teardown sequence.</summary>
+    public bool IsDisposed => this.disposed;
+
+    private void ThrowIfDisposed()
+    {
+        if (this.disposed)
+        {
+            throw new SpeechSynthesisEngineDisposedException();
+        }
+    }
+
     /// <summary>
     /// Readiness means "model files + at least one reference clip present"; the heavy
     /// transformer session builds lazily on first use (or the login pre-warm).
@@ -140,41 +166,61 @@ public sealed class F5Synthesizer : ISpeechSynthesizer, IDisposable
 
     public async Task<SynthesisResult> SynthesizeAsync(SynthesisRequest request, CancellationToken cancellationToken)
     {
-        var model = this.EnsureEngine();
-        var (clipPath, referenceText) = this.ResolveClip(request.ReferenceVoiceId);
-
-        // F5 renders numbers/symbols poorly: normalize like the training data saw.
-        var text = EnglishTextNormalizer.Normalize(StripInlineTags(request.Text));
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            throw new SpeechSynthesisException("Nothing to speak after normalization.");
-        }
-
-        short[] pcm;
+        this.ThrowIfDisposed();
+        await this.synthesisGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var voice = model.PrepareVoiceFromWav(clipPath, referenceText);
-            var result = await voice.SynthesizeAsync(text).ConfigureAwait(false);
-            pcm = result.Samples;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            throw new SpeechSynthesisException($"F5 synthesis failed for voice \"{request.ReferenceVoiceId}\".", ex);
-        }
+            // Disposed while queued behind another line.
+            this.ThrowIfDisposed();
 
-        cancellationToken.ThrowIfCancellationRequested();
+            var model = this.EnsureEngine();
+            var (clipPath, referenceText) = this.ResolveClip(request.ReferenceVoiceId);
 
-        var samples = new float[pcm.Length];
-        for (var i = 0; i < pcm.Length; i++)
-        {
-            samples[i] = pcm[i] / 32768f;
+            // F5 renders numbers/symbols poorly: normalize like the training data saw.
+            var text = EnglishTextNormalizer.Normalize(StripInlineTags(request.Text));
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                throw new SpeechSynthesisException("Nothing to speak after normalization.");
+            }
+
+            short[] pcm;
+            try
+            {
+                var prepared = !this.voiceCache.ContainsKey(clipPath);
+                var voice = this.voiceCache.GetOrAdd(
+                    clipPath,
+                    path => model.PrepareVoiceFromWav(path, referenceText));
+                this.log?.Info(
+                    $"F5 synthesis start: voice \"{request.ReferenceVoiceId}\" → clip {clipPath} " +
+                    $"({(prepared ? "prepared" : "cached voice")}, {text.Length} chars).");
+                var result = await voice.SynthesizeAsync(text).ConfigureAwait(false);
+                pcm = result.Samples;
+                this.log?.Info($"F5 synthesis complete: {pcm.Length} samples ({pcm.Length / (float)F5SampleRate:0.0} s of audio).");
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                this.log?.Warn($"F5 synthesis failed for voice \"{request.ReferenceVoiceId}\": {ex.GetType().Name}: {ex.Message}");
+                throw new SpeechSynthesisException($"F5 synthesis failed for voice \"{request.ReferenceVoiceId}\".", ex);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var samples = new float[pcm.Length];
+            for (var i = 0; i < pcm.Length; i++)
+            {
+                samples[i] = pcm[i] / 32768f;
+            }
+
+            return new SynthesisResult(samples, F5SampleRate);
         }
-
-        return new SynthesisResult(samples, F5SampleRate);
+        finally
+        {
+            this.synthesisGate.Release();
+        }
     }
 
     /// <summary>Loads the model and runs a short warm-up line; idempotent.</summary>
@@ -201,8 +247,27 @@ public sealed class F5Synthesizer : ISpeechSynthesizer, IDisposable
             }
 
             this.disposed = true;
-            this.model?.Dispose();
-            this.model = null;
+        }
+
+        // Bounded drain of the in-flight line so the native sessions never die under
+        // inference (the engine-switch AV). New requests throw the marker at
+        // ThrowIfDisposed instead of entering the gate.
+        var drained = this.synthesisGate.Wait(TimeSpan.FromSeconds(10));
+        try
+        {
+            this.voiceCache.Clear();
+            lock (this.gate)
+            {
+                this.model?.Dispose();
+                this.model = null;
+            }
+        }
+        finally
+        {
+            if (drained)
+            {
+                this.synthesisGate.Release();
+            }
         }
     }
 
@@ -241,7 +306,7 @@ public sealed class F5Synthesizer : ISpeechSynthesizer, IDisposable
 
             if (this.disposed)
             {
-                throw new SpeechSynthesisException("F5 synthesizer was disposed.");
+                throw new SpeechSynthesisEngineDisposedException();
             }
 
             var modelsDir = this.modelsDirFactory();

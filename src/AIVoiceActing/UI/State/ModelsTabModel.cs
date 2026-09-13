@@ -58,6 +58,16 @@ public static class ModelsTabModel
             ? $"{Mb(bytesReceived):0.0} / {Mb(total):0.0} MB"
             : $"{Mb(bytesReceived):0.0} MB";
 
+    /// <summary>Caption for the progress bar while a queue runs: which file of how many,
+    /// plus the byte progress. File indexes are 1-based for display.</summary>
+    public static string QueuePositionLabel(
+        string assetName,
+        int fileIndex,
+        int fileCount,
+        long bytesReceived,
+        long? totalBytes) =>
+        $"{assetName} (file {fileIndex} of {fileCount}): {ProgressLabel(bytesReceived, totalBytes)}";
+
     /// <summary>Disabled reason for the Speak/Test buttons (mirrored in the Test tab).</summary>
     public static string EngineNotReadyHint => "Models not downloaded — use the Models tab.";
 

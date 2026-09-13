@@ -1,5 +1,6 @@
 namespace AIVoiceActing;
 
+using System.Reflection;
 using AIVoiceActing.Container;
 using AIVoiceActing.Infrastructure.Audio;
 using AIVoiceActing.Infrastructure.Onnx;
@@ -103,10 +104,33 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         {
             PluginLog.Warning($"Native preload failed (continuing): {ex.Message}");
         }
+        // Bind System.Numerics.Tensors once, here, deterministically: Dalamud's
+        // ManagedLoadContext cannot resolve it by name (no deferral entry, collectible
+        // ALC fallback unsupported) and a JIT-time bind failure escapes as an AppDomain
+        // unhandled exception that CRASHES THE GAME. The dll ships in the plugin dir,
+        // so this bind resolves there and every later bind is a cache hit.
+        try
+        {
+            var snt = Assembly.Load(new AssemblyName("System.Numerics.Tensors"));
+            PluginLog.Information(
+                "[AIVoiceActing] System.Numerics.Tensors preloaded: {FullName} (location: {Location})",
+                snt.FullName,
+                string.IsNullOrEmpty(snt.Location) ? "<no location>" : snt.Location);
+        }
+        catch (Exception ex)
+        {
+            PluginLog.Error(ex, "[AIVoiceActing] System.Numerics.Tensors preload FAILED — synthesis will fail or crash. Is the dll shipped with the plugin?");
+        }
         var configDir = PluginInterface.ConfigDirectory.FullName;
         this.pluginConfig = PluginInterface.GetPluginConfig() as PluginConfiguration
             ?? new PluginConfiguration();
         var config = this.pluginConfig;
+        PluginLog.Information(
+            "[AIVoiceActing] Plugin init: version {Version}, engine \"{Engine}\", ep \"{Ep}\", config dir {ConfigDir}",
+            typeof(AIVoiceActingPlugin).Assembly.GetName().Version,
+            config.SelectedEngine,
+            config.SelectedEp,
+            configDir);
         // Audio sink first so the queue factory closure never sees a null field.
         this.audioSink = new NAudioSink(
             () => config.SelectedAudioDeviceIndex, new DalamudLogSink(PluginLog));
@@ -260,7 +284,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
                     return false;
                 }
             },
-            reportError: message => this.services.LogSink.Warn(message));
+            reportError: message => this.services.LogSink.Warn(message),
+            logInfo: message => this.services.LogSink.Info(message),
+            logError: (message, ex) => this.services.LogSink.Error(message, ex));
         this.stylesWindow = new StylesWindow(config, this.SaveConfig);
         this.windowSystem.AddWindow(this.configWindow);
         this.windowSystem.AddWindow(this.stylesWindow);
@@ -311,10 +337,17 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     {
         _ = Task.Run(async () =>
         {
+            // One instance for both the readiness probe and the warm-up: the property
+            // could otherwise re-resolve a different engine mid-task.
+            var synth = this.services.SpeechSynthesizer;
             try
             {
-                await this.services.SpeechSynthesizer.WarmUpAsync(CancellationToken.None);
+                await synth.WarmUpAsync(CancellationToken.None);
                 this.services.LogSink.Info("Speech engine pre-warm complete.");
+            }
+            catch (SpeechSynthesisEngineDisposedException)
+            {
+                this.services.LogSink.Info("Warm-up superseded by an engine switch.");
             }
             catch (Exception ex)
             {
