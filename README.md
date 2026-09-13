@@ -67,7 +67,7 @@ dotnet publish src/AIVoiceActing -c Release
 
 `dotnet publish` produces `src/AIVoiceActing/bin/Release/AIVoiceActing/latest.zip` — the shippable plugin archive (plugin dll + deps + manifest + icon + `voices/` + required natives).
 
-CI (`.github/workflows/release.yml`) mirrors this: it builds on every push/PR, runs the test suite, and on a `v*` tag publishes `latest.zip` to a GitHub release and `repo.json` to the `gh-pages` branch (set GitHub Pages to "Deploy from branch: gh-pages" once).
+CI (`.github/workflows/release.yml`) mirrors this: it builds on every push/PR, runs the test suite, and on a `v*` tag publishes `latest.zip` to a GitHub release and `repo.json` to the `gh-pages` branch (served via `raw.githubusercontent.com`; no Pages setup required).
 
 ## GPU notes
 
