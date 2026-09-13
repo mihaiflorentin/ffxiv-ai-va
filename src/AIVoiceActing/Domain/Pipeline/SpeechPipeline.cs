@@ -111,14 +111,8 @@ public sealed class SpeechPipeline : IDisposable
 
             var sessionId = SessionIdDeriver.Derive(
                 this.cutsceneActive(), this.talkVisible(), speaker.Key);
-            if (sessionId is { } session)
-            {
-                this.dialogueSessions.Append(session, new DialogueLine(
-                    speaker.Key, speaker.DisplayName, ev.Text, DateTimeOffset.UtcNow));
-            }
 
-            await this.handler.SpeakAsync(
-                sessionId ?? "adhoc", speaker, ev.Text, CancellationToken.None);
+            await this.handler.SpeakAsync(sessionId, speaker, ev.Text, CancellationToken.None);
         }
         catch (OperationCanceledException)
         {

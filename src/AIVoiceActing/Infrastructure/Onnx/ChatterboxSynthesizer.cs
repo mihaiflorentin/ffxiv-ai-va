@@ -120,6 +120,10 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         }
     }
 
+    // Model-presence concern split (review round 3): FileModelStore.IsDownloaded is the
+    // single existence+size check the Models tab and provisioner go through; this
+    // readiness-specific variant additionally honors the LM override and catalog size
+    // fallback per session, so it stays local to the engine.
     private bool AssetPresent(string fileName, long? expectedSize)
     {
         var path = Path.Combine(this.modelsDir, fileName);

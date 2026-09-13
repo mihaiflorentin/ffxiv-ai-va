@@ -82,6 +82,68 @@ public sealed class ContainerVoiceLineTests : IDisposable
     }
 
     [Fact]
+    public void WiredDetector_RaisingTheEvent_CancelsSpeechThroughTheContainer()
+    {
+        // Integration: the same subscription the plugin ctor performs — the detector's
+        // event must reach the container's courtesy cancel path and its observers.
+        var queue = new FakeSpeechQueue();
+        using var container = this.Container(queue);
+        var detector = new FakeVoiceLineDetector();
+        container.WireVoiceLineDetector(detector);
+
+        var notified = 0;
+        container.VoiceLinePlaybackObserved += () => notified++;
+
+        detector.Raise();
+
+        Assert.Equal(1, queue.CancelCurrentCalls);
+        Assert.Equal(1, notified);
+    }
+
+    [Fact]
+    public void UnwiredDetector_RaisingTheEvent_IsANoOp()
+    {
+        var queue = new FakeSpeechQueue();
+        using var container = this.Container(queue);
+        var detector = new FakeVoiceLineDetector();
+        container.WireVoiceLineDetector(detector);
+        container.UnwireVoiceLineDetector();
+
+        detector.Raise();
+
+        Assert.Equal(0, queue.CancelCurrentCalls);
+    }
+
+    [Fact]
+    public void Dispose_UnwiresTheDetector()
+    {
+        var queue = new FakeSpeechQueue();
+        var container = this.Container(queue);
+        var detector = new FakeVoiceLineDetector();
+        container.WireVoiceLineDetector(detector);
+        container.Dispose();
+
+        detector.Raise();
+
+        Assert.Equal(0, queue.CancelCurrentCalls);
+    }
+
+    [Fact]
+    public void Rewiring_ReplacesThePreviousDetector()
+    {
+        var queue = new FakeSpeechQueue();
+        using var container = this.Container(queue);
+        var first = new FakeVoiceLineDetector();
+        var second = new FakeVoiceLineDetector();
+        container.WireVoiceLineDetector(first);
+        container.WireVoiceLineDetector(second);
+
+        first.Raise();
+        second.Raise();
+
+        Assert.Equal(1, queue.CancelCurrentCalls);
+    }
+    [Fact]
     public void Filters_DefaultToPermissivePassthrough()
     {
         var queue = new FakeSpeechQueue();

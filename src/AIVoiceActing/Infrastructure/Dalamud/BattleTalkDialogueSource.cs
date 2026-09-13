@@ -50,7 +50,6 @@ public sealed class BattleTalkDialogueSource : IDialogueSource, IDisposable
         this.sink = sink;
     }
 
-    public event Action<DialogueLine>? LineCaptured;
 
     /// <summary>The on-screen line moved on or closed; current speech is stale.</summary>
     public event Action? SpeechInterrupted;
@@ -119,8 +118,6 @@ public sealed class BattleTalkDialogueSource : IDialogueSource, IDisposable
 
         this.sink.Emit(new TextEmitEvent(
             TextSource.BattleTalk, identity.DisplayName, text, result.RawText, hint, ChatType: 0));
-        this.LineCaptured?.Invoke(new DialogueLine(
-            identity.Key, identity.DisplayName, text, DateTimeOffset.UtcNow));
     }
 
     public void Dispose()

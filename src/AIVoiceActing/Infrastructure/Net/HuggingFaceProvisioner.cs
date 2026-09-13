@@ -16,20 +16,26 @@ public sealed class HuggingFaceProvisioner : IModelProvisioner
     private const long ProgressGranularityBytes = 1024 * 1024;
 
     private readonly string modelsDir;
+    private readonly IModelStore store;
     private readonly HttpClient http;
     private readonly ILogSink? log;
 
     /// <param name="modelsDir">Directory receiving the assets (created on demand).</param>
     /// <param name="baseUrl">Resolve base; defaults to the pinned Chatterbox repo.</param>
     /// <param name="handler">Optional handler override for tests.</param>
+    /// <param name="store">Presence-check store; defaults to one over <paramref name="modelsDir"/>
+    /// with the full catalog (single is-downloaded implementation).</param>
     public HuggingFaceProvisioner(
         string modelsDir,
         string? baseUrl = null,
         HttpMessageHandler? handler = null,
-        ILogSink? log = null)
+        ILogSink? log = null,
+        IModelStore? store = null)
     {
         this.modelsDir = Path.GetFullPath(modelsDir);
         Directory.CreateDirectory(this.modelsDir);
+        this.store = store
+            ?? new FileModelStore(this.modelsDir, [.. ModelCatalog.Assets.Select(a => a.Asset)]);
         this.http = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: true);
         this.http.Timeout = TimeSpan.FromMinutes(30);
         this.http.DefaultRequestHeaders.UserAgent.ParseAdd("AIVoiceActing/0.1 (Dalamud plugin; ffxiv-ai-va)");
@@ -39,17 +45,7 @@ public sealed class HuggingFaceProvisioner : IModelProvisioner
 
     private string BaseUrl { get; }
 
-    public bool IsDownloaded(ModelAsset asset)
-    {
-        var path = Path.Combine(this.modelsDir, asset.FileName);
-        if (!File.Exists(path))
-        {
-            return false;
-        }
-
-        return asset.SizeBytes is not { } expected
-            || FileModelStore.SizeWithinTolerance(new FileInfo(path).Length, expected);
-    }
+    public bool IsDownloaded(ModelAsset asset) => this.store.IsDownloaded(asset.FileName);
 
     public async Task DownloadAsync(
         ModelAsset asset,

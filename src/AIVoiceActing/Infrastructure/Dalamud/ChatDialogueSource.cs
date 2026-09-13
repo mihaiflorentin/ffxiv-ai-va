@@ -20,7 +20,6 @@ public sealed class ChatDialogueSource : IDialogueSource, IDisposable
     private readonly TalkAddonPoller talkPoller;
     private readonly TalkAddonPoller battleTalkPoller;
     private readonly ObjectTableHintProvider hints;
-    private readonly ISpeakerDirectory directory;
     private readonly SpeakerAnnouncer announcer;
     private readonly FromYouGate fromYou;
     private readonly Func<bool> enabled;
@@ -36,7 +35,6 @@ public sealed class ChatDialogueSource : IDialogueSource, IDisposable
         TalkAddonPoller talkPoller,
         TalkAddonPoller battleTalkPoller,
         ObjectTableHintProvider hints,
-        ISpeakerDirectory directory,
         SpeakerAnnouncer announcer,
         FromYouGate fromYou,
         Func<bool> enabled,
@@ -50,7 +48,6 @@ public sealed class ChatDialogueSource : IDialogueSource, IDisposable
         this.talkPoller = talkPoller;
         this.battleTalkPoller = battleTalkPoller;
         this.hints = hints;
-        this.directory = directory;
         this.announcer = announcer;
         this.fromYou = fromYou;
         this.enabled = enabled;
@@ -60,8 +57,6 @@ public sealed class ChatDialogueSource : IDialogueSource, IDisposable
         this.skipMessagesFromYou = skipMessagesFromYou;
         this.sink = sink;
     }
-
-    public event Action<DialogueLine>? LineCaptured;
 
     public void Start()
     {
@@ -150,8 +145,6 @@ public sealed class ChatDialogueSource : IDialogueSource, IDisposable
             SeStringUtils.TryGetEntityName(sender, out var senderName) ? senderName : senderText);
         this.sink.Emit(new TextEmitEvent(
             TextSource.Chat, displayName, textValue, rawText, hint, (int)type));
-        this.LineCaptured?.Invoke(new DialogueLine(
-            this.directory.Resolve(hint).Key, displayName, textValue, DateTimeOffset.UtcNow));
     }
 
     public void Dispose()

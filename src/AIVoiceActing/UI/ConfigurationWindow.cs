@@ -42,6 +42,7 @@ public sealed class ConfigurationWindow : Window
     private readonly IProfileStore profiles;
     private readonly Func<IReadOnlyList<ModelAsset>> modelAssets;
     private readonly Func<IModelProvisioner> provisioner;
+    private readonly Func<IModelStore> modelStore;
     private readonly Func<RaceVoiceMap> voiceMap;
     private readonly Func<DialogueSessionFactory> sessions;
     private readonly Func<string> modelsDir;
@@ -70,6 +71,7 @@ public sealed class ConfigurationWindow : Window
         IProfileStore profiles,
         Func<IReadOnlyList<ModelAsset>> modelAssets,
         Func<IModelProvisioner> provisioner,
+        Func<IModelStore> modelStore,
         Func<RaceVoiceMap> voiceMap,
         Func<DialogueSessionFactory> sessions,
         Func<string> modelsDir,
@@ -87,6 +89,7 @@ public sealed class ConfigurationWindow : Window
         this.profiles = profiles;
         this.modelAssets = modelAssets;
         this.provisioner = provisioner;
+        this.modelStore = modelStore;
         this.voiceMap = voiceMap;
         this.sessions = sessions;
         this.modelsDir = modelsDir;
@@ -260,8 +263,7 @@ public sealed class ConfigurationWindow : Window
         }
     }
 
-    private int RequiredAssetCount() =>
-        this.modelAssets().Count(asset => !asset.Optional && !this.provisioner().IsDownloaded(asset));
+    private int RequiredAssetCount() => this.modelStore().Missing().Count;
 
     // ---- Tab 2: Models ----
 
@@ -583,11 +585,8 @@ public sealed class ConfigurationWindow : Window
         ImGui.SameLine();
         if (Controls.Button("Speak with context", ready, ModelsTabModel.EngineNotReadyHint))
         {
-            // Director path: the line lands in the shared context window first, then the
-            // handler plans over it — the same window the cutscene pipeline feeds.
-            this.sessions().Append(
-                TestBenchModel.ContextSessionId,
-                new DialogueLine(speaker.Key, speaker.DisplayName, this.test.Text, DateTimeOffset.UtcNow));
+            // Director path: the shared window the cutscene pipeline feeds. The handler
+            // appends the line AFTER planning, so the director never sees it twice.
             this.SpeakFireAndForget(
                 this.speech.SpeakAsync(TestBenchModel.ContextSessionId, speaker, this.test.Text, CancellationToken.None));
         }

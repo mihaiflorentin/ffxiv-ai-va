@@ -104,7 +104,10 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             profileStorePathFactory: () => Path.Combine(configDir, "voice-assignments.json"),
             modelsDirFactory: () => Path.Combine(configDir, "models"),
             voicesManifestFactory: () => ExtractVoicesManifest(configDir),
-            removeStutterEnabledFactory: () => config.RemoveStutter,
+            // Re-read on first use and whenever the processor sees changed files; the
+            // loader caches by file stamps, so unchanged files cost nothing.
+            lexiconEntriesFactory: () => Infrastructure.Text.LexiconFileLoader.Load(
+                config.Lexicons, new DalamudLogSink(PluginLog)),
             speechQueueFactory: () => new PlaybackSpeechQueue(
                 sink, () => config.GlobalVolume, new DalamudLogSink(PluginLog)),
             enabledChatTypesFactory: () => config.CurrentPreset?.EnabledChatTypes as IReadOnlyCollection<int>,
@@ -127,8 +130,10 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             talkVisibleFactory: () => this.talkPoller.IsVisible(),
             defaultExaggerationFactory: () => config.DefaultExaggeration,
             selectedEpFactory: () => config.SelectedEp,
-            llmDirectorFactory: () => config.DirectorEnabled ? this.TryGetLlmDirector() : null);
-
+            llmDirectorFactory: () => config.DirectorEnabled ? this.TryGetLlmDirector() : null,
+            useRaceVoicePresetsFactory: () => config.UseRaceVoicePresets,
+            adHocStyleTagsFactory: () => config.AdHocStyleTagsEnabled,
+            styleTagRegexFactory: () => config.StyleRegex);
         this.hints = new ObjectTableHintProvider(ObjectTable);
 
         this.talkSource = new TalkDialogueSource(
@@ -144,7 +149,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             skipVoicedBattleText: () => config.SkipVoicedBattleText,
             this.services.Announcer, this.services.FromYou, this.services.PipelineSink);
         this.chatSource = new ChatDialogueSource(
-            ChatGui, this.talkPoller, this.battleTalkPoller, this.hints, this.services.SpeakerDirectory,
+            ChatGui, this.talkPoller, this.battleTalkPoller, this.hints,
             this.services.Announcer, this.services.FromYou,
             enabled: () => config.Enabled,
             sayPlayerWorldName: () => config.SayPlayerWorldName,
@@ -198,6 +203,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             profiles: this.services.ProfileStore,
             modelAssets: () => [.. ModelCatalog.Assets.Select(a => a.Asset)],
             provisioner: () => this.services.ModelProvisioner,
+            modelStore: () => this.services.ModelStore,
             voiceMap: () => this.services.VoiceMap,
             sessions: () => this.services.DialogueSessions,
             modelsDir: () => this.services.ModelsDir,
@@ -240,6 +246,8 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         // talk addons so the game's own voice line is never synthesized over; text advance
         // cancels speech only when the courtesy option is on (both config-gated).
         this.services.VoiceLinePlaybackObserved += this.OnVoiceLinePlaybackObserved;
+        // The detector's hooks feed the container's single courtesy cancel path.
+        this.services.WireVoiceLineDetector(this.voiceLineDetector);
         this.talkSource.SpeechInterrupted += this.OnSpeechInterrupted;
         this.battleTalkSource.SpeechInterrupted += this.OnSpeechInterrupted;
 
@@ -383,6 +391,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         }
 
         this.services.VoiceLinePlaybackObserved -= this.OnVoiceLinePlaybackObserved;
+        this.services.UnwireVoiceLineDetector();
         this.talkSource.SpeechInterrupted -= this.OnSpeechInterrupted;
         this.battleTalkSource.SpeechInterrupted -= this.OnSpeechInterrupted;
 

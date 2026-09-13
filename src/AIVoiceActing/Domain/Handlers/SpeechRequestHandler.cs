@@ -4,9 +4,10 @@ using AIVoiceActing.Ports;
 
 /// <summary>
 /// Speech pipeline (driving handler): lexicon → stutter removal (config-gated) →
-/// emotion director (optional; falls back to the pure rules table when absent) →
-/// synthesis (plan exaggeration plus per-speaker bias, clamped) → playback queue.
-/// Dalamud-free: every side effect is a port; the composition root wires the adapters.
+/// ad-hoc style-tag extraction (config-gated) → emotion director (optional; falls back
+/// to the pure rules table when absent) → synthesis (plan exaggeration plus per-speaker
+/// bias, clamped) → playback queue. Dalamud-free: every side effect is a port; the
+/// composition root wires the adapters.
 /// </summary>
 public sealed class SpeechRequestHandler
 {
@@ -17,6 +18,7 @@ public sealed class SpeechRequestHandler
     private readonly Func<SpeakerIdentity, VoiceProfile?> profileLookup;
     private readonly Func<IEmotionDirector?> directorFactory;
     private readonly Func<string, string>? removeStutters;
+    private readonly Func<string, (string, IReadOnlyList<string>)>? extractStyleTags;
     private readonly Func<float>? defaultExaggeration;
     private readonly ILogSink? log;
 
@@ -28,6 +30,7 @@ public sealed class SpeechRequestHandler
         Func<SpeakerIdentity, VoiceProfile?> profileLookup,
         Func<IEmotionDirector?> directorFactory,
         Func<string, string>? removeStutters = null,
+        Func<string, (string, IReadOnlyList<string>)>? extractStyleTags = null,
         Func<float>? defaultExaggeration = null,
         ILogSink? log = null)
     {
@@ -38,6 +41,7 @@ public sealed class SpeechRequestHandler
         this.profileLookup = profileLookup;
         this.directorFactory = directorFactory;
         this.removeStutters = removeStutters;
+        this.extractStyleTags = extractStyleTags;
         this.defaultExaggeration = defaultExaggeration;
         this.log = log;
     }
@@ -46,19 +50,21 @@ public sealed class SpeechRequestHandler
     public void CancelCurrent() => this.queue.CancelCurrent();
 
     /// <summary>
-    /// Prepares and speaks one line. Skips (with a warning) when the speaker has no voice
-    /// profile or the engine is not ready; synthesis failures are logged, never fatal to
-    /// the pipeline. Cancellation propagates into synthesis and aborts the line.
+    /// Prepares and speaks one line. The no-profile skip comes before planning so a
+    /// profileless speaker never pays for director inference; the rolling context window
+    /// fills regardless of engine readiness (the director's context must survive a down
+    /// engine). Cancellation propagates into synthesis and aborts the line.
     /// </summary>
     public async Task SpeakAsync(
-        string sessionId,
+        string? sessionId,
         SpeakerIdentity speaker,
         string text,
         CancellationToken cancellationToken)
     {
-        if (!this.synthesizer.IsReady)
+        var profile = this.profileLookup(speaker);
+        if (profile is null)
         {
-            this.log?.Warn("Speech engine not ready (models missing?); skipping line.");
+            this.log?.Warn($"No voice profile for \"{speaker.Key}\"; skipping line.");
             return;
         }
 
@@ -68,12 +74,31 @@ public sealed class SpeechRequestHandler
             processed = this.removeStutters(processed);
         }
 
-        var plan = await this.PlanAsync(sessionId, speaker, processed, cancellationToken);
-
-        var profile = this.profileLookup(speaker);
-        if (profile is null)
+        IReadOnlyList<string> styleTags = [];
+        if (this.extractStyleTags is { } extract)
         {
-            this.log?.Warn($"No voice profile for \"{speaker.Key}\"; skipping line.");
+            (processed, styleTags) = extract(processed);
+        }
+
+        var plan = await this.PlanAsync(sessionId ?? "adhoc", speaker, processed, cancellationToken);
+
+        // History excludes the current line (EmotionContext contract): the line lands in
+        // the rolling window only after planning, so a context director never sees it twice.
+        if (sessionId is { } session)
+        {
+            this.dialogueSessions.Append(session, new DialogueLine(
+                speaker.Key, speaker.DisplayName, text, DateTimeOffset.UtcNow));
+        }
+
+        // Extracted ad-hoc directions ride on the plan; the director's tags win on overlap.
+        if (styleTags.Count > 0)
+        {
+            plan = plan with { Tags = MergeTags(plan.Tags, styleTags) };
+        }
+
+        if (!this.synthesizer.IsReady)
+        {
+            this.log?.Warn("Speech engine not ready (models missing?); skipping line.");
             return;
         }
 
@@ -99,6 +124,23 @@ public sealed class SpeechRequestHandler
         }
 
         this.queue.Enqueue(new SpeechItem(speaker, request, audio));
+    }
+
+    /// <summary>Director tags keep their order and win duplicates; extracted tags append.</summary>
+    private static IReadOnlyList<string> MergeTags(
+        IReadOnlyList<string> directorTags,
+        IReadOnlyList<string> extractedTags)
+    {
+        var merged = new List<string>(directorTags);
+        foreach (var tag in extractedTags)
+        {
+            if (!merged.Contains(tag, StringComparer.OrdinalIgnoreCase))
+            {
+                merged.Add(tag);
+            }
+        }
+
+        return merged;
     }
 
     /// <summary>

@@ -41,6 +41,7 @@ public sealed class SpeechRequestHandlerTests
             float bias = 0f,
             bool directorPresent = true,
             bool removeStutters = true,
+            Func<string, (string, IReadOnlyList<string>)>? extractStyleTags = null,
             VoiceProfile? profile = null,
             Func<SpeakerIdentity, VoiceProfile?>? profileLookup = null)
         {
@@ -56,13 +57,15 @@ public sealed class SpeechRequestHandlerTests
                 dialogueSessions: factory,
                 synthesizer: synthesizer,
                 queue: queue,
-                profileLookup: profileLookup ?? (_ => profile ?? Profile(bias)),
+                profileLookup: profileLookup
+                    ?? new Func<SpeakerIdentity, VoiceProfile?>(_ => profile ?? Profile(bias)),
                 directorFactory: () =>
                 {
                     directorFactoryCalls.Add("asked");
                     return directorPresent ? director : null;
                 },
                 removeStutters: removeStutters ? StutterRemover.Remove : null,
+                extractStyleTags: extractStyleTags,
                 log: log);
             return new Harness(lexicon, factory, synthesizer, queue, director, log, handler, directorFactoryCalls);
         }
@@ -211,5 +214,71 @@ public sealed class SpeechRequestHandlerTests
         await h.Handler.SpeakAsync("s", Speaker, "Hello", CancellationToken.None);
 
         Assert.Same(audio, h.Queue.Enqueued.Single().Audio);
+    }
+    [Fact]
+    public async Task History_ExcludesTheCurrentLine_AndItAppendsAfterPlanning()
+    {
+        var h = Harness.Create();
+
+        await h.Handler.SpeakAsync("s", Speaker, "Now!", CancellationToken.None);
+
+        var request = h.Director.Requests.Single();
+        Assert.Empty(request.History); // the director planned over the line's absence
+        Assert.Equal("Now!", request.Line);
+        Assert.Equal(1, h.Sessions.Count("s")); // then it landed for the next line
+    }
+
+    [Fact]
+    public async Task NoProfile_SkipsBeforePlanning()
+    {
+        var h = Harness.Create(profileLookup: _ => null);
+
+        await h.Handler.SpeakAsync("s", Speaker, "Hello", CancellationToken.None);
+
+        Assert.Empty(h.DirectorFactoryCalls); // director inference never consulted
+        Assert.Empty(h.Synthesizer.Calls);
+        Assert.Empty(h.Queue.Enqueued);
+    }
+
+    [Fact]
+    public async Task StyleTags_AreExtractedAndMerged_DirectorWins()
+    {
+        // The director plans [sigh]; the line carries |laughs| — both directions must
+        // reach the synthesizer, the director's tags first, no duplicates.
+        var h = Harness.Create(
+            extractStyleTags: text => (text.Replace("|laughs|", " ").Trim(), ["laughs"]));
+        h.Director.PlanFunc = _ => new EmotionPlan("sad", 0.3f, ["sigh"], 0, 1f);
+
+        await h.Handler.SpeakAsync("s", Speaker, "fine |laughs|", CancellationToken.None);
+
+        Assert.Equal(["sigh", "laughs"], h.Synthesizer.LastRequest!.Tags);
+        Assert.Equal("fine", h.Synthesizer.LastRequest.Text);
+    }
+
+    [Fact]
+    public async Task StyleTags_OverlappingTheDirectorPlan_Dedupe()
+    {
+        var h = Harness.Create(
+            extractStyleTags: text => (text.Replace("|sigh|", " ").Trim(), ["sigh"]));
+        h.Director.PlanFunc = _ => new EmotionPlan("sad", 0.3f, ["sigh"], 0, 1f);
+
+        await h.Handler.SpeakAsync("s", Speaker, "oh |sigh|", CancellationToken.None);
+
+        Assert.Equal(["sigh"], h.Synthesizer.LastRequest!.Tags);
+    }
+
+    [Fact]
+    public async Task StyleTags_WithoutDirector_PassThroughTheRulesPlan()
+    {
+        var h = Harness.Create(
+            directorPresent: false,
+            extractStyleTags: text => (text.Replace("|laughs|", " ").Trim(), ["laughs"]));
+
+        await h.Handler.SpeakAsync("s", Speaker, "haha |laughs|", CancellationToken.None);
+
+        // Rules: amused 0.6 + its own [laughs]; extracted "laughs" dedupes away.
+        Assert.Equal(0.6f, h.Synthesizer.LastRequest!.Exaggeration);
+        Assert.Equal(["laughs"], h.Synthesizer.LastRequest.Tags);
+        Assert.Equal("haha", h.Synthesizer.LastRequest.Text);
     }
 }

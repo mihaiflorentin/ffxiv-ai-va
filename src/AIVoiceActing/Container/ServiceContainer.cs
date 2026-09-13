@@ -51,6 +51,14 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<bool>? cutsceneActiveFactory;
     private readonly Func<bool>? talkVisibleFactory;
 
+    private readonly Func<bool>? useRaceVoicePresetsFactory;
+
+    private readonly Func<bool>? adHocStyleTagsFactory;
+
+    private readonly Func<string>? styleTagRegexFactory;
+
+    private IVoiceLineDetector? voiceLineDetector;
+
     private ILogSink? logSink;
     private IProfileStore? profileStore;
     private IModelStore? modelStore;
@@ -110,7 +118,10 @@ public sealed class ServiceContainer : IDisposable
         Func<string>? selectedEpFactory = null,
         Func<IEmotionDirector?>? llmDirectorFactory = null,
         Func<bool>? cutsceneActiveFactory = null,
-        Func<bool>? talkVisibleFactory = null)
+        Func<bool>? talkVisibleFactory = null,
+        Func<bool>? useRaceVoicePresetsFactory = null,
+        Func<bool>? adHocStyleTagsFactory = null,
+        Func<string>? styleTagRegexFactory = null)
     {
         this.logSinkOverride = logSinkOverride;
         this.logSinkFactory = logSinkFactory;
@@ -141,6 +152,9 @@ public sealed class ServiceContainer : IDisposable
         this.selectedEpFactory = selectedEpFactory;
         this.llmDirectorFactory = llmDirectorFactory;
         this.talkVisibleFactory = talkVisibleFactory;
+        this.useRaceVoicePresetsFactory = useRaceVoicePresetsFactory;
+        this.adHocStyleTagsFactory = adHocStyleTagsFactory;
+        this.styleTagRegexFactory = styleTagRegexFactory;
     }
 
     /// <summary>Downloaded-model directory (modelsDirFactory or a hard error, like the profile store).</summary>
@@ -155,8 +169,12 @@ public sealed class ServiceContainer : IDisposable
         {
             lock (this.gate)
             {
+                // Full catalog: Missing() filters optionals itself, and the shared
+                // store also answers size-checked presence for optional assets.
                 return this.modelStore ??= this.RegisterDisposable(
-                    new FileModelStore(this.ModelsDir));
+                    new FileModelStore(
+                        this.ModelsDir,
+                        [.. ModelCatalog.Assets.Select(a => a.Asset)]));
             }
         }
     }
@@ -169,7 +187,8 @@ public sealed class ServiceContainer : IDisposable
             lock (this.gate)
             {
                 return this.modelProvisioner ??= this.RegisterDisposable(
-                    new HuggingFaceProvisioner(this.ModelsDir, log: this.LogSinkUnlocked()));
+                    new HuggingFaceProvisioner(
+                        this.ModelsDir, store: this.ModelStore, log: this.LogSinkUnlocked()));
             }
         }
     }
@@ -253,7 +272,9 @@ public sealed class ServiceContainer : IDisposable
         {
             lock (this.gate)
             {
-                return this.lexicon ??= new LexiconProcessor(this.lexiconEntriesFactory?.Invoke());
+                return this.lexicon ??= this.lexiconEntriesFactory is { } entriesFactory
+                    ? new LexiconProcessor(entriesFactory)
+                    : LexiconProcessor.Empty;
             }
         }
     }
@@ -297,6 +318,12 @@ public sealed class ServiceContainer : IDisposable
                     removeStutters: this.removeStutterEnabledFactory is null
                         ? null
                         : text => this.removeStutterEnabledFactory() ? StutterRemover.Remove(text) : text,
+                    extractStyleTags: this.adHocStyleTagsFactory is null
+                        ? null
+                        : text => StyleTagExtractor.Extract(
+                            text,
+                            this.styleTagRegexFactory?.Invoke(),
+                            this.adHocStyleTagsFactory()),
                     defaultExaggeration: this.defaultExaggerationFactory,
                     log: this.LogSinkUnlocked());
             }
@@ -429,25 +456,77 @@ public sealed class ServiceContainer : IDisposable
     /// </summary>
     public event Action? VoiceLinePlaybackObserved;
 
+    /// <summary>
+    /// Subscribes the game's voiced-line detector to the single courtesy cancel path
+    /// (<see cref="SpeechPipeline.NotifyVoiceLinePlayback"/> via <see cref="OnVoiceLinePlayback"/>).
+    /// Re-wiring replaces a previous detector; <see cref="Dispose"/> unwires.
+    /// </summary>
+    public void WireVoiceLineDetector(IVoiceLineDetector detector)
+    {
+        lock (this.gate)
+        {
+            if (ReferenceEquals(this.voiceLineDetector, detector))
+            {
+                return;
+            }
+
+            if (this.voiceLineDetector is { } previous)
+            {
+                previous.VoiceLinePlayback -= this.OnVoiceLinePlayback;
+            }
+
+            this.voiceLineDetector = detector;
+            detector.VoiceLinePlayback += this.OnVoiceLinePlayback;
+        }
+    }
+
+    /// <summary>Unsubscribes the detector wired by <see cref="WireVoiceLineDetector"/>.</summary>
+    public void UnwireVoiceLineDetector()
+    {
+        lock (this.gate)
+        {
+            if (this.voiceLineDetector is { } detector)
+            {
+                this.voiceLineDetector = null;
+                detector.VoiceLinePlayback -= this.OnVoiceLinePlayback;
+            }
+        }
+    }
+
     /// <summary>The game's own voice acting just started: stop current speech, then let
     /// observers re-sample the talk addons so the voiced line is not synthesized.</summary>
     public void OnVoiceLinePlayback()
     {
-        this.SpeechHandler.CancelCurrent();
+        // Single cancel path: the pipeline's NotifyVoiceLinePlayback → handler → queue.
+        this.Pipeline.NotifyVoiceLinePlayback();
         this.VoiceLinePlaybackObserved?.Invoke();
     }
 
     /// <summary>
     /// Persistent profile resolution (Step 2 store): group resolved from customize data,
     /// slots from the race map — unknown speakers still resolve via the store's
-    /// deterministic fallback.
+    /// deterministic fallback. With UseRaceVoicePresets off (TTT default-bucket
+    /// semantics), every speaker resolves from the ungendered slot set instead of a
+    /// race/gender group; manual overrides still win in the store.
     /// </summary>
+    public VoiceProfile ResolveProfile(SpeakerIdentity speaker)
+    {
+        lock (this.gate)
+        {
+            return this.ResolveProfileUnlocked(speaker)!;
+        }
+    }
+
     private VoiceProfile? ResolveProfileUnlocked(SpeakerIdentity speaker)
     {
-        var group = VoiceGroupResolver.Resolve(speaker.Race, speaker.Tribe, speaker.Sex, null, null);
+        var racePresets = this.useRaceVoicePresetsFactory?.Invoke() ?? true;
+        var group = racePresets
+            ? VoiceGroupResolver.Resolve(speaker.Race, speaker.Tribe, speaker.Sex, null, null)
+            : VoiceGroup.Ungendered;
         return this.ProfileStoreUnlocked().GetOrCreate(
             speaker.Key,
-            () => this.VoiceMapUnlocked().SlotsFor(group, speaker.Race),
+            // Presets off: the ungendered bucket has no race variants (race is null).
+            () => this.VoiceMapUnlocked().SlotsFor(group, racePresets ? speaker.Race : null),
             speaker.Race,
             speaker.Tribe,
             speaker.Sex);
@@ -489,6 +568,7 @@ public sealed class ServiceContainer : IDisposable
 
     public void Dispose()
     {
+        this.UnwireVoiceLineDetector();
         lock (this.gate)
         {
             foreach (var disposable in this.disposables.OfType<IDisposable>())
