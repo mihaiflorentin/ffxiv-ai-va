@@ -67,4 +67,19 @@ public sealed class ModelsTabModelTests
     {
         Assert.False(string.IsNullOrWhiteSpace(ModelsTabModel.EngineNotReadyHint));
     }
+
+    [Fact]
+    public void DownloadAllLabel_ReflectsMissingCount()
+    {
+        Assert.Equal("Download all missing (3)", ModelsTabModel.DownloadAllLabel(3));
+        Assert.Equal("All required assets downloaded", ModelsTabModel.DownloadAllLabel(0));
+    }
+
+    [Fact]
+    public void CanDownloadAll_GatesOnInFlightAndMissing()
+    {
+        Assert.True(ModelsTabModel.CanDownloadAll(downloadInFlight: false, missingCount: 2));
+        Assert.False(ModelsTabModel.CanDownloadAll(downloadInFlight: true, missingCount: 2));
+        Assert.False(ModelsTabModel.CanDownloadAll(downloadInFlight: false, missingCount: 0));
+    }
 }

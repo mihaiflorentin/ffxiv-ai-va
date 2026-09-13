@@ -296,6 +296,15 @@ public sealed class ConfigurationWindow : Window
             this.TryOpen(this.voicesDir());
         }
 
+        var missing = this.modelStore().Missing();
+        if (Controls.Button(
+                ModelsTabModel.DownloadAllLabel(missing.Count),
+                ModelsTabModel.CanDownloadAll(anyDownload, missing.Count),
+                anyDownload ? "A download is already in progress." : null))
+        {
+            this.StartDownloads(missing);
+        }
+
         ImGui.Separator();
 
         if (ImGui.BeginTable("##models", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
@@ -321,12 +330,13 @@ public sealed class ConfigurationWindow : Window
                     : ModelsTabModel.StatusLabel(row);
                 ImGui.TextUnformatted(status);
                 ImGui.TableNextColumn();
-                if (Controls.Button(
+                if (row.Optional
+                    && Controls.Button(
                         "Download",
                         ModelsTabModel.CanDownload(anyDownload, row),
                         anyDownload ? "A download is already in progress." : null))
                 {
-                    this.StartDownload(asset);
+                    this.StartDownloads([asset]);
                 }
             }
 
@@ -334,12 +344,33 @@ public sealed class ConfigurationWindow : Window
         }
     }
 
-    private void StartDownload(ModelAsset asset)
+    /// <summary>
+    /// Starts a sequential background download queue: assets download one at a time in
+    /// list order, and the in-flight marker never reads null between items, so the draw
+    /// thread's idle gating stays exact. The queue stops at the first failure.
+    /// </summary>
+    private void StartDownloads(IReadOnlyList<ModelAsset> assets)
     {
+        if (assets.Count == 0 || this.downloading is not null)
+        {
+            return;
+        }
+
+        this.DownloadNext(this.provisioner(), new Queue<ModelAsset>(assets));
+    }
+
+    private void DownloadNext(IModelProvisioner provisioner, Queue<ModelAsset> pending)
+    {
+        if (pending.Count == 0)
+        {
+            this.downloading = null;
+            return;
+        }
+
+        var asset = pending.Dequeue();
         this.downloading = asset;
         this.progressReceived = 0;
         this.progressTotal = asset.SizeBytes ?? 0;
-        var provisioner = this.provisioner();
         _ = Task.Run(async () =>
         {
             try
@@ -355,13 +386,11 @@ public sealed class ConfigurationWindow : Window
                         }
                     }),
                     CancellationToken.None);
+                this.DownloadNext(provisioner, pending);
             }
             catch (Exception ex)
             {
                 this.reportError($"Download of \"{asset.Name}\" failed: {ex.Message}");
-            }
-            finally
-            {
                 this.downloading = null;
             }
         });

@@ -36,6 +36,14 @@ public static class ModelsTabModel
     public static bool CanDownload(bool downloadInFlight, AssetRow row) =>
         !downloadInFlight && !row.Downloaded;
 
+    /// <summary>Label for the bulk Models-tab action.</summary>
+    public static string DownloadAllLabel(int missingCount) =>
+        missingCount > 0 ? $"Download all missing ({missingCount})" : "All required assets downloaded";
+
+    /// <summary>The bulk action is clickable only when idle and required assets are missing.</summary>
+    public static bool CanDownloadAll(bool downloadInFlight, int missingCount) =>
+        !downloadInFlight && missingCount > 0;
+
     /// <summary>Progress fraction 0..1 for the overall bar; 0 when the total is unknown.</summary>
     public static double OverallProgress(long bytesReceived, long? totalBytes) =>
         totalBytes is > 0 ? Math.Clamp(bytesReceived / (double)totalBytes.Value, 0d, 1d) : 0d;
