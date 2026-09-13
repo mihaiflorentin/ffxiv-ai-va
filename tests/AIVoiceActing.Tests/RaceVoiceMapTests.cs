@@ -66,9 +66,11 @@ public sealed class RaceVoiceMapTests
     public void AuRa_UsesChineseBank()
     {
         var map = LoadDefault();
-        // zf_/zm_ voices verified by ear on the v1.0 model; jf_/jm_ stay parked.
+        // zf_/zm_ verified by ear on the v1.0 model; jf_alpha joined on user verdict.
         Assert.All(map.SlotsFor(VoiceGroup.Male, 6).Select(s => s.Id), id => Assert.Equal("zm_yunjian", id));
-        Assert.All(map.SlotsFor(VoiceGroup.Female, 6).Select(s => s.Id), id => Assert.Equal("zf_xiaoxiao", id));
+        Assert.Equal(
+            new HashSet<string> { "zf_xiaoxiao", "jf_alpha" },
+            map.SlotsFor(VoiceGroup.Female, 6).Select(s => s.Id).ToHashSet());
     }
 
     [Fact]

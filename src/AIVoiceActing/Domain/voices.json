@@ -84,14 +84,14 @@
   ],
   "childFemale": [
    {
-    "id": "bf_alice",
-    "pitch": 1.18,
-    "speed": 1.1
+    "id": "bf_lily",
+    "pitch": 1.12,
+    "speed": 1.05
    },
    {
     "id": "bf_isabella",
-    "pitch": 1.18,
-    "speed": 1.1
+    "pitch": 1.12,
+    "speed": 1.05
    }
   ],
   "frenchMale": [
@@ -216,6 +216,9 @@
   "chineseFemale": [
    {
     "id": "zf_xiaoxiao"
+   },
+   {
+    "id": "jf_alpha"
    }
   ]
  },

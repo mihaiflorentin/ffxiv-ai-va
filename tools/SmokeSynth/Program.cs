@@ -25,6 +25,8 @@ internal static class Program
         string? lmOverride = null;
         var tags = new List<string>();
         double exaggeration = 0.5;
+        double pitch = 1.0;
+        double speed = 1.0;
         bool printRealTimeFactor = false;
 
         for (var i = 0; i < args.Length; i++)
@@ -51,6 +53,22 @@ internal static class Program
                     break;
                 case "--tags" when i + 1 < args.Length:
                     tags.AddRange(args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+                    break;
+                case "--pitch" when i + 1 < args.Length:
+                    if (!double.TryParse(args[++i], out pitch))
+                    {
+                        Console.Error.WriteLine($"Invalid value for --pitch: '{args[i]}'.");
+                        return 1;
+                    }
+
+                    break;
+                case "--speed" when i + 1 < args.Length:
+                    if (!double.TryParse(args[++i], out speed))
+                    {
+                        Console.Error.WriteLine($"Invalid value for --speed: '{args[i]}'.");
+                        return 1;
+                    }
+
                     break;
                 case "--ep" when i + 1 < args.Length:
                     executionProvider = args[++i];
@@ -157,7 +175,9 @@ internal static class Program
                 },
                 Text: text,
                 Exaggeration: (float)exaggeration,
-                Tags: tags);
+                Tags: tags,
+                Pitch: (float)pitch,
+                Speed: (float)speed);
 
             var clock = Stopwatch.StartNew();
             var result = synthesizer.SynthesizeAsync(request, CancellationToken.None)
