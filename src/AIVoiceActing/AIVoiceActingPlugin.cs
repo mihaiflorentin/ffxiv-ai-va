@@ -365,10 +365,20 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
 
     private bool llmDirectorUnavailableLogged;
 
+    private bool prewarmChecked;
+
     /// <summary>Framework tick: keybind checking (TextToTalk's toggle semantics) — Ctrl+N
     /// toggles TTS, per-preset keybinds switch presets.</summary>
     private void OnFrameworkUpdate(IFramework framework)
     {
+        // A plugin loaded (or dev-rescanned) mid-session never sees ClientState.Login;
+        // warm the engine up once as soon as a character is present.
+        if (!this.prewarmChecked && ObjectTable.LocalPlayer is not null)
+        {
+            this.prewarmChecked = true;
+            this.OnClientLogin();
+        }
+
         var config = this.pluginConfig;
         if (!config.UseKeybind && !config.EnabledChatTypesPresets.Any(p => p.UseKeybind))
         {

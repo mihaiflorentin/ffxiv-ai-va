@@ -19,7 +19,6 @@ using Dalamud.Interface.Windowing;
 /// </summary>
 public sealed class ConfigurationWindow : Window
 {
-    private static readonly string[] ExecutionProviders = ["auto", "cpu", "directml", "coreml"];
 
     private static readonly (int Code, string Name)[] Modifiers =
     [
@@ -256,19 +255,6 @@ public sealed class ConfigurationWindow : Window
                     : this.synthesizer.NotReadyReason;
             ImGui.TextUnformatted($"Voice engine: {status}");
             Controls.Combo(
-                "Engine",
-                ["kokoro", "chatterbox"],
-                () => c.SelectedEngine,
-                v => { c.SelectedEngine = v; save(); });
-            ImGui.SameLine();
-            Controls.HelpMarker(
-                "kokoro: CPU real-time with 54 accent voices (default). chatterbox: voice cloning, much slower.");
-            Controls.Combo(
-                "Execution provider (chatterbox only)",
-                ExecutionProviders,
-                () => c.SelectedEp,
-                v => { c.SelectedEp = v; save(); });
-            Controls.Combo(
                 "CPU impact",
                 ["low", "medium", "high"],
                 () => c.CpuImpact,
@@ -285,11 +271,6 @@ public sealed class ConfigurationWindow : Window
             ImGui.SameLine();
             Controls.HelpMarker(
                 "If a line finishes synthesizing after the conversation moved on, skip it instead of playing it late. 0 keeps everything.");
-            Controls.Checkbox(
-                "Use fp32 language model (chatterbox stability)",
-                "Avoids q4 int4 kernels that hard-crash on some CPUs (Zen 5 + AVX-512) and the q4 static-on-short-lines failure. Download the two optional fp32 rows on the Models tab first (~2 GB).",
-                () => c.UseFp32LanguageModel,
-                v => { c.UseFp32LanguageModel = v; save(); });
             Controls.Checkbox(
                 "Use LLM emotion director (context-aware delivery)",
                 "Needs the optional director model; the free rules table runs otherwise.",
@@ -322,14 +303,10 @@ public sealed class ConfigurationWindow : Window
     {
         var provisioner = this.provisioner();
         var anyDownload = this.downloading is not null;
-        var kokoroSelected = this.config.SelectedEngine != "chatterbox";
 
-        ImGui.TextWrapped(kokoroSelected
-            ? "Kokoro engine (default): one 310 MB model — the 50+ voice banks ship inside " +
-              "the plugin. The Chatterbox rows below are the legacy fallback; only download " +
-              "them if you switch engines in Speech Settings."
-            : "Chatterbox engine (legacy fallback, ~0.9 GB required): voice cloning, much " +
-              "slower than Kokoro. The Kokoro row is the default engine's model.");
+        ImGui.TextWrapped(
+            "Kokoro engine: one 310 MB model — the 50+ voice banks ship inside the plugin. " +
+            "Downloads go to the plugin's models directory and run only when you press a button.");
 
         if (anyDownload)
         {
@@ -351,22 +328,12 @@ public sealed class ConfigurationWindow : Window
             this.TryOpen(this.voicesDir());
         }
 
-        var assets = this.modelAssets();
-        var missingActive = assets
-            .Where(a => this.IsActiveEngineAsset(a) && !a.Optional && !provisioner.IsDownloaded(a))
-            .ToList();
-        if (Controls.Button(
-                ModelsTabModel.DownloadAllLabel(missingActive.Count),
-                ModelsTabModel.CanDownloadAll(anyDownload, missingActive.Count),
-                anyDownload ? "A download is already in progress." : null))
-        {
-            this.StartDownloads(missingActive);
-        }
-
         ImGui.Separator();
 
-        // Active engine's assets first; the other engine's rows read as legacy fallback.
-        var ordered = assets.Where(this.IsActiveEngineAsset).Concat(assets.Where(a => !this.IsActiveEngineAsset(a)));
+        // Only the Kokoro asset is user-visible; the retired Chatterbox catalog rows and
+        // their download buttons are gone (the engine itself remains as a config-file
+        // fallback and provisions nothing through this tab).
+        var kokoro = this.modelAssets().Single(a => a.FileName == KokoroModelFileName);
         if (ImGui.BeginTable("##models", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
         {
             ImGui.TableSetupScrollFreeze(0, 1);
@@ -376,34 +343,31 @@ public sealed class ConfigurationWindow : Window
             ImGui.TableSetupColumn("##action", ImGuiTableColumnFlags.WidthFixed, 100f);
             ImGui.TableHeadersRow();
 
-            foreach (var asset in ordered)
+            var row = ModelsTabModel.Row(kokoro, provisioner.IsDownloaded(kokoro));
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(row.Name);
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted($"{row.SizeMb:0.0} MB");
+            ImGui.TableNextColumn();
+            var status = this.downloading?.FileName == kokoro.FileName
+                ? "downloading…"
+                : ModelsTabModel.StatusLabel(row);
+            ImGui.TextUnformatted(status);
+            ImGui.TableNextColumn();
+            if (row.Downloaded)
             {
-                var row = ModelsTabModel.Row(asset, provisioner.IsDownloaded(asset));
-                ImGui.TableNextRow();
-                ImGui.TableNextColumn();
-                ImGui.TextUnformatted(row.Name);
-                ImGui.TableNextColumn();
-                ImGui.TextUnformatted($"{row.SizeMb:0.0} MB");
-                ImGui.TableNextColumn();
-                var status = this.downloading?.FileName == asset.FileName
-                    ? "downloading…"
-                    : ModelsTabModel.StatusLabel(row, requiredForSelectedEngine: this.IsActiveEngineAsset(asset));
-                ImGui.TextUnformatted(status);
-                ImGui.TableNextColumn();
-                if (row.Downloaded)
+                if (Controls.Button("Remove", !anyDownload, anyDownload ? "A download is in progress." : null))
                 {
-                    if (Controls.Button("Remove", !anyDownload, anyDownload ? "A download is in progress." : null))
-                    {
-                        this.modelStore().Remove(asset.FileName);
-                    }
+                    this.modelStore().Remove(kokoro.FileName);
                 }
-                else if (Controls.Button(
-                    "Download",
-                    ModelsTabModel.CanDownload(anyDownload, row),
-                    anyDownload ? "A download is already in progress." : null))
-                {
-                    this.StartDownloads([asset]);
-                }
+            }
+            else if (Controls.Button(
+                "Download",
+                ModelsTabModel.CanDownload(anyDownload, row),
+                anyDownload ? "A download is already in progress." : null))
+            {
+                this.StartDownloads([kokoro]);
             }
 
             ImGui.EndTable();
@@ -428,6 +392,7 @@ public sealed class ConfigurationWindow : Window
 
     private long statusModelsDirBytes;
     private DateTime statusModelsDirBytesAt;
+    private volatile bool warmingEngine;
 
     private void DrawStatusTab()
     {
@@ -436,9 +401,38 @@ public sealed class ConfigurationWindow : Window
         var ready = this.synthesizer.IsReady;
         ImGui.BulletText($"Selected engine: {this.config.SelectedEngine}");
         ImGui.BulletText(
-            ready ? "State: ready" : $"State: NOT ready — {this.EngineReason()}");
-        ImGui.BulletText(
-            $"Execution provider: {(this.config.SelectedEngine == "kokoro" ? "cpu (Kokoro is CPU-only)" : this.config.SelectedEp)}");
+            this.warmingEngine ? "State: loading the model…"
+            : ready ? "State: ready"
+            : $"State: NOT ready — {this.EngineReason()}");
+        if (Controls.Button(
+                "Load engine now",
+                !this.warmingEngine && !ready,
+                this.warmingEngine ? "Already loading." : ready ? "Engine is ready." : null))
+        {
+            // Session creation takes a few seconds; keep it off the draw thread.
+            this.warmingEngine = true;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await this.synthesizer.WarmUpAsync(CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    this.reportError($"Engine start failed: {ex.Message}");
+                }
+                finally
+                {
+                    this.warmingEngine = false;
+                }
+            });
+        }
+
+        ImGui.SameLine();
+        Controls.HelpMarker(
+            "Builds the ONNX session ahead of the first line. The engine also loads itself " +
+            "on login and on the first spoken line.");
+        ImGui.BulletText("Execution provider: cpu (Kokoro is CPU-only)");
         ImGui.BulletText(
             $"CPU impact: {this.config.CpuImpact} ({this.config.CpuImpact switch { "low" => 2, "high" => 8, _ => 4 }} synthesis threads)");
 

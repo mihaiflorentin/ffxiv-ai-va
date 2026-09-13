@@ -45,42 +45,47 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
     public static string ModelPathFor(string modelsDir) =>
         Path.Combine(modelsDir, ModelCatalog.KokoroModelFileName);
 
-    public bool IsReady
+    /// <summary>Absolute path of the packaged voice-bank directory (voices/*.npy).</summary>
+    public static string VoicesDirFor() => Path.Combine(
+        Path.GetDirectoryName(typeof(KokoroSynthesizer).Assembly.Location)
+            ?? AppContext.BaseDirectory,
+        "voices");
+
+    public bool IsReady => this.FindNotReadyReason() is null;
+
+    public string NotReadyReason => this.FindNotReadyReason() ?? string.Empty;
+
+    /// <summary>
+    /// Readiness means "all assets present; a line would synthesize" — NOT "the ONNX
+    /// session is already built". The session builds lazily on first use (or the login
+    /// pre-warm), so gating the Test tab on construction would deadlock: the buttons
+    /// that would trigger the build stay disabled until something else builds it.
+    /// </summary>
+    private string? FindNotReadyReason()
     {
-        get
+        lock (this.gate)
         {
-            lock (this.gate)
+            if (this.engine is not null)
             {
-                return this.engine is not null;
+                return null;
             }
-        }
-    }
 
-    public string NotReadyReason
-    {
-        get
-        {
-            lock (this.gate)
+            if (this.initializing)
             {
-                if (this.engine is not null)
-                {
-                    return string.Empty;
-                }
-
-                if (this.initializing)
-                {
-                    return "Loading Kokoro model…";
-                }
-
-                if (this.initError is { } error)
-                {
-                    return error;
-                }
-
-                return File.Exists(ModelPathFor(this.modelsDirFactory()))
-                    ? "Kokoro engine not initialized; play a line to load it."
-                    : "Kokoro model not downloaded — use the Models tab.";
+                return "Loading Kokoro model…";
             }
+
+            if (this.initError is { } error)
+            {
+                return error;
+            }
+
+            var modelsDir = this.modelsDirFactory();
+            return !File.Exists(ModelPathFor(modelsDir))
+                ? "Kokoro model not downloaded — use the Models tab."
+                : !Directory.Exists(VoicesDirFor())
+                    ? "Kokoro voices missing — reinstall the plugin."
+                    : null;
         }
     }
 
@@ -183,10 +188,7 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
 
                 // Voices ship with the package next to the plugin assembly; in-game the
                 // process base directory is the game folder, so resolve explicitly.
-                var voicesDir = Path.Combine(
-                    Path.GetDirectoryName(typeof(KokoroSynthesizer).Assembly.Location)
-                        ?? AppContext.BaseDirectory,
-                    "voices");
+                var voicesDir = VoicesDirFor();
                 if (Directory.Exists(voicesDir))
                 {
                     KokoroVoiceManager.LoadVoicesFromPath(voicesDir);
