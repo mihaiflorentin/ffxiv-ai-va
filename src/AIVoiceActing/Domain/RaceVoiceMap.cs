@@ -46,6 +46,9 @@ public sealed class RaceVoiceMap
     /// <summary>Active race-variant keys ("&lt;race&gt;|&lt;group&gt;" → set name).</summary>
     public IReadOnlyDictionary<string, string> RaceVariants => this.raceVariants;
 
+    /// <summary>The parked accent implementations; never shown in the UI, never removed.</summary>
+    public RaceVoiceMap? Disabled { get; }
+
     public static RaceVoiceMap FromJson(string json)
     {
         var manifest = JsonSerializer.Deserialize<ManifestFile>(json, JsonOptions)
@@ -65,8 +68,26 @@ public sealed class RaceVoiceMap
         return new RaceVoiceMap(manifest.Sets ?? [], manifest.RaceVariants ?? [], disabled);
     }
 
-    /// <summary>The parked accent implementations; never shown in the UI, never removed.</summary>
-    public RaceVoiceMap? Disabled { get; }
+    /// <summary>
+    /// Slots by explicit set name — the model-id voice mechanism for beast tribes and
+    /// allied societies. Resolves against ACTIVE sets first, then the parked
+    /// <see cref="Disabled"/> sets: a model id mapped to a parked set activates that
+    /// cast for those models only, without leaking into the UI picker.
+    /// </summary>
+    public VoiceSlot[] SlotsForSet(string setKey)
+    {
+        if (this.sets.TryGetValue(setKey, out var slots))
+        {
+            return (VoiceSlot[])slots.Clone();
+        }
+
+        if (this.Disabled is { } parked && parked.sets.TryGetValue(setKey, out var parkedSlots))
+        {
+            return (VoiceSlot[])parkedSlots.Clone();
+        }
+
+        throw new InvalidOperationException($"RaceVoiceMap has no set \"{setKey}\".");
+    }
 
     /// <summary>The slot set for a voice group, nuanced by race; defensive copy.</summary>
     public VoiceSlot[] SlotsFor(VoiceGroup group, byte? race) =>

@@ -190,7 +190,7 @@
   "8|Female": "italianFemale"
  },
  "disabledSets": {
-  "why": "Parked accent implementations, kept here on purpose. NEVER remove them: they are the casting work for the accents the Kokoro v1.0 bank cannot produce (true Icelandic, Scottish, Scouse, Nordic, Japanese-flavoured voices). They are NOT shown in the UI because each needs an F5-TTS reference clip (generated from e.g. Piper is_IS / gd / nb_NO voices reading English) plus per-tribe model-id wiring in the speaker resolver; enabling one is a matter of moving its slots up into 'sets' and adding the clip ids to assets/voices-f5. Auditions of the experimental Japanese/Chinese banks live in /tmp/aiva-audition (jf_alpha, zf_xiaoxiao) — they synthesize on the v1.0 model but accent quality is unverified.",
+  "why": "Parked accent implementations, kept here on purpose. NEVER remove them: they are the casting work for accents the active bank cannot produce, and for the beast tribes / allied societies and NPC archetypes (Garlean, dragon). They are NOT shown in the UI because each needs a model id bound in overridenModelIds.txt ('<id> ; <Name> ; <setKey>') — the voice-resolution log now prints race/tribe/sex/model for every speaker, so talk to a tribe member, read the model id from the log, add the line, and that tribe is voiced. Enabling is a data change, never a rewrite.",
   "sets": {
    "icelandicMale": [
     {
@@ -226,16 +226,241 @@
     {
      "id": "jm_kumo"
     }
+   ],
+   "setAmaljaa": [
+    {
+     "id": "em_alex",
+     "pitch": 0.95
+    },
+    {
+     "id": "ef_dora",
+     "pitch": 0.95
+    }
+   ],
+   "setSylph": [
+    {
+     "id": "af_sky",
+     "pitch": 1.12
+    },
+    {
+     "id": "bf_alice",
+     "pitch": 1.12
+    }
+   ],
+   "setKobold": [
+    {
+     "id": "am_liam",
+     "pitch": 0.92
+    },
+    {
+     "id": "am_puck",
+     "pitch": 0.92
+    }
+   ],
+   "setSahagin": [
+    {
+     "id": "pf_dora",
+     "pitch": 0.94
+    },
+    {
+     "id": "ef_dora",
+     "pitch": 0.94
+    }
+   ],
+   "setIxal": [
+    {
+     "id": "af_sky",
+     "pitch": 1.08,
+     "speed": 1.1
+    },
+    {
+     "id": "am_puck",
+     "pitch": 1.08
+    }
+   ],
+   "setVanuVanu": [
+    {
+     "id": "am_adam",
+     "pitch": 0.95
+    },
+    {
+     "id": "am_michael",
+     "pitch": 0.95
+    }
+   ],
+   "setVath": [
+    {
+     "id": "if_sara",
+     "pitch": 0.97
+    },
+    {
+     "id": "im_nicola",
+     "pitch": 0.97
+    }
+   ],
+   "setMoogle": [
+    {
+     "id": "af_sky",
+     "pitch": 1.25,
+     "speed": 1.15
+    },
+    {
+     "id": "am_puck",
+     "pitch": 1.25,
+     "speed": 1.15
+    }
+   ],
+   "setKojin": [
+    {
+     "id": "hm_omega"
+    },
+    {
+     "id": "hm_psi"
+    }
+   ],
+   "setAnanta": [
+    {
+     "id": "bf_isabella",
+     "pitch": 0.96
+    },
+    {
+     "id": "bf_emma",
+     "pitch": 0.96
+    }
+   ],
+   "setNamazu": [
+    {
+     "id": "am_puck",
+     "pitch": 1.2,
+     "speed": 1.2
+    },
+    {
+     "id": "af_sky",
+     "pitch": 1.2,
+     "speed": 1.2
+    }
+   ],
+   "setPixie": [
+    {
+     "id": "am_puck",
+     "pitch": 1.15
+    },
+    {
+     "id": "af_sky",
+     "pitch": 1.15
+    }
+   ],
+   "setDwarf": [
+    {
+     "id": "bm_lewis",
+     "pitch": 0.9
+    },
+    {
+     "id": "bm_fable",
+     "pitch": 0.9
+    }
+   ],
+   "setQitari": [
+    {
+     "id": "am_michael",
+     "pitch": 0.97,
+     "speed": 0.95
+    },
+    {
+     "id": "af_aoede",
+     "pitch": 0.97
+    }
+   ],
+   "setNuMou": [
+    {
+     "id": "am_michael",
+     "pitch": 0.95
+    },
+    {
+     "id": "bf_emma",
+     "pitch": 0.95
+    }
+   ],
+   "setLoporrit": [
+    {
+     "id": "bf_alice",
+     "pitch": 1.15
+    },
+    {
+     "id": "af_sky",
+     "pitch": 1.15
+    }
+   ],
+   "setArkasodara": [
+    {
+     "id": "am_michael",
+     "pitch": 0.97
+    },
+    {
+     "id": "af_sarah",
+     "pitch": 0.97
+    }
+   ],
+   "setOmicron": [
+    {
+     "id": "am_echo",
+     "pitch": 0.95
+    },
+    {
+     "id": "af_nicole",
+     "pitch": 0.95
+    }
+   ],
+   "setPelupelu": [
+    {
+     "id": "af_sarah",
+     "pitch": 1.05,
+     "speed": 1.1
+    },
+    {
+     "id": "bf_lily",
+     "pitch": 1.05
+    }
+   ],
+   "setYokHuy": [
+    {
+     "id": "am_onyx",
+     "pitch": 0.9
+    },
+    {
+     "id": "am_fenrir",
+     "pitch": 0.9
+    }
+   ],
+   "setMamoolJa": [
+    {
+     "id": "am_onyx",
+     "pitch": 0.95
+    },
+    {
+     "id": "em_alex",
+     "pitch": 0.95
+    }
+   ],
+   "setGarlean": [
+    {
+     "id": "bm_daniel"
+    },
+    {
+     "id": "bf_emma"
+    }
+   ],
+   "setDragon": [
+    {
+     "id": "am_fenrir",
+     "pitch": 0.85
+    },
+    {
+     "id": "af_river",
+     "pitch": 0.9
+    }
    ]
   },
-  "raceVariants": {
-   "8|Male": "icelandicMale",
-   "8|Female": "icelandicFemale",
-   "5|Male": "scottishMale",
-   "1|Male": "scouseMale",
-   "7|Male": "nordicMale",
-   "6|Female": "japaneseFlavourFemale",
-   "6|Male": "japaneseFlavourMale"
-  }
+  "raceVariants": {}
  }
 }

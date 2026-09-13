@@ -44,4 +44,20 @@ public sealed class UngenderedModelIdsTests
         var ex = Assert.Throws<AggregateException>(() => UngenderedModelIds.Parse("notanid ; oops"));
         Assert.Contains("notanid", ex.Message);
     }
+
+    [Fact]
+    public void ParseVoiceMap_ExtractsThirdColumnSetKeys()
+    {
+        const string data = """
+            2520 ; Feo Ul
+            1250 ; Sahagin ; setSahagin
+            # 1300 ; Ixal ; setIxal
+            1310 ; Kobold ; setKobold
+            """;
+        var map = UngenderedModelIds.ParseVoiceMap(data);
+        Assert.Equal(2, map.Count);
+        Assert.Equal("setSahagin", map[1250]);
+        Assert.Equal("setKobold", map[1310]);
+        Assert.DoesNotContain(2520, map.Keys);
+    }
 }

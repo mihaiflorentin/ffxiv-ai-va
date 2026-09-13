@@ -68,7 +68,10 @@ public sealed class SpeechRequestHandler
         // Staleness is measured from ARRIVAL (pre-synthesis): slow engines must not
         // push finished audio for a conversation that already moved on.
         var requestedAtTicks = Environment.TickCount64;
-        this.log?.Info($"Speak requested: \"{speaker.Key}\" ({text.Length} chars): {Truncate(text)}");
+        this.log?.Info(
+            $"Speak requested: \"{speaker.Key}\" ({text.Length} chars): {Truncate(text)} " +
+            $"[race={speaker.Race?.ToString() ?? "?"} tribe={speaker.Tribe?.ToString() ?? "?"} " +
+            $"sex={speaker.Sex?.ToString() ?? "?"} model={speaker.ModelCharaId?.ToString() ?? "?"}]");
         var profile = this.profileLookup(speaker);
         if (profile is null)
         {

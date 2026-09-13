@@ -665,13 +665,31 @@ public sealed class ServiceContainer : IDisposable
     {
         var racePresets = this.useRaceVoicePresetsFactory?.Invoke() ?? true;
         var group = racePresets
-            ? VoiceGroupResolver.Resolve(speaker.Race, speaker.Tribe, speaker.Sex, null, null)
+            ? VoiceGroupResolver.Resolve(
+                speaker.Race, speaker.Tribe, speaker.Sex, speaker.ModelCharaId, this.ModelVoiceMapKeys())
             : VoiceGroup.Ungendered;
+
+        // Beast-tribe/allied-society casting: a model id listed in overridenModelIds.txt
+        // with a set key draws from that named set (active or parked) before anything else.
+        var modelSet = speaker.ModelCharaId is { } modelId
+            && this.ModelVoiceMap().TryGetValue(modelId, out var setKey)
+            ? setKey
+            : null;
+        var map = this.VoiceMapUnlocked();
+        var slots = modelSet is { } key
+            ? map.SlotsForSet(key)
+            : map.SlotsFor(group, racePresets ? speaker.Race : null);
+
+        this.LogSinkUnlocked().Info(
+            $"Voice resolution for \"{speaker.Key}\": race={speaker.Race?.ToString() ?? "?"} " +
+            $"tribe={speaker.Tribe?.ToString() ?? "?"} sex={speaker.Sex?.ToString() ?? "?"} " +
+            $"model={speaker.ModelCharaId?.ToString() ?? "?"} → group {group}" +
+            (modelSet is { } activeSet ? $" (model set \"{activeSet}\")" : string.Empty));
+
         var store = this.ProfileStoreUnlocked();
         var profile = store.GetOrCreate(
             speaker.Key,
-            // Presets off: the ungendered bucket has no race variants (race is null).
-            () => this.VoiceMapUnlocked().SlotsFor(group, racePresets ? speaker.Race : null),
+            () => slots,
             speaker.Race,
             speaker.Tribe,
             speaker.Sex);
@@ -679,21 +697,25 @@ public sealed class ServiceContainer : IDisposable
         // Engine migrations (Chatterbox clip ids → Kokoro voice names) retire ids that
         // the store's never-reassign invariant would keep forever; a retired id can
         // never synthesize, so re-derive deterministically from the current bank.
-        if (!this.VoiceMapUnlocked().DistinctVoiceIds().Contains(profile.ReferenceVoiceId))
+        if (!map.DistinctVoiceIds().Contains(profile.ReferenceVoiceId))
         {
             this.LogSinkUnlocked().Info(
                 $"Reassigning \"{speaker.Key}\" from retired voice \"{profile.ReferenceVoiceId}\".");
             store.Remove(speaker.Key);
-            profile = store.GetOrCreate(
-                speaker.Key,
-                () => this.VoiceMapUnlocked().SlotsFor(group, racePresets ? speaker.Race : null),
-                speaker.Race,
-                speaker.Tribe,
-                speaker.Sex)!;
+            profile = store.GetOrCreate(speaker.Key, () => slots, speaker.Race, speaker.Tribe, speaker.Sex)!;
         }
 
         return profile;
     }
+
+    private IReadOnlyDictionary<int, string>? modelVoiceMap;
+
+    /// <summary>Model id → named voice set (lazy; from overridenModelIds.txt third column).</summary>
+    private IReadOnlyDictionary<int, string> ModelVoiceMap() =>
+        this.modelVoiceMap ??= Infrastructure.Dalamud.UngenderedModelIds.LoadVoiceMap();
+
+    /// <summary>Model ids that force the Ungendered group (ids that carry a set key also force it, via the resolver's override list).</summary>
+    private IReadOnlySet<int>? ModelVoiceMapKeys() => new HashSet<int>(this.ModelVoiceMap().Keys);
 
     private RaceVoiceMap VoiceMapUnlocked() =>
         this.voiceMap ??= RaceVoiceMap.FromJson(File.ReadAllText(

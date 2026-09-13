@@ -27,7 +27,7 @@ public sealed class GameObjectSpeakerDirectoryTests
             Name: "Feo Ul", World: null, ObjectIndex: 201, ModelCharaId: 2520,
             Race: null, Tribe: null, Sex: 0));
         Assert.Equal(
-            new SpeakerIdentity("npc:feo ul", "Feo Ul", null, null, (byte)0, null),
+            new SpeakerIdentity("npc:feo ul", "Feo Ul", null, null, (byte)0, null, 2520),
             identity);
     }
 

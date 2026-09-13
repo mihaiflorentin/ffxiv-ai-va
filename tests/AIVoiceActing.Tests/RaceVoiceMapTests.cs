@@ -98,14 +98,13 @@ public sealed class RaceVoiceMapTests
         Assert.NotNull(map.Disabled);
         Assert.NotEmpty(map.Disabled!.Sets);
         Assert.Contains("icelandicMale", map.Disabled.Sets.Keys);
+        Assert.Contains("setMoogle", map.Disabled.Sets.Keys);
 
-        // Parked accents must never leak into the picker or any active slot lookup.
-        var activeIds = map.DistinctVoiceIds();
-        Assert.Empty(map.Disabled.Sets.Values.SelectMany(slots => slots).Select(s => s.Id)
-            .Where(id => activeIds.Contains(id)));
-
-        // A race whose accent is parked (e.g. 9) would fall back to the base set, never
-        // to a parked one: every active variant resolves inside the active sets.
+        // Parked SET NAMES must never collide with active set names or variant targets:
+        // the picker (DistinctVoiceIds) reads active sets only, so parked casts stay
+        // out of the UI while a model id in overridenModelIds.txt can still activate
+        // them via SlotsForSet.
+        Assert.All(map.Disabled.Sets.Keys, key => Assert.DoesNotContain(key, map.Sets.Keys));
         Assert.All(map.RaceVariants.Values, variant => Assert.Contains(variant, map.Sets.Keys));
     }
 

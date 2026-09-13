@@ -21,12 +21,12 @@ public sealed class GameObjectSpeakerDirectory : ISpeakerDirectory
         if (name.Length == 0)
         {
             var fallbackKey = hint.ObjectIndex is { } index ? $"npc:object-{index}" : "npc:anonymous";
-            return new SpeakerIdentity(fallbackKey, "(unknown)", hint.Race, hint.Tribe, hint.Sex, hint.World);
+            return new SpeakerIdentity(fallbackKey, "(unknown)", hint.Race, hint.Tribe, hint.Sex, hint.World, hint.ModelCharaId);
         }
 
         var key = hint.World is { } world
             ? SpeakerKey.ForPlayer(name, world)
             : SpeakerKey.ForNpc(name);
-        return new SpeakerIdentity(key, name, hint.Race, hint.Tribe, hint.Sex, hint.World);
+        return new SpeakerIdentity(key, name, hint.Race, hint.Tribe, hint.Sex, hint.World, hint.ModelCharaId);
     }
 }

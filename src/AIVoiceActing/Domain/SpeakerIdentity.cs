@@ -10,4 +10,5 @@ public sealed record SpeakerIdentity(
     byte? Race,
     byte? Tribe,
     byte? Sex,
-    ushort? World);
+    ushort? World,
+    int? ModelCharaId = null);
