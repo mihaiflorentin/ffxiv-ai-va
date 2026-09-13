@@ -156,6 +156,11 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
                 "high" => 8,
                 _ => 4,
             },
+            // Dalamud loads plugin assemblies with an empty Assembly.Location, so the
+            // adapter cannot find the package's voices/ folder relative to itself —
+            kokoroVoicesDirFactory: () => Path.Combine(
+                PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
+                "voices"),
             llmDirectorFactory: () => config.DirectorEnabled ? this.TryGetLlmDirector() : null,
             useRaceVoicePresetsFactory: () => config.UseRaceVoicePresets,
             adHocStyleTagsFactory: () => config.AdHocStyleTagsEnabled,

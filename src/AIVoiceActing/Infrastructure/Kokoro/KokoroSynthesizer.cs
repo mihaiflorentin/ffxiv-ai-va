@@ -10,11 +10,10 @@ using Microsoft.ML.OnnxRuntime;
 /// <summary>
 /// Kokoro-82M adapter (KokoroSharp, MIT): CPU real-time synthesis with 50+ accent voices.
 /// The model file (<c>kokoro-v1.0.onnx</c>, fp32) is provisioned via the Models tab; the
-/// voice banks ship inside the KokoroSharp package (<c>voices/*.npy</c> next to the plugin
-/// assembly). KokoroWavSynthesizer never touches audio devices (we own playback via
-/// NAudioSink) and serializes inference internally. Session options come from the
-/// <paramref name="intraOpThreadsFactory"/> CPU-impact knob; phonemization is native C#
-/// (MisakiSharp) — no espeak-ng anywhere.
+/// voice banks ship inside the KokoroSharp package. KokoroWavSynthesizer never touches
+/// audio devices (we own playback via NAudioSink) and serializes inference internally.
+/// Session options come from the <paramref name="intraOpThreadsFactory"/> CPU-impact
+/// knob; phonemization is native C# (MisakiSharp) — no espeak-ng anywhere.
 /// </summary>
 public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
 {
@@ -23,6 +22,7 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
 
     private readonly Func<string> modelsDirFactory;
     private readonly Func<int> intraOpThreadsFactory;
+    private readonly Func<string?>? voicesDirFactory;
     private readonly ILogSink? log;
 
     private readonly object gate = new();
@@ -34,10 +34,12 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
     public KokoroSynthesizer(
         Func<string> modelsDirFactory,
         Func<int> intraOpThreadsFactory,
-        ILogSink? log = null)
+        ILogSink? log = null,
+        Func<string?>? voicesDirFactory = null)
     {
         this.modelsDirFactory = modelsDirFactory ?? throw new ArgumentNullException(nameof(modelsDirFactory));
         this.intraOpThreadsFactory = intraOpThreadsFactory ?? throw new ArgumentNullException(nameof(intraOpThreadsFactory));
+        this.voicesDirFactory = voicesDirFactory;
         this.log = log;
     }
 
@@ -45,11 +47,30 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
     public static string ModelPathFor(string modelsDir) =>
         Path.Combine(modelsDir, ModelCatalog.KokoroModelFileName);
 
-    /// <summary>Absolute path of the packaged voice-bank directory (voices/*.npy).</summary>
-    public static string VoicesDirFor() => Path.Combine(
-        Path.GetDirectoryName(typeof(KokoroSynthesizer).Assembly.Location)
-            ?? AppContext.BaseDirectory,
-        "voices");
+    /// <summary>
+    /// First existing voice-bank directory (a folder with voices/*.npy). Dalamud loads
+    /// plugin assemblies with an empty Assembly.Location, so the assembly-relative
+    /// candidate is dead in-game; the plugin entry wires a factory over
+    /// IDalamudPluginInterface.AssemblyLocation (a real path), and the package's own
+    /// folder covers SmokeSynth/tests. GetVoice's own auto-load uses the process base
+    /// directory (the game folder — a nonexistent drive under Wine), so voices MUST be
+    /// loaded explicitly from a candidate that exists.
+    /// </summary>
+    private string? ResolveVoicesDir()
+    {
+        var asmDir = Path.GetDirectoryName(typeof(KokoroSynthesizer).Assembly.Location);
+        var candidates = new[]
+        {
+            this.voicesDirFactory?.Invoke(),
+            string.IsNullOrEmpty(asmDir) ? null : Path.Combine(asmDir, "voices"),
+            Path.Combine(AppContext.BaseDirectory, "voices"),
+        };
+
+        return candidates.FirstOrDefault(candidate =>
+            !string.IsNullOrWhiteSpace(candidate)
+            && Directory.Exists(candidate)
+            && Directory.EnumerateFiles(candidate, "*.npy").Any());
+    }
 
     public bool IsReady => this.FindNotReadyReason() is null;
 
@@ -80,10 +101,9 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
                 return error;
             }
 
-            var modelsDir = this.modelsDirFactory();
-            return !File.Exists(ModelPathFor(modelsDir))
+            return !File.Exists(ModelPathFor(this.modelsDirFactory()))
                 ? "Kokoro model not downloaded — use the Models tab."
-                : !Directory.Exists(VoicesDirFor())
+                : this.ResolveVoicesDir() is null
                     ? "Kokoro voices missing — reinstall the plugin."
                     : null;
         }
@@ -186,16 +206,14 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
                 this.log?.Info($"Initializing Kokoro engine ({modelPath}, intra-op threads: {options.IntraOpNumThreads}).");
                 var engine = KokoroWavSynthesizer.LoadModel(modelPath, options);
 
-                // Voices ship with the package next to the plugin assembly; in-game the
-                // process base directory is the game folder, so resolve explicitly.
-                var voicesDir = VoicesDirFor();
-                if (Directory.Exists(voicesDir))
+                if (this.ResolveVoicesDir() is { } voicesDir)
                 {
                     KokoroVoiceManager.LoadVoicesFromPath(voicesDir);
+                    this.log?.Info($"Kokoro voices loaded from {voicesDir}.");
                 }
                 else
                 {
-                    this.log?.Warn($"Kokoro voices directory missing: {voicesDir}.");
+                    this.log?.Warn("Kokoro voices directory not found; synthesis will fail until the plugin is reinstalled.");
                 }
 
                 this.engine = engine;

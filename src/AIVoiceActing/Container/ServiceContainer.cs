@@ -46,6 +46,7 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<bool>? useFp32LanguageModelFactory;
     private readonly Func<string>? selectedEngineFactory;
     private readonly Func<int>? cpuThreadsFactory;
+    private readonly Func<string?>? kokoroVoicesDirFactory;
     private readonly Func<IEmotionDirector?>? llmDirectorFactory;
     private readonly Func<bool>? nameNpcWithSayFactory;
     private readonly Func<bool>? disallowMultipleSayFactory;
@@ -122,6 +123,7 @@ public sealed class ServiceContainer : IDisposable
         Func<bool>? useFp32LanguageModelFactory = null,
         Func<string>? selectedEngineFactory = null,
         Func<int>? cpuThreadsFactory = null,
+        Func<string?>? kokoroVoicesDirFactory = null,
         Func<IEmotionDirector?>? llmDirectorFactory = null,
         Func<bool>? cutsceneActiveFactory = null,
         Func<bool>? talkVisibleFactory = null,
@@ -159,6 +161,7 @@ public sealed class ServiceContainer : IDisposable
         this.useFp32LanguageModelFactory = useFp32LanguageModelFactory;
         this.selectedEngineFactory = selectedEngineFactory;
         this.cpuThreadsFactory = cpuThreadsFactory;
+        this.kokoroVoicesDirFactory = kokoroVoicesDirFactory;
         this.llmDirectorFactory = llmDirectorFactory;
         this.talkVisibleFactory = talkVisibleFactory;
         this.useRaceVoicePresetsFactory = useRaceVoicePresetsFactory;
@@ -244,7 +247,8 @@ public sealed class ServiceContainer : IDisposable
                     new Infrastructure.Kokoro.KokoroSynthesizer(
                         () => this.ModelsDir,
                         () => Math.Max(1, threads ?? 4),
-                        this.LogSinkUnlocked()));
+                        this.LogSinkUnlocked(),
+                        voicesDirFactory: this.kokoroVoicesDirFactory));
             }
         }
     }
