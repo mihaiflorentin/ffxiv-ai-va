@@ -347,11 +347,17 @@ public sealed class ConfigurationWindow : Window
                     : ModelsTabModel.StatusLabel(row);
                 ImGui.TextUnformatted(status);
                 ImGui.TableNextColumn();
-                if (row.Optional
-                    && Controls.Button(
-                        "Download",
-                        ModelsTabModel.CanDownload(anyDownload, row),
-                        anyDownload ? "A download is already in progress." : null))
+                if (row.Downloaded)
+                {
+                    if (Controls.Button("Remove", !anyDownload, anyDownload ? "A download is in progress." : null))
+                    {
+                        this.modelStore().Remove(asset.FileName);
+                    }
+                }
+                else if (Controls.Button(
+                    "Download",
+                    ModelsTabModel.CanDownload(anyDownload, row),
+                    anyDownload ? "A download is already in progress." : null))
                 {
                     this.StartDownloads([asset]);
                 }

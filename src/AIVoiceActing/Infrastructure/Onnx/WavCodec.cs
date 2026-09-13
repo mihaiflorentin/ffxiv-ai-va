@@ -1,16 +1,16 @@
 namespace AIVoiceActing.Infrastructure.Onnx;
 
-/// <summary>
-/// Minimal RIFF WAV codec (own implementation, no NAudio): 16-bit PCM mono @ 24 kHz only —
-/// the Chatterbox reference clips and rendered output contract. Write produces the canonical
-/// 44-byte header. Scaling: int16 sample / 32768 on read, sample * 32768 clamped on write,
-/// so round-trips through the 1/32768 grid are exact.
+/// Minimal RIFF WAV codec (own implementation, no NAudio): 16-bit PCM or 32-bit IEEE
+/// float, mono @ 24 kHz only — the Chatterbox reference clips (the pinned HF default
+/// voice ships as float32) and the rendered output contract. Write produces the canonical
+/// 44-byte PCM16 header. Scaling: int16 sample / 32768 on read, sample * 32768 clamped on
+/// write, so round-trips through the 1/32768 grid are exact; float samples pass through.
 /// </summary>
 public static class WavCodec
 {
     public const int SampleRate = 24000;
 
-    /// <summary>Reads a 16-bit PCM mono 24 kHz WAV into floats in [-1, 1].</summary>
+    /// <summary>Reads a 16-bit PCM or 32-bit IEEE float mono 24 kHz WAV into floats in [-1, 1].</summary>
     public static float[] ReadMono24k(string path)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -60,14 +60,15 @@ public static class WavCodec
             }
         }
 
-        if (format is not 1)
+        switch (format, bits)
         {
-            throw new InvalidDataException($"{path}: expected PCM format 1, got {format?.ToString() ?? "none"}.");
-        }
-
-        if (bits is not 16)
-        {
-            throw new InvalidDataException($"{path}: expected 16-bit PCM, got {bits?.ToString() ?? "unknown"}-bit.");
+            case (1, 16):
+            case (3, 32):
+                break;
+            default:
+                throw new InvalidDataException(
+                    $"{path}: expected 16-bit PCM (format 1) or 32-bit IEEE float (format 3), " +
+                    $"got {bits?.ToString() ?? "unknown"}-bit format {format?.ToString() ?? "none"}.");
         }
 
         if (channels is not 1)
@@ -83,6 +84,17 @@ public static class WavCodec
         if (data is null || data.Length == 0)
         {
             throw new InvalidDataException($"{path}: no audio data chunk.");
+        }
+
+        if (format == 3)
+        {
+            var floats = new float[data.Length / 4];
+            for (var i = 0; i < floats.Length; i++)
+            {
+                floats[i] = BitConverter.ToSingle(data, i * 4);
+            }
+
+            return floats;
         }
 
         var samples = new float[data.Length / 2];

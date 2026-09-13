@@ -25,4 +25,7 @@ public interface IModelStore
 
     /// <summary>Required assets not yet downloaded (optionals excluded).</summary>
     IReadOnlyList<ModelAsset> Missing();
+
+    /// <summary>Deletes a downloaded asset (and any stale .part twin). True when a file was removed.</summary>
+    bool Remove(string assetName);
 }

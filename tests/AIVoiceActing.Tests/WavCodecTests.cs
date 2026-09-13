@@ -52,7 +52,23 @@ public sealed class WavCodecTests
     public void Read_RejectsStereo() => RejectsCustom(rate: 24000, channels: 2, bits: 16);
 
     [Fact]
-    public void Read_RejectsNonPcm() => RejectsCustom(rate: 24000, channels: 1, bits: 16, format: 3);
+    public void Read_AcceptsFloat32()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"aiva-wav-{Guid.NewGuid():N}.wav");
+        try
+        {
+            WriteFloat32(path, [0.25f, -0.5f, 1f]);
+            Assert.Equal([0.25f, -0.5f, 1f], WavCodec.ReadMono24k(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Read_Rejects24BitPcm() =>
+        RejectsCustom(rate: 24000, channels: 1, bits: 24, expectMessage: "expected 16-bit PCM");
 
     private static void RejectsCustom(int rate, int channels, int bits, short format = 1, string? expectMessage = null)
     {
@@ -90,5 +106,28 @@ public sealed class WavCodecTests
         writer.Write(4);
         writer.Write((short)0);
         writer.Write((short)0);
+    }
+
+    private static void WriteFloat32(string path, float[] samples)
+    {
+        using var writer = new BinaryWriter(File.Create(path));
+        var dataSize = samples.Length * 4;
+        writer.Write("RIFF"u8);
+        writer.Write(36 + dataSize);
+        writer.Write("WAVE"u8);
+        writer.Write("fmt "u8);
+        writer.Write(16);
+        writer.Write((short)3); // IEEE float
+        writer.Write((short)1); // mono
+        writer.Write(24000);
+        writer.Write(24000 * 4); // byte rate
+        writer.Write((short)4); // block align
+        writer.Write((short)32); // bits per sample
+        writer.Write("data"u8);
+        writer.Write(dataSize);
+        foreach (var sample in samples)
+        {
+            writer.Write(sample);
+        }
     }
 }

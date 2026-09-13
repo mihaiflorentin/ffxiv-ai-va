@@ -47,6 +47,28 @@ public sealed class FileModelStoreTests
     }
 
     [Fact]
+    public void Remove_DeletesFileAndStalePartTwin()
+    {
+        var dir = NewDir();
+        var catalog = new List<ModelAsset> { new("a", "a.bin", 4) };
+        var store = new FileModelStore(dir, catalog);
+        File.WriteAllBytes(store.PathFor("a.bin"), [1, 2, 3, 4]);
+        File.WriteAllBytes(store.PathFor("a.bin.part"), [9]);
+
+        Assert.True(store.Remove("a.bin"));
+        Assert.False(store.IsDownloaded("a.bin"));
+        Assert.False(File.Exists(store.PathFor("a.bin")));
+        Assert.False(File.Exists(store.PathFor("a.bin.part")));
+    }
+
+    [Fact]
+    public void Remove_MissingAsset_ReturnsFalse()
+    {
+        var store = new FileModelStore(NewDir(), new List<ModelAsset>());
+        Assert.False(store.Remove("nope.bin"));
+    }
+
+    [Fact]
     public void Missing_UsesPinnedChatterboxCatalogByDefault()
     {
         var store = new FileModelStore(NewDir());

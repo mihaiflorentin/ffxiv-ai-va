@@ -42,6 +42,23 @@ public sealed class FileModelStore : IModelStore
     public IReadOnlyList<ModelAsset> Missing() =>
         this.catalog.Where(a => !a.Optional && !this.IsDownloaded(a.FileName)).ToArray();
 
+    public bool Remove(string assetName)
+    {
+        var path = this.PathFor(assetName);
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        File.Delete(path);
+        if (File.Exists(path + ".part"))
+        {
+            File.Delete(path + ".part");
+        }
+
+        return true;
+    }
+
     public string PathFor(string assetName) => Path.Combine(this.modelsDir, assetName);
 
     public static bool SizeWithinTolerance(long actual, long expected) =>
