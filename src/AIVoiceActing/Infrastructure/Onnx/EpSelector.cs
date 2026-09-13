@@ -40,6 +40,14 @@ public static class EpSelector
         string requested,
         Action<string>? log = null)
     {
+        // Leave half the logical cores for the game: ORT defaults to using them all,
+        // and CPU-fallback synthesis pinned the whole machine (the "framerate dropped"
+        // report). Half keeps synthesis fast enough while the game stays playable.
+        static SessionOptions BareOptions() => new()
+        {
+            IntraOpNumThreads = Math.Max(2, Environment.ProcessorCount / 2),
+        };
+
         var ep = requested.Trim().ToLowerInvariant();
         switch (ep)
         {
@@ -55,21 +63,21 @@ public static class EpSelector
                     options.Dispose();
                 }
 
-                return (new SessionOptions(), "cpu");
+                return (BareOptions(), "cpu");
 
             case "cpu":
-                return (new SessionOptions(), "cpu");
+                return (BareOptions(), "cpu");
 
             case "coreml":
                 if (!OperatingSystem.IsMacOS())
                 {
                     log?.Invoke("CoreML EP requires macOS; falling back to CPU.");
-                    return (new SessionOptions(), "cpu");
+                    return (BareOptions(), "cpu");
                 }
 
                 try
                 {
-                    var options = new SessionOptions();
+                    var options = BareOptions();
                     // CPU-only CoreML subsets: widest op coverage on the M1; the ANE-only
                     // variant can hard-fail session creation on unsupported TTS ops.
                     options.AppendExecutionProvider_CoreML(CoreMLFlags.COREML_FLAG_USE_CPU_ONLY);
@@ -78,7 +86,7 @@ public static class EpSelector
                 catch (Exception ex)
                 {
                     log?.Invoke($"CoreML EP unavailable ({ex.Message}); falling back to CPU.");
-                    return (new SessionOptions(), "cpu");
+                    return (BareOptions(), "cpu");
                 }
 
             case "directml":
@@ -86,14 +94,14 @@ public static class EpSelector
                 // throws and we fall back to CPU. The Windows plugin build registers DML here.
                 try
                 {
-                    var options = new SessionOptions();
+                    var options = BareOptions();
                     options.AppendExecutionProvider_DML(0);
                     return (options, "directml");
                 }
                 catch (Exception ex)
                 {
                     log?.Invoke($"DirectML EP unavailable ({ex.Message}); falling back to CPU.");
-                    return (new SessionOptions(), "cpu");
+                    return (BareOptions(), "cpu");
                 }
 
             default:

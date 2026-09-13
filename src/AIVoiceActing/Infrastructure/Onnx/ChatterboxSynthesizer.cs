@@ -144,12 +144,29 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             || FileModelStore.SizeWithinTolerance(new FileInfo(path).Length, expected);
     }
 
+    // Single-flight: one synthesis at a time. Concurrent CPU runs pin the machine and
+    // multiply KV-cache churn (the 40 GB incident); queued requests hold only their
+    // request object until the gate frees.
+    private readonly SemaphoreSlim synthesisGate = new(1, 1);
+
     public async Task<SynthesisResult> SynthesizeAsync(
         SynthesisRequest request,
         CancellationToken cancellationToken)
     {
-        return await Task.Run(() => this.SynthesizeCore(request, cancellationToken), cancellationToken)
-            .ConfigureAwait(false);
+        return await Task.Run(
+            async () =>
+            {
+                await this.synthesisGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    return this.SynthesizeCore(request, cancellationToken);
+                }
+                finally
+                {
+                    this.synthesisGate.Release();
+                }
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Renders paralinguistic tags as "[tag] " prompt prefixes before the text.</summary>
