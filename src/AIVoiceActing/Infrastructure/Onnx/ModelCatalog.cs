@@ -65,9 +65,10 @@ public static class ModelCatalog
     /// Chatterbox Turbo ONNX (ResembleAI official export): distilled Chatterbox with
     /// native paralinguistic tags ([laugh]/[chuckle]/[cough] inline in text). Same
     /// four-session architecture as the legacy export, but 24 layers (vs 30), arange
-    /// position_ids, no exaggeration input, and a GPT2 BPE tokenizer (3.5 MB). Dtype
-    /// mix follows the legacy Zen5 policy: LM fp32 (the q4/q8 LM MatMulNBits kernel
-    /// class crashed there), the rest int8-quantized.
+    /// position_ids, no exaggeration input, and a GPT2 BPE tokenizer (3.5 MB). ALL
+    /// sessions are fp32 (~3.2 GB): the int8-quantized kernels native-crashed inside
+    /// onnxruntime.dll in-game (same Zen5/AVX-512 kernel class that forced the fp32 LM
+    /// on legacy), while the fp32 set ran clean on the same hardware.
     /// </summary>
     public const string TurboGroup = "turbo";
     public const string TurboRepoBaseUrl = "https://huggingface.co/ResembleAI/chatterbox-turbo-ONNX/resolve/main/";
@@ -75,13 +76,13 @@ public static class ModelCatalog
     // external-data siblings MUST keep their exact remote names — the graphs reference
     // them by relative path and ONNX Runtime validates the name on load.
     public const string TurboSpeechEncoderFileName = "turbo-speech-encoder.onnx";
-    public const string TurboSpeechEncoderDataFileName = "speech_encoder_quantized.onnx_data";
+    public const string TurboSpeechEncoderDataFileName = "speech_encoder.onnx_data";
     public const string TurboEmbedTokensFileName = "turbo-embed-tokens.onnx";
-    public const string TurboEmbedTokensDataFileName = "embed_tokens_quantized.onnx_data";
+    public const string TurboEmbedTokensDataFileName = "embed_tokens.onnx_data";
     public const string TurboLanguageModelFileName = "turbo-language-model.onnx";
     public const string TurboLanguageModelDataFileName = "language_model.onnx_data";
     public const string TurboConditionalDecoderFileName = "turbo-conditional-decoder.onnx";
-    public const string TurboConditionalDecoderDataFileName = "conditional_decoder_quantized.onnx_data";
+    public const string TurboConditionalDecoderDataFileName = "conditional_decoder.onnx_data";
 
     /// <summary>True when the local file belongs to the Turbo engine (prefix or pinned data sibling).</summary>
     public static bool IsTurboAsset(string fileName) =>
@@ -171,20 +172,20 @@ public static class ModelCatalog
             "2a05f992e00af9b0bd3800a8d23e78d520dbd705284ed2eedb5f4bd29398fa3c",
             F5Group),
         new(
-            new ModelAsset("Turbo speech encoder", TurboSpeechEncoderFileName, 1205728),
-            "5b6f15870a43cf97892df86fc550a0ef4763522d527cde72b2a4316f80a34de4",
+            new ModelAsset("Turbo speech encoder (fp32)", TurboSpeechEncoderFileName, 1172072),
+            "4d66128037517dd51d370edc9b89ce36d42c75dcbd96e7216c7fb45dfae36045",
             TurboGroup),
         new(
-            new ModelAsset("Turbo speech encoder weights", TurboSpeechEncoderDataFileName, 354676576),
-            "d59861fb55e806fbeee731da9d4f8ff819fb5735de5d15e262d902594ee4dbb6",
+            new ModelAsset("Turbo speech encoder weights (fp32)", TurboSpeechEncoderDataFileName, 1044712832),
+            "c9915ff6c529e7bb80983b525255e6744d6c39c7e35b12720925ba99ed0d0a2f",
             TurboGroup),
         new(
-            new ModelAsset("Turbo text embedding", TurboEmbedTokensFileName, 2887),
-            "0efe1bc01c2c48a98425a74444fd9887924d887f922c2722a6ec961ebb9e1db6",
+            new ModelAsset("Turbo text embedding (fp32)", TurboEmbedTokensFileName, 2058),
+            "27796e8252f36b463b0421cafdcc35b5f1e670ab0d96c9182f37ac6571c2f4bc",
             TurboGroup),
         new(
-            new ModelAsset("Turbo text embedding weights", TurboEmbedTokensDataFileName, 67297376),
-            "9025d04c124899823124b1d7bb7069b1f535fb8a6c2d88f97520eb6fecced986",
+            new ModelAsset("Turbo text embedding weights (fp32)", TurboEmbedTokensDataFileName, 232812544),
+            "a1c37edc6ec6adb655351f02e958da297221b50211c2c01b69312cb6f008a293",
             TurboGroup),
         new(
             new ModelAsset("Turbo language model (fp32)", TurboLanguageModelFileName, 207266),
@@ -195,12 +196,12 @@ public static class ModelCatalog
             "67db106868f5354b2e425651f1791aef36ae3e6f00ac5e1d91e32c985cad6b39",
             TurboGroup),
         new(
-            new ModelAsset("Turbo conditional decoder", TurboConditionalDecoderFileName, 2202035),
-            "2af3b150196d9d559cd3c91e03da80eb27a466032369dc2b57ea729cddad3ebb",
+            new ModelAsset("Turbo conditional decoder (fp32)", TurboConditionalDecoderFileName, 1889468),
+            "8c43f3a1d0ddb1a86e226a244d7cda5396c67f5c6412789c23900c646e3ffc50",
             TurboGroup),
         new(
-            new ModelAsset("Turbo conditional decoder weights", TurboConditionalDecoderDataFileName, 326548688),
-            "4918ca09e05e41d2b4aa1ace6201d1cd911ffc58a42801002bab177d495cfe0a",
+            new ModelAsset("Turbo conditional decoder weights (fp32)", TurboConditionalDecoderDataFileName, 768593792),
+            "05f162a519f3e9abaf0b7337ae037f4af8b2b30c4455d39b2c61ed3a9b2b5476",
             TurboGroup),
         new(
             new ModelAsset("Turbo tokenizer", TurboTokenizerJsonFileName, 3562272),
@@ -229,13 +230,13 @@ public static class ModelCatalog
         F5TransformerFileName => F5RepoBaseUrl + "F5_Transformer.onnx",
         F5DecodeFileName => F5RepoBaseUrl + "F5_Decode.onnx",
         F5VocabFileName => F5RepoBaseUrl + "vocab.txt",
-        TurboSpeechEncoderFileName => TurboRepoBaseUrl + "onnx/speech_encoder_quantized.onnx",
+        TurboSpeechEncoderFileName => TurboRepoBaseUrl + "onnx/speech_encoder.onnx",
         TurboSpeechEncoderDataFileName => TurboRepoBaseUrl + "onnx/" + TurboSpeechEncoderDataFileName,
-        TurboEmbedTokensFileName => TurboRepoBaseUrl + "onnx/embed_tokens_quantized.onnx",
+        TurboEmbedTokensFileName => TurboRepoBaseUrl + "onnx/embed_tokens.onnx",
         TurboEmbedTokensDataFileName => TurboRepoBaseUrl + "onnx/" + TurboEmbedTokensDataFileName,
         TurboLanguageModelFileName => TurboRepoBaseUrl + "onnx/language_model.onnx",
         TurboLanguageModelDataFileName => TurboRepoBaseUrl + "onnx/" + TurboLanguageModelDataFileName,
-        TurboConditionalDecoderFileName => TurboRepoBaseUrl + "onnx/conditional_decoder_quantized.onnx",
+        TurboConditionalDecoderFileName => TurboRepoBaseUrl + "onnx/conditional_decoder.onnx",
         TurboConditionalDecoderDataFileName => TurboRepoBaseUrl + "onnx/" + TurboConditionalDecoderDataFileName,
         TurboTokenizerJsonFileName => TurboRepoBaseUrl + "tokenizer.json",
         TurboDefaultVoiceFileName => RepoBaseUrl + "default_voice.wav", // same clip as legacy chatterbox ships

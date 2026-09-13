@@ -366,7 +366,7 @@ public sealed class ConfigurationWindow : Window
         ("kokoro", "Kokoro — fast narration (default)",
             "One 310 MB model; the 50+ voice banks ship inside the plugin. Robotic but instant — good for chat."),
         ("turbo", "Chatterbox Turbo — quality + speed",
-            "Official ResembleAI export (~1.9 GB). Real voice acting with [laugh]/[chuckle] tags, about 6x slower than real time on CPU."),
+            "Official ResembleAI export, all-fp32 (~3.2 GB). Real voice acting with [laugh]/[chuckle] tags, about 6x slower than real time on CPU."),
         ("f5", "F5-TTS — voice-acting quality (slow)",
             "Reference-clip cloning (~1.4 GB). Best delivery, but about 10x slower than real time on CPU — opt-in showcase engine."),
         ("chatterbox", "Legacy chatterbox (cloning)",
