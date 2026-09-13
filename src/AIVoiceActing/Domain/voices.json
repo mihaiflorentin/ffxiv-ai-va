@@ -196,17 +196,6 @@
     "id": "am_eric"
    }
   ],
-  "japaneseMale": [
-   {
-    "id": "jm_kumo",
-    "pitch": 0.97
-   }
-  ],
-  "japaneseFemale": [
-   {
-    "id": "jf_alpha"
-   }
-  ],
   "hrothgarMale": [
    {
     "id": "am_fenrir",
@@ -231,15 +220,15 @@
   "4|Female": "poshFemale",
   "5|Male": "deepMale",
   "5|Female": "deepFemale",
-  "6|Male": "japaneseMale",
-  "6|Female": "japaneseFemale",
+  "6|Male": "poshMale",
+  "6|Female": "poshFemale",
   "7|Male": "hrothgarMale",
   "7|Female": "deepFemale",
   "8|Male": "italianMale",
   "8|Female": "italianFemale"
  },
  "disabledSets": {
-  "why": "Parked accent implementations, kept here on purpose. NEVER remove them: they are the casting work for accents the active bank cannot produce, and for the beast tribes / allied societies and NPC archetypes (Garlean, dragon). They are NOT shown in the UI because each needs a model id bound in overridenModelIds.txt ('<id> ; <Name> ; <setKey>') \u2014 the voice-resolution log now prints race/tribe/sex/model for every speaker, so talk to a tribe member, read the model id from the log, add the line, and that tribe is voiced. Enabling is a data change, never a rewrite.",
+  "why": "Parked accent implementations, kept here on purpose. NEVER remove them: they are the casting work for accents the active bank cannot produce, and for the beast tribes / allied societies and NPC archetypes (Garlean, dragon). They are NOT shown in the UI because each needs a model id bound in overridenModelIds.txt ('<id> ; <Name> ; <setKey>') \u2014 the voice-resolution log now prints race/tribe/sex/model for every speaker, so talk to a tribe member, read the model id from the log, add the line, and that tribe is voiced. Enabling is a data change, never a rewrite. NOTE: the jf_/jm_ (Japanese) and zf_/zm_ (Chinese) banks garble English on the v1.0 model \u2014 they are language voices, not English-accent voices \u2014 so any cast using them stays parked.",
   "sets": {
    "icelandicMale": [
     {
@@ -361,10 +350,10 @@
    ],
    "setKojin": [
     {
-     "id": "jf_gongitsune"
+     "id": "hm_omega"
     },
     {
-     "id": "jm_kumo",
+     "id": "pf_dora",
      "pitch": 0.95
     }
    ],
@@ -380,13 +369,13 @@
    ],
    "setNamazu": [
     {
-     "id": "jf_nezumi",
+     "id": "am_puck",
      "pitch": 1.25,
      "speed": 1.2
     },
     {
-     "id": "am_puck",
-     "pitch": 1.2,
+     "id": "af_sky",
+     "pitch": 1.25,
      "speed": 1.2
     }
    ],
@@ -509,6 +498,17 @@
     {
      "id": "af_river",
      "pitch": 0.9
+    }
+   ],
+   "japaneseMale": [
+    {
+     "id": "jm_kumo",
+     "pitch": 0.97
+    }
+   ],
+   "japaneseFemale": [
+    {
+     "id": "jf_alpha"
     }
    ]
   },
