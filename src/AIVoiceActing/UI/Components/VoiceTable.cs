@@ -46,7 +46,7 @@ public sealed class VoiceTable
 
     public required Func<bool> EngineReady { get; init; }
 
-    public required string EngineNotReadyReason { get; init; }
+    public required Func<string> EngineNotReadyReason { get; init; }
 
     /// <summary>Draws the override rows filtered from <paramref name="entries"/> plus the add form.</summary>
     public void Draw(
@@ -127,7 +127,7 @@ public sealed class VoiceTable
                 ImGui.TableNextColumn();
                 var test = this.EngineReady()
                     ? ImGui.SmallButton("▶")
-                    : Controls.Button("▶", false, this.EngineNotReadyReason);
+                    : Controls.Button("▶", false, this.EngineNotReadyReason());
                 if (test)
                 {
                     this.SpeakTest(profile);

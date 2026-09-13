@@ -50,6 +50,9 @@ public class Configuration
     public bool ReadFromBattleTalkAddon { get; set; } = true;
     public bool SkipVoicedBattleText { get; set; } = true;
 
+    // ---- Cutscenes ----
+    public bool ReadCutsceneSubtitles { get; set; } = true;
+
     // ---- Chat filters ----
     public bool SkipMessagesFromYou { get; set; }
     public bool OnlyMessagesFromYou { get; set; }

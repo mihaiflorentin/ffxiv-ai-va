@@ -111,7 +111,7 @@ public sealed class ConfigurationWindow : Window
         Remove = key => this.profiles.Remove(key),
         SpeakTest = profile => this.SpeakVoiceTest(profile),
         EngineReady = () => this.synthesizer.IsReady,
-        EngineNotReadyReason = ModelsTabModel.EngineNotReadyHint,
+        EngineNotReadyReason = () => this.EngineReason(),
     };
 
     private string[] VoiceOptions => this.voiceMap().DistinctVoiceIds();
@@ -208,6 +208,13 @@ public sealed class ConfigurationWindow : Window
             Controls.IndentedCheckbox(
                 "Skip BattleTalk the game voices (courtesy)", () => c.SkipVoicedBattleText, v => { c.SkipVoicedBattleText = v; save(); });
 
+            Controls.Section("Cutscenes");
+            Controls.Checkbox(
+                "Read cutscene subtitles",
+                "Speaks the caption lines of unvoiced cutscenes; the game's own voiced lines stay untouched.",
+                () => c.ReadCutsceneSubtitles,
+                v => { c.ReadCutsceneSubtitles = v; save(); });
+
             Controls.Section("Chat");
             Controls.Checkbox("Skip messages from you", () => c.SkipMessagesFromYou, v => { c.SkipMessagesFromYou = v; save(); });
             Controls.Checkbox("Only messages from you", () => c.OnlyMessagesFromYou, v => { c.OnlyMessagesFromYou = v; save(); });
@@ -238,7 +245,9 @@ public sealed class ConfigurationWindow : Window
         {
             var status = this.synthesizer.IsReady
                 ? "ready"
-                : $"models missing ({this.RequiredAssetCount()})";
+                : string.IsNullOrWhiteSpace(this.synthesizer.NotReadyReason)
+                    ? $"models missing ({this.RequiredAssetCount()})"
+                    : this.synthesizer.NotReadyReason;
             ImGui.TextUnformatted($"Voice engine: {status}");
             Controls.Combo(
                 "Execution provider",
@@ -264,6 +273,14 @@ public sealed class ConfigurationWindow : Window
     }
 
     private int RequiredAssetCount() => this.modelStore().Missing().Count;
+
+    /// <summary>Live not-ready reason for tooltips; falls back to the generic hint.</summary>
+    private string EngineReason() =>
+        this.synthesizer.IsReady
+            ? ModelsTabModel.EngineNotReadyHint
+            : string.IsNullOrWhiteSpace(this.synthesizer.NotReadyReason)
+                ? ModelsTabModel.EngineNotReadyHint
+                : this.synthesizer.NotReadyReason;
 
     // ---- Tab 2: Models ----
 
@@ -563,6 +580,7 @@ public sealed class ConfigurationWindow : Window
     private void DrawTestTab()
     {
         var ready = this.synthesizer.IsReady;
+        var reason = this.EngineReason();
 
         var text = this.test.Text;
         if (ImGui.InputTextMultiline("##test-text", ref text, 512, new Vector2(-1, 60)))
@@ -600,7 +618,7 @@ public sealed class ConfigurationWindow : Window
         var (myName, myWorld) = this.localPlayer() ?? default;
         var speaker = this.test.BuildSpeaker(this.test.UseMyCharacter ? myName : null, myWorld);
 
-        if (Controls.Button("Speak", ready, ModelsTabModel.EngineNotReadyHint))
+        if (Controls.Button("Speak", ready, reason))
         {
             // Rules path: a throwaway session id reads no history — exactly what the
             // rules table would produce in-game. The session is torn down when the line
@@ -612,7 +630,7 @@ public sealed class ConfigurationWindow : Window
         }
 
         ImGui.SameLine();
-        if (Controls.Button("Speak with context", ready, ModelsTabModel.EngineNotReadyHint))
+        if (Controls.Button("Speak with context", ready, reason))
         {
             // Director path: the shared window the cutscene pipeline feeds. The handler
             // appends the line AFTER planning, so the director never sees it twice.
@@ -624,7 +642,7 @@ public sealed class ConfigurationWindow : Window
         if (Controls.Button(
                 "Speak forced",
                 ready && this.test.EmotionForced,
-                this.test.EmotionForced ? ModelsTabModel.EngineNotReadyHint : "Pick a fixed emotion first."))
+                this.test.EmotionForced ? reason : "Pick a fixed emotion first."))
         {
             var voice = this.ResolveVoice(speaker);
             this.SpeakFireAndForget(this.SpeakDirect(speaker, this.test.BuildDirectRequest(voice, bias: 0f)));

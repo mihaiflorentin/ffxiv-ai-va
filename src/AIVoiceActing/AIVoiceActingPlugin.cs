@@ -86,6 +86,13 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
 
     public AIVoiceActingPlugin()
     {
+        // Bind the flat natives before anything can P/Invoke them: deps.json's
+        // runtimes/win-x64/native paths don't exist in the packed layout, so bare-name
+        // binding dies with 0x8007007E (seen in-game on the hf_tokenizers load).
+        NativeLibraryPreloader.Preload(
+            Path.GetDirectoryName(typeof(AIVoiceActingPlugin).Assembly.Location)!,
+            NativeLibraryPreloader.EngineNatives,
+            new DalamudLogSink(PluginLog));
         var configDir = PluginInterface.ConfigDirectory.FullName;
         this.pluginConfig = PluginInterface.GetPluginConfig() as PluginConfiguration
             ?? new PluginConfiguration();
@@ -159,8 +166,8 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             this.services.PipelineSink);
         this.subtitleSource = new CutsceneSubtitleSource(
             Framework, GameGui, this.services.SpeakerDirectory, conditions, PluginLog,
-            // Flipped on only after in-game verification of the subtitle addon name.
-            enabled: () => false,
+            // Verified addon name ("TalkSubtitle"); gated alongside the master toggle.
+            enabled: () => config.Enabled && config.ReadCutsceneSubtitles,
             this.services.PipelineSink);
         this.voiceLineDetector = new VoiceLineDetector(SigScanner, GameInteropProvider, PluginLog);
 

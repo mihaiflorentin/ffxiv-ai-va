@@ -9,19 +9,17 @@ using FFXIVClientStructs.FFXIV.Component.GUI;
 
 /// <summary>
 /// Cutscene-subtitle capture (new — TextToTalk never read subtitles). The subtitle surface
-/// is NOT a verified addon: the addon name below is a single named constant
-/// (best current guess — FFXIVClientStructs ships an AddonTalkSubtitle struct, so the
-/// "_TalkSubtitle" unit base is the likely surface) to flip during
-/// in-game verification, and every node read is null-tolerant and fails silent (one debug
-/// log) so a wrong name costs nothing. The fallback already flows: cutscene NPC dialogue
-/// reaches us through the chat NPC-dialogue channel via <see cref="ChatDialogueSource"/>.
+/// is the "TalkSubtitle" addon (name verified against FFXIVClientStructs' addon list and
+/// Echoglossian's cutscene reader). Every node read is null-tolerant and fails silent
+/// (one debug log). The fallback already flows: cutscene NPC dialogue reaches us through
+/// the chat NPC-dialogue channel via <see cref="ChatDialogueSource"/>.
 /// Text collection walks the addon's visible AtkTextNode tree (depth-limited); the speaker
 /// is not encoded in that surface, so lines resolve to an anonymous speaker.
 /// </summary>
 public sealed class CutsceneSubtitleSource : IDialogueSource, IDisposable
 {
-    /// <summary>UNVERIFIED — flip during in-game verification (see class doc).</summary>
-    private const string SubtitleAddonName = "_TalkSubtitle";
+    /// <summary>Verified unit name (FFXIVClientStructs addon list — no leading underscore).</summary>
+    private const string SubtitleAddonName = "TalkSubtitle";
 
     private const int MaxTextNodes = 8;
     private const int MaxWalkDepth = 12;

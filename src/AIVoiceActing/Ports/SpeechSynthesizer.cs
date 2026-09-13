@@ -26,5 +26,8 @@ public interface ISpeechSynthesizer
     /// <summary>True when every required model asset is downloaded and the engine can synthesize.</summary>
     bool IsReady { get; }
 
+    /// <summary>Human-readable reason <see cref="IsReady"/> is false; empty when ready.</summary>
+    string NotReadyReason { get; }
+
     Task<SynthesisResult> SynthesizeAsync(SynthesisRequest request, CancellationToken cancellationToken);
 }

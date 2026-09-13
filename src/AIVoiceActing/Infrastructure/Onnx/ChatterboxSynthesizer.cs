@@ -42,6 +42,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     private readonly object tokenizerGate = new();
     private ITextTokenizer? tokenizer;
     private bool tokenizerBroken;
+    private string? tokenizerFailure;
 
     /// <param name="modelsDir">Directory with the downloaded catalog assets.</param>
     /// <param name="voicePathResolver">
@@ -74,50 +75,55 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     /// <summary>Execution provider the sessions actually run on; populated on first use.</summary>
     public string EffectiveEp => this.engine.IsValueCreated ? this.engine.Value.Ep : "not initialized";
 
-    public bool IsReady
+    public bool IsReady => this.FindNotReadyReason() is null;
+
+    /// <summary>Human-readable reason IsReady is false; empty when ready.</summary>
+    public string NotReadyReason => this.FindNotReadyReason() ?? string.Empty;
+
+    /// <summary>First blocking reason for readiness, or null when the engine can synthesize.</summary>
+    private string? FindNotReadyReason()
     {
-        get
+        // The LM actually in use: an override (e.g. the fp32 fallback) replaces the
+        // catalog's q4 pair, so readiness must check that one, not the ignored default.
+        var lmInUse = this.languageModelOverride ?? ModelCatalog.LanguageModelQ4FileName;
+        foreach (var asset in ModelCatalog.ChatterboxRequiredAssets)
         {
-            // The LM actually in use: an override (e.g. the fp32 fallback) replaces the
-            // catalog's q4 pair, so readiness must check that one, not the ignored default.
-            var lmInUse = this.languageModelOverride ?? ModelCatalog.LanguageModelQ4FileName;
-            foreach (var asset in ModelCatalog.ChatterboxRequiredAssets)
+            if (this.languageModelOverride is not null
+                && (asset.FileName == ModelCatalog.LanguageModelQ4FileName
+                    || asset.FileName == ModelCatalog.LanguageModelQ4DataFileName))
             {
-                if (this.languageModelOverride is not null
-                    && (asset.FileName == ModelCatalog.LanguageModelQ4FileName
-                        || asset.FileName == ModelCatalog.LanguageModelQ4DataFileName))
-                {
-                    continue;
-                }
-
-                // The default voice is existence-checked below via the resolver: the bundled
-                // clip is a PCM16 conversion of the pinned HF download, so its byte size
-                // legitimately differs from the catalog pin (any playable wav is fine).
-                if (asset.FileName == ModelCatalog.DefaultVoiceFileName)
-                {
-                    continue;
-                }
-
-                if (!this.AssetPresent(asset.FileName, asset.SizeBytes))
-                {
-                    return false;
-                }
+                continue;
             }
 
-            if (!this.AssetPresent(lmInUse, null))
+            // The default voice is existence-checked below via the resolver: the bundled
+            // clip is a PCM16 conversion of the pinned HF download, so its byte size
+            // legitimately differs from the catalog pin (any playable wav is fine).
+            if (asset.FileName == ModelCatalog.DefaultVoiceFileName)
             {
-                return false;
+                continue;
             }
 
-            // The default reference voice must exist on disk — no clip, no synthesis.
-            var voicePath = this.voicePathResolver("default");
-            if (voicePath is null || !File.Exists(voicePath))
+            if (!this.AssetPresent(asset.FileName, asset.SizeBytes))
             {
-                return false;
+                return $"Missing model {asset.FileName} — Models tab → Download all missing.";
             }
-
-            return this.EnsureTokenizer() is not null;
         }
+
+        if (!this.AssetPresent(lmInUse, null))
+        {
+            return $"Missing model {lmInUse} — Models tab → Download all missing.";
+        }
+
+        // The default reference voice must exist on disk — no clip, no synthesis.
+        var voicePath = this.voicePathResolver("default");
+        if (voicePath is null || !File.Exists(voicePath))
+        {
+            return "Missing default reference voice — Models tab → Download all missing.";
+        }
+
+        return this.EnsureTokenizer() is null
+            ? $"Tokenizer failed to load: {this.tokenizerFailure ?? "unknown error"}."
+            : null;
     }
 
     // Model-presence concern split (review round 3): FileModelStore.IsDownloaded is the
@@ -376,6 +382,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
                 // Native tokenizer load failures stay non-fatal for IsReady consumers;
                 // synthesis surfaces a clean error instead of crashing the plugin.
                 this.tokenizerBroken = true;
+                this.tokenizerFailure = ex.Message;
                 this.log?.Warn($"Tokenizer failed to load: {ex.Message}");
             }
 

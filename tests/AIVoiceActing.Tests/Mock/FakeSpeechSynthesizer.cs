@@ -11,6 +11,7 @@ using AIVoiceActing.Ports;
 public sealed class FakeSpeechSynthesizer : ISpeechSynthesizer
 {
     public bool IsReady { get; set; } = true;
+    public string NotReadyReason { get; set; } = "";
 
     public Exception? Throw { get; set; }
 

@@ -30,6 +30,7 @@
         "resolved": "1.24.4",
         "contentHash": "e5jsEo0HcCKDMkuRsMSievKoMv10Odv4MGmxbCin8SEm4Pto1qTpwti47xRwMtk9I/zVvfAiFIWquOq/0+22DA==",
         "dependencies": {
+          "System.Memory": "4.5.5",
           "System.Numerics.Tensors": "9.0.0"
         }
       },
@@ -57,7 +58,10 @@
         "type": "Direct",
         "requested": "[1.4.1, )",
         "resolved": "1.4.1",
-        "contentHash": "uOAv3ttXMOv8OhyxdTxCCLN52EsjERhdY9jwGbncSzTbZvGzEDPQDqLkZpgD3RslwRVsv7YTXgScrEjsHnaa1w=="
+        "contentHash": "uOAv3ttXMOv8OhyxdTxCCLN52EsjERhdY9jwGbncSzTbZvGzEDPQDqLkZpgD3RslwRVsv7YTXgScrEjsHnaa1w==",
+        "dependencies": {
+          "System.Runtime.CompilerServices.Unsafe": "6.1.2"
+        }
       },
       "Tokenizers.DotNet.runtime.osx-arm64": {
         "type": "Direct",
@@ -121,10 +125,20 @@
           "NAudio.Core": "2.4.0"
         }
       },
+      "System.Memory": {
+        "type": "Transitive",
+        "resolved": "4.5.5",
+        "contentHash": "XIWiDvKPXaTveaB7HVganDlOCRoj03l+jrwNvcge/t8vhGYKvqV+dMv6G4SAX2NoNmN0wZfVPTAlFwZcZvVOUw=="
+      },
       "System.Numerics.Tensors": {
         "type": "Transitive",
         "resolved": "9.0.0",
         "contentHash": "hyJB4UlpAi19Xr9AXzu2NuagKC4lPfHObNMEAA0HmqFz2rX7wKgzeYzO/jM/eBHDhnUGFFEjk5cOoJaxqg5J4A=="
+      },
+      "System.Runtime.CompilerServices.Unsafe": {
+        "type": "Transitive",
+        "resolved": "6.1.2",
+        "contentHash": "2hBr6zdbIBTDE3EhK7NSVNdX58uTK6iHW/P/Axmm9sl1xoGSLqDvMtpecn226TNwHByFokYwJmt/aQQNlO5CRw=="
       }
     }
   }

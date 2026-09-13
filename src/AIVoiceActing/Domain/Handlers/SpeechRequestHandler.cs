@@ -98,7 +98,7 @@ public sealed class SpeechRequestHandler
 
         if (!this.synthesizer.IsReady)
         {
-            this.log?.Warn("Speech engine not ready (models missing?); skipping line.");
+            this.log?.Warn($"Speech engine not ready ({this.synthesizer.NotReadyReason}); skipping line.");
             return;
         }
 

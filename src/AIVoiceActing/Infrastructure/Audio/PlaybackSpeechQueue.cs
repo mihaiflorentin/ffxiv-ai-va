@@ -48,18 +48,22 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
     public void CancelCurrent() => this.sink.Cancel();
 
     /// <summary>
-    /// Clears all queued items, including any current playback. Bound to the channel
-    /// backlog: an item the worker has already dequeued may still complete its play —
-    /// the in-flight stop comes from <see cref="IAudioSink.Cancel"/>, and the production
-    /// caller of Clear during teardown is <see cref="Dispose"/>, which then stops the
-    /// worker (bounded 2 s wait).
+    /// Clears all queued items, including any current playback. The backlog is drained
+    /// BEFORE cancelling: the worker is blocked inside the in-flight play at that point,
+    /// so it cannot race ahead and dequeue an item the caller asked to drop. (Cancel-first
+    /// left that window open — the woken worker could pull the next item mid-Clear.) An
+    /// item the worker has ALREADY dequeued may still complete its play — the in-flight
+    /// stop comes from <see cref="IAudioSink.Cancel"/> — and the production caller of
+    /// Clear during teardown is <see cref="Dispose"/>, which then stops the worker
+    /// (bounded 2 s wait).
     /// </summary>
     public void Clear()
     {
-        this.sink.Cancel();
         while (this.channel.Reader.TryRead(out _))
         {
         }
+
+        this.sink.Cancel();
     }
 
     private async Task PlayLoopAsync()
