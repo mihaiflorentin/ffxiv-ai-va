@@ -13,7 +13,11 @@ public sealed class SpeechRequestHandler
 {
     private readonly ILexicon lexicon;
     private readonly DialogueSessionFactory dialogueSessions;
-    private readonly ISpeechSynthesizer synthesizer;
+    private readonly Func<ISpeechSynthesizer> synthesizer;
+
+    /// <summary>Live synthesizer for the selected engine (re-resolved every call, so
+    /// engine switches apply to in-flight pipelines without a plugin reload).</summary>
+    private ISpeechSynthesizer Synth => this.synthesizer();
     private readonly ISpeechQueue queue;
     private readonly Func<SpeakerIdentity, VoiceProfile?> profileLookup;
     private readonly Func<IEmotionDirector?> directorFactory;
@@ -25,7 +29,7 @@ public sealed class SpeechRequestHandler
     public SpeechRequestHandler(
         ILexicon lexicon,
         DialogueSessionFactory dialogueSessions,
-        ISpeechSynthesizer synthesizer,
+        Func<ISpeechSynthesizer> synthesizer,
         ISpeechQueue queue,
         Func<SpeakerIdentity, VoiceProfile?> profileLookup,
         Func<IEmotionDirector?> directorFactory,
@@ -99,9 +103,9 @@ public sealed class SpeechRequestHandler
             plan = plan with { Tags = MergeTags(plan.Tags, styleTags) };
         }
 
-        if (!this.synthesizer.IsReady)
+        if (!this.Synth.IsReady)
         {
-            this.log?.Warn($"Speech engine not ready ({this.synthesizer.NotReadyReason}); skipping line.");
+            this.log?.Warn($"Speech engine not ready ({this.Synth.NotReadyReason}); skipping line.");
             return;
         }
 
@@ -115,7 +119,7 @@ public sealed class SpeechRequestHandler
         SynthesisResult audio;
         try
         {
-            audio = await this.synthesizer.SynthesizeAsync(request, cancellationToken);
+            audio = await this.Synth.SynthesizeAsync(request, cancellationToken);
         }
         catch (OperationCanceledException)
         {

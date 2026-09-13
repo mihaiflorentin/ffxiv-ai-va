@@ -46,7 +46,7 @@ public sealed class SpeechPipelineTests
             var handler = new SpeechRequestHandler(
                 lexicon: new FakeLexicon(),
                 dialogueSessions: this.Sessions,
-                synthesizer: new FakeSpeechSynthesizer(),
+                synthesizer: () => new FakeSpeechSynthesizer(),
                 queue: this.Queue,
                 profileLookup: speaker => new VoiceProfile(
                     speaker.Key, "default", 0f, DateTimeOffset.UtcNow, false),

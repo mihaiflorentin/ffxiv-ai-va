@@ -394,7 +394,7 @@ public sealed class ServiceContainer : IDisposable
                 return this.speechHandler ??= new SpeechRequestHandler(
                     lexicon: this.Lexicon,
                     dialogueSessions: this.DialogueSessions,
-                    synthesizer: this.SpeechSynthesizer,
+                    synthesizer: () => this.SpeechSynthesizer,
                     queue: this.SpeechQueue,
                     profileLookup: this.ResolveProfileUnlocked,
                     directorFactory: () => this.EmotionDirector,

@@ -55,7 +55,7 @@ public sealed class SpeechRequestHandlerTests
             var handler = new SpeechRequestHandler(
                 lexicon: lexicon,
                 dialogueSessions: factory,
-                synthesizer: synthesizer,
+                synthesizer: () => synthesizer,
                 queue: queue,
                 profileLookup: profileLookup
                     ?? new Func<SpeakerIdentity, VoiceProfile?>(_ => profile ?? Profile(bias)),

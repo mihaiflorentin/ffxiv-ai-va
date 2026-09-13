@@ -23,10 +23,11 @@ public sealed class DefaultExaggerationTests
     {
         synthesizer = new FakeSpeechSynthesizer();
         queue = new FakeSpeechQueue();
+        var synthesizerLocal = synthesizer;
         return new SpeechRequestHandler(
             lexicon: new FakeLexicon(),
             dialogueSessions: new DialogueSessionFactory(),
-            synthesizer: synthesizer,
+            synthesizer: () => synthesizerLocal,
             queue: queue,
             profileLookup: _ => new VoiceProfile(
                 Speaker.Key, "default", 0f, DateTimeOffset.UnixEpoch, Custom: false),
