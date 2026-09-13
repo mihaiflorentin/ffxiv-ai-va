@@ -32,6 +32,8 @@ public sealed class CutsceneSubtitleSource : IDialogueSource, IDisposable
     private readonly IGameConditions conditions;
     private readonly IPluginLog log;
     private readonly PipelineSource<TextEmitEvent> sink;
+
+    private readonly SubtitleChangeTracker tracker = new();
     private IFramework.OnUpdateDelegate? updateHandler;
     private bool loggedMissingAddon;
 
@@ -54,8 +56,6 @@ public sealed class CutsceneSubtitleSource : IDialogueSource, IDisposable
     }
 
     private IFramework Framework { get; }
-
-    public event Action<DialogueLine>? LineCaptured;
 
     public void Start()
     {
@@ -81,10 +81,15 @@ public sealed class CutsceneSubtitleSource : IDialogueSource, IDisposable
             Race: null, Tribe: null, Sex: null);
         var identity = this.directory.Resolve(hint);
 
+        // Change detection before emitting: the subtitle stays visible for many frames,
+        // so the same (speaker, text) pair must not re-enter the pipeline per tick.
+        if (!this.tracker.ShouldEmit(identity.DisplayName, text))
+        {
+            return;
+        }
+
         this.sink.Emit(new TextEmitEvent(
             TextSource.CutsceneSubtitle, identity.DisplayName, text, text, hint, ChatType: 0));
-        this.LineCaptured?.Invoke(new DialogueLine(
-            identity.Key, identity.DisplayName, text, DateTimeOffset.UtcNow));
     }
 
     private string? ReadSubtitleText()
