@@ -43,6 +43,7 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<bool>? nameWithSayEnabledFactory;
     private readonly Func<float>? defaultExaggerationFactory;
     private readonly Func<string>? selectedEpFactory;
+    private readonly Func<bool>? useFp32LanguageModelFactory;
     private readonly Func<IEmotionDirector?>? llmDirectorFactory;
     private readonly Func<bool>? nameNpcWithSayFactory;
     private readonly Func<bool>? disallowMultipleSayFactory;
@@ -116,6 +117,7 @@ public sealed class ServiceContainer : IDisposable
         Func<FirstOrLastName>? onlySayFirstOrLastNameFactory = null,
         Func<float>? defaultExaggerationFactory = null,
         Func<string>? selectedEpFactory = null,
+        Func<bool>? useFp32LanguageModelFactory = null,
         Func<IEmotionDirector?>? llmDirectorFactory = null,
         Func<bool>? cutsceneActiveFactory = null,
         Func<bool>? talkVisibleFactory = null,
@@ -150,6 +152,7 @@ public sealed class ServiceContainer : IDisposable
         this.defaultExaggerationFactory = defaultExaggerationFactory;
         this.cutsceneActiveFactory = cutsceneActiveFactory;
         this.selectedEpFactory = selectedEpFactory;
+        this.useFp32LanguageModelFactory = useFp32LanguageModelFactory;
         this.llmDirectorFactory = llmDirectorFactory;
         this.talkVisibleFactory = talkVisibleFactory;
         this.useRaceVoicePresetsFactory = useRaceVoicePresetsFactory;
@@ -211,6 +214,11 @@ public sealed class ServiceContainer : IDisposable
                             ? Path.Combine(this.ModelsDir, "default_voice.wav")
                             : Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav"),
                         executionProvider: this.selectedEpFactory?.Invoke() ?? "auto",
+                        // fp32 override replaces the q4 LM session entirely (int4 kernels
+                        // and their Zen5/AVX-512 native crashes go with it).
+                        languageModelOverride: this.useFp32LanguageModelFactory?.Invoke() == true
+                            ? Infrastructure.Onnx.ModelCatalog.LanguageModelFp32FileName
+                            : null,
                         log: this.LogSinkUnlocked()));
             }
         }

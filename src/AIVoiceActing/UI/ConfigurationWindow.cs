@@ -254,7 +254,11 @@ public sealed class ConfigurationWindow : Window
                 ExecutionProviders,
                 () => c.SelectedEp,
                 v => { c.SelectedEp = v; save(); });
-            Controls.SliderFraction("Default exaggeration", () => c.DefaultExaggeration, v => c.DefaultExaggeration = v, save);
+            Controls.Checkbox(
+                "Use fp32 language model (stability)",
+                "Avoids q4 int4 kernels that hard-crash on some CPUs (Zen 5 + AVX-512) and the q4 static-on-short-lines failure. Download the two optional fp32 rows on the Models tab first (~2 GB).",
+                () => c.UseFp32LanguageModel,
+                v => { c.UseFp32LanguageModel = v; save(); });
             Controls.Checkbox(
                 "Use LLM emotion director (context-aware delivery)",
                 "Needs the optional director model; the free rules table runs otherwise.",

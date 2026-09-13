@@ -97,6 +97,14 @@ public class Configuration
     /// <summary>Gates the (future) LLM-backed emotion director; the rules table runs otherwise.</summary>
     public bool DirectorEnabled { get; set; }
 
+    /// <summary>
+    /// Runs the full-precision language model instead of the q4 export: avoids the int4
+    /// MatMulNBits kernels that hard-crash on some CPUs (Zen 5 + AVX-512) and the q4
+    /// short-prompt degeneration that renders as static. Needs the optional fp32 model
+    /// rows downloaded on the Models tab (~2 GB).
+    /// </summary>
+    public bool UseFp32LanguageModel { get; set; }
+
     // ---- Triggers / exclusions (an exclusion wins) ----
     public IList<TriggerSpec> Triggers { get; set; } = new List<TriggerSpec>();
     public IList<TriggerSpec> Exclusions { get; set; } = new List<TriggerSpec>();

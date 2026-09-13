@@ -147,6 +147,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             talkVisibleFactory: () => this.talkPoller.IsVisible(),
             defaultExaggerationFactory: () => config.DefaultExaggeration,
             selectedEpFactory: () => config.SelectedEp,
+            useFp32LanguageModelFactory: () => config.UseFp32LanguageModel,
             llmDirectorFactory: () => config.DirectorEnabled ? this.TryGetLlmDirector() : null,
             useRaceVoicePresetsFactory: () => config.UseRaceVoicePresets,
             adHocStyleTagsFactory: () => config.AdHocStyleTagsEnabled,
