@@ -32,11 +32,35 @@ public static class NativeLibraryPreloader
     private static readonly List<nint> Loaded = [];
 
     /// <summary>
-    /// Best-effort preload: logs and continues on failure so the engine's own error
-    /// surfaces later with its real message instead of a missing-file cascade.
+    /// Resolves the plugin directory from an assembly location. Dalamud loads plugin
+    /// assemblies with an empty <see cref="System.Reflection.Assembly.Location"/>, so
+    /// callers must pass <c>PluginInterface.AssemblyLocation</c>; this tolerates a null
+    /// or empty input and returns null instead of throwing.
     /// </summary>
-    public static void Preload(string directory, IReadOnlyCollection<string> fileNames, ILogSink? log = null)
+    public static string? ResolvePluginDirectory(string? location)
     {
+        if (string.IsNullOrWhiteSpace(location))
+        {
+            return null;
+        }
+
+        return File.Exists(location) ? Path.GetDirectoryName(location) : location;
+    }
+
+    /// <summary>
+    /// Best-effort preload: null-tolerant, logs and continues on failure so the engine's
+    /// own error surfaces later with its real message instead of a missing-file cascade.
+    /// Must never throw — callers run it from plugin construction, where an exception
+    /// fails the whole plugin load ("Load failed" in the installer).
+    /// </summary>
+    public static void Preload(string? directory, IReadOnlyCollection<string> fileNames, ILogSink? log = null)
+    {
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            log?.Warn("Native preload skipped: plugin directory unknown.");
+            return;
+        }
+
         foreach (var fileName in fileNames)
         {
             var fullPath = Path.Combine(directory, fileName);

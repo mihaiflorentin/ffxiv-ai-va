@@ -89,10 +89,20 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         // Bind the flat natives before anything can P/Invoke them: deps.json's
         // runtimes/win-x64/native paths don't exist in the packed layout, so bare-name
         // binding dies with 0x8007007E (seen in-game on the hf_tokenizers load).
-        NativeLibraryPreloader.Preload(
-            Path.GetDirectoryName(typeof(AIVoiceActingPlugin).Assembly.Location)!,
-            NativeLibraryPreloader.EngineNatives,
-            new DalamudLogSink(PluginLog));
+        // Assembly.Location is EMPTY under Dalamud's load context (0.0.3 shipped a
+        // ArgumentNullException from here) — use the interface's path, and this must
+        // never throw: a ctor exception fails the whole plugin load.
+        try
+        {
+            NativeLibraryPreloader.Preload(
+                NativeLibraryPreloader.ResolvePluginDirectory(PluginInterface.AssemblyLocation?.FullName),
+                NativeLibraryPreloader.EngineNatives,
+                new DalamudLogSink(PluginLog));
+        }
+        catch (Exception ex)
+        {
+            PluginLog.Warning($"Native preload failed (continuing): {ex.Message}");
+        }
         var configDir = PluginInterface.ConfigDirectory.FullName;
         this.pluginConfig = PluginInterface.GetPluginConfig() as PluginConfiguration
             ?? new PluginConfiguration();
