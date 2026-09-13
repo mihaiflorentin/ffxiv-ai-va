@@ -1,6 +1,8 @@
 namespace SmokeSynth;
 
 using System.Diagnostics;
+
+using AIVoiceActing.Infrastructure.F5;
 using AIVoiceActing.Infrastructure.Kokoro;
 using AIVoiceActing.Infrastructure.Onnx;
 using AIVoiceActing.Ports;
@@ -88,8 +90,8 @@ internal static class Program
             return 1;
         }
         // Chatterbox default reference: the bundled MIT fallback clip. Kokoro takes a
-        // voice NAME here (--ref af_heart); a path is tolerated and reduced to its stem.
-        if (engine != "kokoro")
+        // voice NAME (--ref af_heart); f5 takes a clip id resolved against its bank.
+        if (engine is null or "chatterbox")
         {
             reference ??= Path.Combine(AppContext.BaseDirectory, "voices", "default_voice.wav");
             if (!File.Exists(reference))
@@ -108,7 +110,15 @@ internal static class Program
         {
             var log = new ConsoleLogSink();
             ISpeechSynthesizer synthesizer;
-            if (engine == "kokoro")
+            if (engine == "f5")
+            {
+                synthesizer = new F5Synthesizer(
+                    () => modelsDir!,
+                    () => 4,
+                    log,
+                    voicesDirFactory: () => reference is null ? null : Path.GetDirectoryName(Path.GetFullPath(reference!)));
+            }
+            else if (engine == "kokoro")
             {
                 synthesizer = new KokoroSynthesizer(
                     () => modelsDir!,
@@ -131,7 +141,12 @@ internal static class Program
             }
 
             var request = new SynthesisRequest(
-                ReferenceVoiceId: engine == "kokoro" ? (reference ?? "af_heart") : "default",
+                ReferenceVoiceId: engine switch
+                {
+                    "kokoro" => reference ?? "af_heart",
+                    "f5" => Path.GetFileNameWithoutExtension(reference ?? "uk_male_casual"),
+                    _ => "default",
+                },
                 Text: text,
                 Exaggeration: (float)exaggeration,
                 Tags: tags);

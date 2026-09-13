@@ -47,10 +47,10 @@ public sealed class ModelCatalogTests
     }
 
     [Fact]
-    public void RequiredGroup_HoldsExactlyTheTenChatterboxAssets_AndKokoroIsSeparate()
+    public void RequiredGroup_HoldsExactlyTheTenChatterboxAssets_AndKokoroAndF5AreSeparate()
     {
         Assert.Equal(10, ModelCatalog.ChatterboxRequiredAssets.Count);
-        Assert.Equal(13, ModelCatalog.Assets.Count);
+        Assert.Equal(17, ModelCatalog.Assets.Count);
         Assert.All(ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.ChatterboxRequiredGroup),
             a => Assert.False(a.Asset.Optional));
         Assert.All(ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.ChatterboxFp32LmGroup), a => Assert.True(a.Asset.Optional));
@@ -62,6 +62,14 @@ public sealed class ModelCatalogTests
         Assert.Equal(
             ModelCatalog.KokoroRepoBaseUrl + ModelCatalog.KokoroRemoteFileName,
             ModelCatalog.UrlFor(kokoro[0].Asset));
+
+        var f5 = ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.F5Group).ToArray();
+        Assert.Equal(4, f5.Length);
+        Assert.All(f5, a => Assert.False(a.Asset.Optional));
+        Assert.All(f5, a => Assert.NotNull(a.Sha256));
+        Assert.Equal(
+            ModelCatalog.F5RepoBaseUrl + "F5_Transformer.onnx",
+            ModelCatalog.UrlFor(f5.Single(a => a.Asset.FileName == ModelCatalog.F5TransformerFileName).Asset));
     }
 
     [Fact]

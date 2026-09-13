@@ -19,7 +19,7 @@ using Dalamud.Interface.Windowing;
 /// </summary>
 public sealed class ConfigurationWindow : Window
 {
-
+    private static readonly string[] ExecutionProviders = ["auto", "cpu", "directml", "coreml"];
     private static readonly (int Code, string Name)[] Modifiers =
     [
         (VirtualKeys.Control, "Ctrl"),
@@ -255,6 +255,34 @@ public sealed class ConfigurationWindow : Window
                     : this.synthesizer.NotReadyReason;
             ImGui.TextUnformatted($"Voice engine: {status}");
             Controls.Combo(
+                "Engine",
+                ["f5", "kokoro", "chatterbox"],
+                () => c.SelectedEngine,
+                v => { c.SelectedEngine = v; save(); });
+            ImGui.SameLine();
+            Controls.HelpMarker(
+                "f5: voice-acting quality via reference-clip cloning (download on the Models tab, ~1.4 GB). " +
+                "kokoro: fast CPU narration bank. chatterbox: legacy cloning engine.");
+            // Per-engine device options: an engine only lists providers its adapter can
+            // actually wire. kokoro is CPU-only; f5 and chatterbox can try DirectML and
+            // fall back to CPU when the EP fails to initialize (e.g. under Wine).
+            if (c.SelectedEngine is "f5" or "chatterbox")
+            {
+                var providers = c.SelectedEngine == "f5"
+                    ? ["cpu", "directml"]
+                    : ExecutionProviders;
+                Controls.Combo(
+                    "Execution provider",
+                    providers,
+                    () => c.SelectedEp,
+                    v =>
+                    {
+                        c.SelectedEp = v;
+                        save();
+                    });
+            }
+
+            Controls.Combo(
                 "CPU impact",
                 ["low", "medium", "high"],
                 () => c.CpuImpact,
@@ -330,10 +358,11 @@ public sealed class ConfigurationWindow : Window
 
         ImGui.Separator();
 
-        // Only the Kokoro asset is user-visible; the retired Chatterbox catalog rows and
-        // their download buttons are gone (the engine itself remains as a config-file
-        // fallback and provisions nothing through this tab).
-        var kokoro = this.modelAssets().Single(a => a.FileName == KokoroModelFileName);
+        // One row set per selected engine: kokoro shows its model, f5 shows the four
+        // F5 assets, chatterbox shows every non-Kokoro catalog row. Downloads target
+        // the active engine's full required set, so "Download" provisions what the
+        // engine actually needs.
+        var assets = this.modelAssets().Where(this.IsActiveEngineAsset).ToList();
         if (ImGui.BeginTable("##models", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
         {
             ImGui.TableSetupScrollFreeze(0, 1);
@@ -343,31 +372,34 @@ public sealed class ConfigurationWindow : Window
             ImGui.TableSetupColumn("##action", ImGuiTableColumnFlags.WidthFixed, 100f);
             ImGui.TableHeadersRow();
 
-            var row = ModelsTabModel.Row(kokoro, provisioner.IsDownloaded(kokoro));
-            ImGui.TableNextRow();
-            ImGui.TableNextColumn();
-            ImGui.TextUnformatted(row.Name);
-            ImGui.TableNextColumn();
-            ImGui.TextUnformatted($"{row.SizeMb:0.0} MB");
-            ImGui.TableNextColumn();
-            var status = this.downloading?.FileName == kokoro.FileName
-                ? "downloading…"
-                : ModelsTabModel.StatusLabel(row);
-            ImGui.TextUnformatted(status);
-            ImGui.TableNextColumn();
-            if (row.Downloaded)
+            foreach (var asset in assets)
             {
-                if (Controls.Button("Remove", !anyDownload, anyDownload ? "A download is in progress." : null))
+                var row = ModelsTabModel.Row(asset, provisioner.IsDownloaded(asset));
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(row.Name);
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted($"{row.SizeMb:0.0} MB");
+                ImGui.TableNextColumn();
+                var status = this.downloading?.FileName == asset.FileName
+                    ? "downloading…"
+                    : ModelsTabModel.StatusLabel(row);
+                ImGui.TextUnformatted(status);
+                ImGui.TableNextColumn();
+                if (row.Downloaded)
                 {
-                    this.modelStore().Remove(kokoro.FileName);
+                    if (Controls.Button("Remove##" + asset.FileName, !anyDownload, anyDownload ? "A download is in progress." : null))
+                    {
+                        this.modelStore().Remove(asset.FileName);
+                    }
                 }
-            }
-            else if (Controls.Button(
-                "Download",
-                ModelsTabModel.CanDownload(anyDownload, row),
-                anyDownload ? "A download is already in progress." : null))
-            {
-                this.StartDownloads([kokoro]);
+                else if (Controls.Button(
+                    "Download##" + asset.FileName,
+                    ModelsTabModel.CanDownload(anyDownload, row),
+                    anyDownload ? "A download is already in progress." : null))
+                {
+                    this.StartDownloads(assets);
+                }
             }
 
             ImGui.EndTable();
@@ -432,7 +464,10 @@ public sealed class ConfigurationWindow : Window
         Controls.HelpMarker(
             "Builds the ONNX session ahead of the first line. The engine also loads itself " +
             "on login and on the first spoken line.");
-        ImGui.BulletText("Execution provider: cpu (Kokoro is CPU-only)");
+        ImGui.BulletText(
+            this.config.SelectedEngine is "f5" or "chatterbox"
+                ? $"Execution provider: {this.config.SelectedEp}"
+                : "Execution provider: cpu (Kokoro is CPU-only)");
         ImGui.BulletText(
             $"CPU impact: {this.config.CpuImpact} ({this.config.CpuImpact switch { "low" => 2, "high" => 8, _ => 4 }} synthesis threads)");
 

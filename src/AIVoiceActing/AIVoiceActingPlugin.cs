@@ -161,6 +161,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             kokoroVoicesDirFactory: () => Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
                 "voices"),
+            f5VoicesDirFactory: () => Path.Combine(
+                PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
+                "voices-f5"),
             llmDirectorFactory: () => config.DirectorEnabled ? this.TryGetLlmDirector() : null,
             useRaceVoicePresetsFactory: () => config.UseRaceVoicePresets,
             adHocStyleTagsFactory: () => config.AdHocStyleTagsEnabled,

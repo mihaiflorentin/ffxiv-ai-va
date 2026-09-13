@@ -47,6 +47,7 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<string>? selectedEngineFactory;
     private readonly Func<int>? cpuThreadsFactory;
     private readonly Func<string?>? kokoroVoicesDirFactory;
+    private readonly Func<string?>? f5VoicesDirFactory;
     private readonly Func<IEmotionDirector?>? llmDirectorFactory;
     private readonly Func<bool>? nameNpcWithSayFactory;
     private readonly Func<bool>? disallowMultipleSayFactory;
@@ -124,6 +125,7 @@ public sealed class ServiceContainer : IDisposable
         Func<string>? selectedEngineFactory = null,
         Func<int>? cpuThreadsFactory = null,
         Func<string?>? kokoroVoicesDirFactory = null,
+        Func<string?>? f5VoicesDirFactory = null,
         Func<IEmotionDirector?>? llmDirectorFactory = null,
         Func<bool>? cutsceneActiveFactory = null,
         Func<bool>? talkVisibleFactory = null,
@@ -162,6 +164,7 @@ public sealed class ServiceContainer : IDisposable
         this.selectedEngineFactory = selectedEngineFactory;
         this.cpuThreadsFactory = cpuThreadsFactory;
         this.kokoroVoicesDirFactory = kokoroVoicesDirFactory;
+        this.f5VoicesDirFactory = f5VoicesDirFactory;
         this.llmDirectorFactory = llmDirectorFactory;
         this.talkVisibleFactory = talkVisibleFactory;
         this.useRaceVoicePresetsFactory = useRaceVoicePresetsFactory;
@@ -206,8 +209,9 @@ public sealed class ServiceContainer : IDisposable
     }
 
     /// <summary>
-    /// The configured speech engine: "kokoro" (CPU real-time, default) or "chatterbox"
-    /// (voice cloning, slower). Sessions load lazily on first use / warm-up.
+    /// The configured speech engine: "f5" (voice-acting quality, default), "kokoro"
+    /// (CPU real-time fallback), or "chatterbox" (legacy cloning). Sessions load lazily
+    /// on first use / warm-up.
     /// </summary>
     public ISpeechSynthesizer SpeechSynthesizer
     {
@@ -243,12 +247,23 @@ public sealed class ServiceContainer : IDisposable
                             log: this.LogSinkUnlocked()));
                 }
 
+                if (this.selectedEngineFactory?.Invoke() == "kokoro")
+                {
+                    return this.speechSynthesizer = this.RegisterDisposable(
+                        new Infrastructure.Kokoro.KokoroSynthesizer(
+                            () => this.ModelsDir,
+                            () => Math.Max(1, threads ?? 4),
+                            this.LogSinkUnlocked(),
+                            voicesDirFactory: this.kokoroVoicesDirFactory));
+                }
+
                 return this.speechSynthesizer = this.RegisterDisposable(
-                    new Infrastructure.Kokoro.KokoroSynthesizer(
+                    new Infrastructure.F5.F5Synthesizer(
                         () => this.ModelsDir,
                         () => Math.Max(1, threads ?? 4),
                         this.LogSinkUnlocked(),
-                        voicesDirFactory: this.kokoroVoicesDirFactory));
+                        voicesDirFactory: this.f5VoicesDirFactory,
+                        executionProviderFactory: this.selectedEpFactory));
             }
         }
     }

@@ -47,6 +47,19 @@ public static class ModelCatalog
     public const string KokoroModelFileName = "kokoro-v1.0.onnx";
     public const string KokoroRepoBaseUrl = "https://github.com/Lyrcaxis/KokoroSharpBinaries/releases/download/v2.0.0/";
     public const string KokoroRemoteFileName = "kokoro.onnx";
+    /// <summary>
+    /// F5-TTS English ONNX export (nibor1896, from DakeQQ tooling): the voice-acting
+    /// engine. Zero-shot cloning — each reference clip (voices-f5/&lt;id&gt;.wav + .txt)
+    /// IS the voice, and its delivery drives the output's emotion. Weights are
+    /// CC-BY-NC (fine for personal use; the plugin never ships them). The DiT
+    /// transformer runs an iterative denoise loop: roughly real-time on CPU.
+    /// </summary>
+    public const string F5Group = "f5";
+    public const string F5RepoBaseUrl = "https://huggingface.co/nibor1896/F5-TTS-English-ONNX/resolve/main/";
+    public const string F5PreprocessFileName = "f5-preprocess.onnx";
+    public const string F5TransformerFileName = "f5-transformer.onnx";
+    public const string F5DecodeFileName = "f5-decode.onnx";
+    public const string F5VocabFileName = "f5-vocab.txt";
 
     /// <summary>One pinned catalog entry: the port asset plus integrity metadata.</summary>
     /// <param name="Asset">Port-level asset (name, file, size, optionality).</param>
@@ -109,6 +122,22 @@ public static class ModelCatalog
             new ModelAsset("Kokoro model (fp32)", KokoroModelFileName, 325508342),
             "0cfd5e79aab70a3d8c1a57dc639835110ddb32c9f5ff4fdd1f4db202ea43bb05",
             KokoroGroup),
+        new(
+            new ModelAsset("F5 preprocess", F5PreprocessFileName, 68549853),
+            "e71d3ed14e90ba3fc1e83560512e86a771e25b6f0be7789b2cf53a5c9ba5617d",
+            F5Group),
+        new(
+            new ModelAsset("F5 transformer", F5TransformerFileName, 1321718282),
+            "c63aeb96953ccae551df6717d892f73a8408e59f1a6fe8edc2aed8063bd195b8",
+            F5Group),
+        new(
+            new ModelAsset("F5 decode", F5DecodeFileName, 62550703),
+            "a16fea891beb4889b47e5987b80c841bb996beaccc1d1fe27a1f9323a089a6da",
+            F5Group),
+        new(
+            new ModelAsset("F5 vocab", F5VocabFileName, 13800),
+            "2a05f992e00af9b0bd3800a8d23e78d520dbd705284ed2eedb5f4bd29398fa3c",
+            F5Group),
     ];
 
     /// <summary>Required Chatterbox assets (the whole engine; optionals would be excluded).</summary>
@@ -116,11 +145,17 @@ public static class ModelCatalog
         Assets.Where(a => a.Group == ChatterboxRequiredGroup).Select(a => a.Asset).ToArray();
 
     /// <summary>Resolve URLs are RepoBaseUrl + ModelAsset.FileName; Kokoro's remote file
-    /// is a GitHub release asset named kokoro.onnx while the local layout stays flat.</summary>
-    public static string UrlFor(ModelAsset asset) =>
-        asset.FileName == KokoroModelFileName
-            ? KokoroRepoBaseUrl + KokoroRemoteFileName
-            : RepoBaseUrl + asset.FileName;
+    /// is a GitHub release asset and F5's remote names differ from the flat local names
+    /// (catalog constants map them).</summary>
+    public static string UrlFor(ModelAsset asset) => asset.FileName switch
+    {
+        F5PreprocessFileName => F5RepoBaseUrl + "F5_Preprocess.onnx",
+        F5TransformerFileName => F5RepoBaseUrl + "F5_Transformer.onnx",
+        F5DecodeFileName => F5RepoBaseUrl + "F5_Decode.onnx",
+        F5VocabFileName => F5RepoBaseUrl + "vocab.txt",
+        KokoroModelFileName => KokoroRepoBaseUrl + KokoroRemoteFileName,
+        _ => RepoBaseUrl + asset.FileName,
+    };
 
     public static string? Sha256For(string fileName) =>
         Assets.FirstOrDefault(a => a.Asset.FileName == fileName)?.Sha256;

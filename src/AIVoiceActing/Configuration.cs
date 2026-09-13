@@ -106,8 +106,9 @@ public class Configuration
     public bool UseFp32LanguageModel { get; set; }
 
     // ---- Engine selection & performance ----
-    /// <summary>"kokoro" (fast, default) or "chatterbox" (voice cloning, slower, heavier).</summary>
-    public string SelectedEngine { get; set; } = "kokoro";
+    /// <summary>"f5" (voice-acting quality, default), "kokoro" (fast fallback), or
+    /// "chatterbox" (legacy cloning).</summary>
+    public string SelectedEngine { get; set; } = "f5";
 
     /// <summary>Lines older than this are dropped at playback instead of played late. 0 keeps everything.</summary>
     public int StaleLineSeconds { get; set; } = 20;
