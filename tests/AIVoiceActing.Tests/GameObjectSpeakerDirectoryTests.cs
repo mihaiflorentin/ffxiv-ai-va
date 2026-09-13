@@ -42,8 +42,10 @@ public sealed class GameObjectSpeakerDirectoryTests
     [Fact]
     public void EmptyName_WithObjectIndex_FallsBackToIndexKey() =>
         Assert.Equal(
-            "npc:object-42",
-            Directory.Resolve(new SpeakerHint("", null, 42, null, null, null, null)).Key);
+            "npc:object-201",
+            Directory.Resolve(new SpeakerHint(
+                Name: "", World: null, ObjectIndex: 201, ModelCharaId: 2520,
+                Race: null, Tribe: null, Sex: 0)).Key);
 
     [Fact]
     public void EmptyName_WithoutObjectIndex_FallsBackToAnonymousKey() =>

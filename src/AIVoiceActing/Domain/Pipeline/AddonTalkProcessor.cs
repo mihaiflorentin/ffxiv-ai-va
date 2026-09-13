@@ -75,6 +75,14 @@ public sealed class AddonTalkProcessor
         this.lastSample = sample;
         if (sample.IsClosed)
         {
+            // The suppression window ENDS at close: the last-spoken pair exists only to
+            // suppress the framework/voice-line double poll of the SAME on-screen line
+            // while that line is up. Carrying it across a close would mute a genuinely
+            // replayed dialogue (same NPC, same text) — clear it here so the next
+            // identical line speaks again.
+            this.lastSpokenSpeaker = null;
+            this.lastSpokenText = null;
+
             // Advanced carries the open→closed transition, so callers interrupt exactly
             // once when the addon closes — never on every closed tick (review round 1).
             return new AddonTalkResult(TalkDecision.Closed, Advanced: changed, "", "", "");

@@ -108,4 +108,18 @@ public sealed class AddonTalkProcessorTests
         Assert.Equal(TalkDecision.Speak, result.Decision);
         Assert.Equal("", result.Text);
     }
+
+    [Fact]
+    public void ReplayedDialogue_AfterClose_SpeaksAgain()
+    {
+        var processor = Processor();
+        Assert.Equal(TalkDecision.Speak, processor.Poll(Visible("Feo Ul", "Hello!")).Decision);
+
+        // The double poll while the same line is on screen is still suppressed.
+        Assert.Equal(TalkDecision.Duplicate, processor.Poll(Visible("Feo Ul", "Hello!")).Decision);
+
+        // Dialogue closes; replaying the identical line must speak again, not dedupe.
+        Assert.Equal(TalkDecision.Closed, processor.Poll(AddonTalkState.Closed).Decision);
+        Assert.Equal(TalkDecision.Speak, processor.Poll(Visible("Feo Ul", "Hello!")).Decision);
+    }
 }
