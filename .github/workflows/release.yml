@@ -109,7 +109,7 @@ jobs:
 
       - name: Generate Dalamud repo JSON
         if: startsWith(github.ref, 'refs/tags/v')
-        run: python3 scripts/write-plugin-repo.py --tag "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/repo.json"
+        run: python3 scripts/write-plugin-repo.py --tag "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/repo.json" --zip release/latest.zip
 
       - name: Publish Dalamud repo JSON
         if: startsWith(github.ref, 'refs/tags/v')

@@ -4,6 +4,7 @@ import json
 import os
 import time
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
 
@@ -19,6 +20,15 @@ def read_project_version() -> str:
     if not version:
         raise RuntimeError(f"Could not find <Version> in {PROJECT_PATH}")
 
+    return version
+
+
+def read_packed_assembly_version(zip_path: Path) -> str:
+    with zipfile.ZipFile(zip_path) as archive:
+        manifest = json.loads(archive.read("AIVoiceActing.json"))
+    version = manifest.get("AssemblyVersion")
+    if not isinstance(version, str) or not version:
+        raise RuntimeError(f"Packed manifest inside {zip_path} has no valid 'AssemblyVersion'.")
     return version
 
 
@@ -42,6 +52,12 @@ def main() -> None:
             "when both are given. Field assembly is identical; LastUpdate and repository "
             "come from the fixture so the output is deterministic."
         ),
+    )
+    parser.add_argument(
+        "--zip",
+        type=Path,
+        default=Path("release/latest.zip"),
+        help="Built plugin zip whose packed manifest supplies AssemblyVersion.",
     )
     args = parser.parse_args()
 
@@ -81,6 +97,7 @@ def main() -> None:
         tag_version = tag[1:] if tag.startswith("v") else tag
         if tag_version != version:
             raise RuntimeError(f"Tag {tag} does not match project version {version}")
+        assembly_version = read_packed_assembly_version(args.zip)
         last_update = int(time.time())
 
 
@@ -95,8 +112,8 @@ def main() -> None:
         "Punchline": manifest["Punchline"],
         "Description": manifest["Description"],
         "InternalName": manifest["InternalName"],
-        "AssemblyVersion": version,
-        "TestingAssemblyVersion": version,
+        "AssemblyVersion": assembly_version if fixture is None else version,
+        "TestingAssemblyVersion": assembly_version if fixture is None else version,
         "RepoUrl": repo_url,
         "ApplicableVersion": manifest.get("ApplicableVersion", "any"),
         "DalamudApiLevel": DALAMUD_API_LEVEL,
