@@ -28,7 +28,7 @@ def main() -> None:
     parser.add_argument("--output", required=True, type=Path, help="Output repo JSON path.")
     parser.add_argument(
         "--repository",
-        default=os.environ.get("GITHUB_REPOSITORY", "mihaiflorentin88/ffxiv-ai-va"),
+        default=os.environ.get("GITHUB_REPOSITORY", "mihaiflorentin/ffxiv-ai-va"),
         help="GitHub repository in owner/name form.",
     )
     parser.add_argument(

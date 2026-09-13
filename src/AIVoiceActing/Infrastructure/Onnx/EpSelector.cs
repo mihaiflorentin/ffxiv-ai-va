@@ -3,10 +3,12 @@ namespace AIVoiceActing.Infrastructure.Onnx;
 using Microsoft.ML.OnnxRuntime;
 
 /// <summary>
-/// Execution-provider selection: macOS → CoreML then CPU; Windows → DirectML then CPU;
-/// everything else → CPU. CPU always works, so every failure falls back cleanly with a
-/// log line. Only the ORT core package API is used here (CoreML ships with it); DirectML
-/// EP registration lives in the Windows plugin build, which references the DirectML native.
+/// Execution-provider selection: macOS → CPU then CoreML (CoreML only via explicit
+/// override — the LM graph partitions into thousands of segments under it); Windows →
+/// DirectML then CPU; everything else → CPU. CPU always works, so every failure falls
+/// back cleanly with a log line. Only the ORT core package API is used here (CoreML
+/// ships with it); DirectML EP registration lives in the Windows plugin build, which
+/// references the DirectML native.
 /// </summary>
 public static class EpSelector
 {
