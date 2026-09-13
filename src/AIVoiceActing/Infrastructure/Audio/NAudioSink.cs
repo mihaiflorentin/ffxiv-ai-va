@@ -6,12 +6,16 @@ using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 
 /// <summary>
-/// Windows audio output (port of TextToTalk's StreamSoundQueue playback shape): one shared
-/// -mode WASAPI output per line, 32-bit float mono source scaled by a volume sample
+/// Windows audio output (port of TextToTalk's StreamSoundQueue playback shape): one
+/// shared-mode output per line, 32-bit float mono source scaled by a volume sample
 /// provider, blocking until playback completes or <see cref="Cancel"/> stops the device
 /// (the port's cancellation channel — the queue's CancelCurrent/Clear route here).
-/// Guarded by <see cref="OperatingSystem.IsWindows"/>: on any other platform the sink
-/// reports <c>IsSupported = false</c> and warns once, and the queue skips audio cleanly.
+/// Backends are tried in order: WASAPI shared with event sync OFF (polling) — Wine's
+/// mmdevapi never raises the event-driven completion callback, so event-synced clients
+/// stall silently forever in Proton/XIVLauncher — then winmm waveOut, which Wine routes
+/// through winepulse/winealsa. Every attempt is logged. Guarded by
+/// <see cref="OperatingSystem.IsWindows"/>: on any other platform the sink reports
+/// <c>IsSupported = false</c> and warns once, and the queue skips audio cleanly.
 /// </summary>
 public sealed class NAudioSink : IAudioSink
 {
@@ -50,37 +54,26 @@ public sealed class NAudioSink : IAudioSink
             return;
         }
 
-        var source = new MonoFloatSampleProvider(audio.Samples, audio.SampleRate);
-        var scaled = new VolumeSampleProvider(source) { Volume = Math.Clamp(volume, 0f, 2f) };
-        var output = this.CreateOutput();
-        using var finished = new ManualResetEventSlim(false);
-        output.PlaybackStopped += (_, _) => finished.Set();
-
-        try
+        var scaled = new VolumeSampleProvider(new MonoFloatSampleProvider(audio.Samples, audio.SampleRate))
         {
-            output.Init(scaled);
-            output.Play();
-            // Register only once playback has begun: a Cancel landing before this point
-            // must never be silently no-op'd by the Play below — the worst case is that
-            // it misses the first milliseconds of a just-started line instead.
-            lock (this.currentGate)
-            {
-                this.current = output;
-            }
+            Volume = Math.Clamp(volume, 0f, 2f),
+        };
 
-            while (!finished.IsSet)
-            {
-                finished.Wait(100);
-            }
-        }
-        finally
+        foreach (var (output, backend) in this.CreateOutputs())
         {
-            lock (this.currentGate)
+            try
             {
-                this.current = null;
+                this.PlayOn(output, backend, scaled, audio);
+                return;
             }
-
-            output.Dispose();
+            catch (Exception ex)
+            {
+                this.log?.Warn($"{backend} playback failed: {ex.Message}");
+            }
+            finally
+            {
+                output.Dispose();
+            }
         }
     }
 
@@ -96,18 +89,65 @@ public sealed class NAudioSink : IAudioSink
     /// <summary>Drops every queued item without playing them (nothing buffers here).</summary>
     public void Flush() => this.Cancel();
 
-    private IWavePlayer CreateOutput()
+    private void PlayOn(IWavePlayer output, string backend, ISampleProvider scaled, SynthesisResult audio)
     {
-        var enumerator = new MMDeviceEnumerator();
-        var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).ToArray();
-        var index = this.deviceIndexFactory?.Invoke() ?? 0;
+        this.log?.Info($"Playing {audio.Samples.Length / (float)audio.SampleRate:0.0}s via {backend}.");
+        using var finished = new ManualResetEventSlim(false);
+        output.PlaybackStopped += (_, _) => finished.Set();
+        output.Init(scaled);
+        output.Play();
+        // Register only once playback has begun: a Cancel landing before this point
+        // must never be silently no-op'd by the Stop below — the worst case is that
+        // it misses the first milliseconds of a just-started line instead.
+        lock (this.currentGate)
+        {
+            this.current = output;
+        }
+
         try
         {
+            while (!finished.IsSet)
+            {
+                finished.Wait(100);
+            }
+
+            this.log?.Info("Playback finished.");
+        }
+        finally
+        {
+            lock (this.currentGate)
+            {
+                this.current = null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Output attempts in order: the chosen (or default) WASAPI endpoint in polling mode,
+    /// then winmm waveOut. Eagerly constructed so a WASAPI failure at construction falls
+    /// through to the next attempt inside <see cref="Play"/>.
+    /// </summary>
+    private IReadOnlyList<(IWavePlayer Output, string Backend)> CreateOutputs()
+    {
+        var attempts = new List<(IWavePlayer Output, string Backend)>();
+        var devices = new List<MMDevice>();
+        try
+        {
+            var enumerator = new MMDeviceEnumerator();
+            devices.AddRange(enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active));
+            var index = this.deviceIndexFactory?.Invoke() ?? 0;
+            var device = index >= 0 && index < devices.Count
+                ? devices[index]
+                : enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
             // WasapiOut fully consumes the device in its constructor and does not take
-            // ownership of the MMDevice, so the endpoints are released here either way.
-            return index >= 0 && index < devices.Length
-                ? new WasapiOut(devices[index], AudioClientShareMode.Shared, false, 200)
-                : new WasapiOut(AudioClientShareMode.Shared, 200);
+            // ownership of the MMDevice, so the endpoints are released below either way.
+            attempts.Add((
+                new WasapiOut(device, AudioClientShareMode.Shared, useEventSync: false, 200),
+                $"wasapi:{device.FriendlyName}"));
+        }
+        catch (Exception ex)
+        {
+            this.log?.Warn($"WASAPI output unavailable ({ex.Message}); will try waveOut.");
         }
         finally
         {
@@ -116,6 +156,10 @@ public sealed class NAudioSink : IAudioSink
                 device.Dispose();
             }
         }
+
+        // Wine runs winmm through winepulse/winealsa — the most reliable last resort.
+        attempts.Add((new WaveOutEvent { DesiredLatency = 200 }, "waveOut"));
+        return attempts;
     }
 
     private void WarnUnsupportedOnce()
@@ -143,13 +187,13 @@ internal sealed class MonoFloatSampleProvider(float[] samples, int sampleRate) :
     public int Read(float[] buffer, int offset, int count)
     {
         var available = samples.Length - this.position;
-        var toCopy = Math.Min(count, available);
-        if (toCopy <= 0)
+        if (available <= 0)
         {
             return 0;
         }
 
-        Array.Copy(samples, this.position, buffer, offset, toCopy);
+        var toCopy = Math.Min(count, available);
+        samples.AsSpan(this.position, toCopy).CopyTo(buffer.AsSpan(offset, toCopy));
         this.position += toCopy;
         return toCopy;
     }
