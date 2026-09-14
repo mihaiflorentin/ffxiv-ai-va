@@ -91,7 +91,6 @@ public sealed class ConfigurationWindow : Window
     private readonly VoiceSetEditor characterEditor = new();
     private readonly Dictionary<string, (string VoiceId, float Bias, float Pitch, float Speed, float Volume)>
         characterPending = new(StringComparer.Ordinal);
-    private string characterNameSearch = string.Empty;
 
     // Download state, written from the download task, read on the draw thread.
     private volatile ModelAsset? downloading;
@@ -1822,20 +1821,16 @@ public sealed class ConfigurationWindow : Window
                 ? pendingEntry.VoiceId
                 : profile.ReferenceVoiceId;
 
-        ImGui.Separator();
-        ImGui.SetNextItemWidth(220f);
-        ImGui.InputTextWithHint($"##name-search{keyPrefix}", "Search name…", ref this.characterNameSearch, 64);
-        Controls.Tooltip("Filters the rows below by speaker name or world id. View-only: nothing is removed.");
-        if (this.characterNameSearch is { Length: > 0 } nameQuery)
+        bool VoiceOrNameMatches(VoiceProfile profile, string query)
         {
-            ImGui.SameLine();
-            var shown = rows.Count(profile =>
+            if (EffectiveVoice(profile).Contains(query, StringComparison.InvariantCultureIgnoreCase))
             {
-                var view = SpeakerKeyView.Parse(profile.SpeakerKey);
-                return view.Name.Contains(nameQuery, StringComparison.InvariantCultureIgnoreCase)
-                    || (view.World?.ToString().Contains(nameQuery, StringComparison.InvariantCultureIgnoreCase) ?? false);
-            });
-            ImGui.TextColored(new Vector4(0.7f, 0.85f, 1f, 1f), $"{shown}/{rows.Count} shown");
+                return true;
+            }
+
+            var view = SpeakerKeyView.Parse(profile.SpeakerKey);
+            return view.Name.Contains(query, StringComparison.InvariantCultureIgnoreCase)
+                || (view.World?.ToString().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false);
         }
 
         if (voiceQuery is { Length: > 0 })
@@ -1843,8 +1838,7 @@ public sealed class ConfigurationWindow : Window
             ImGui.SameLine();
             ImGui.TextColored(
                 new Vector4(1f, 0.9f, 0.45f, 1f),
-                $"{rows.Count(profile => EffectiveVoice(profile).Contains(voiceQuery, StringComparison.InvariantCultureIgnoreCase))}"
-                + $" row(s) highlighted");
+                $"{rows.Count(profile => VoiceOrNameMatches(profile, voiceQuery))} row(s) highlighted");
         }
 
         this.DrawCharacterAddForm(player, entries, ids);
@@ -1858,17 +1852,9 @@ public sealed class ConfigurationWindow : Window
             foreach (var profile in rows)
             {
                 var key = SpeakerKeyView.Parse(profile.SpeakerKey);
-                if (this.characterNameSearch is { Length: > 0 } query
-                    && !key.Name.Contains(query, StringComparison.InvariantCultureIgnoreCase)
-                    && !(key.World?.ToString().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false))
-                {
-                    continue;
-                }
-
                 ImGui.PushID(profile.SpeakerKey);
                 ImGui.TableNextRow();
-                if (voiceQuery is { Length: > 0 } vq
-                    && EffectiveVoice(profile).Contains(vq, StringComparison.InvariantCultureIgnoreCase))
+                if (voiceQuery is { Length: > 0 } vq && VoiceOrNameMatches(profile, vq))
                 {
                     ImGui.TableSetBgColor(
                         ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(new Vector4(0.98f, 0.82f, 0.25f, 0.35f)));

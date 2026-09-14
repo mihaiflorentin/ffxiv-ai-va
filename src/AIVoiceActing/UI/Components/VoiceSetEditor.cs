@@ -71,7 +71,7 @@ public sealed class VoiceSetEditor
 
         ImGui.SameLine();
         Controls.HelpMarker(
-            "Filter the voice bank by accent, voice sex, or id substring. Filters are view-only: they never change the stored selection.");
+            "Search voice ids and — on the NPC/Player Voices tabs — speaker names: matching rows are highlighted. Filters are view-only: they never change the stored selection.");
     }
 
     /// <summary>The ids to offer: the catalog filtered by the current filters (or the raw
@@ -89,11 +89,14 @@ public sealed class VoiceSetEditor
         VoiceSex? sex = this.sexIndex > 0 && this.sexIndex <= Sexes.Length
             ? Sexes[this.sexIndex - 1].Sex
             : null;
-        return [.. VoiceCatalog
+        var offered = [.. VoiceCatalog
             .Filter(catalog, language, sex, this.search)
             .Select(entry => entry.Id)
-
             .Order(StringComparer.Ordinal)];
+
+        // An over-narrow text filter must never blank every combo into "(missing)":
+        // with nothing offered, fall back to the unfiltered bank.
+        return offered.Length > 0 ? offered : [.. fallbackIds.Order(StringComparer.Ordinal)];
     }
     /// <summary>The live voice-search text, so owner surfaces can also highlight
     /// rows whose selected voice matches it.</summary>
