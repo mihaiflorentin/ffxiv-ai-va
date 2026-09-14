@@ -45,8 +45,21 @@ public interface IProfileStore
         byte? sex);
 
     /// <summary>Records a manual override; overrides win over deterministic assignment and
-    /// persist. <paramref name="volume"/> is a linear loudness multiplier (1 = natural, up to 2).</summary>
-    void SetOverride(string speakerKey, string referenceVoiceId, float exaggerationBias, float volume = 1f);
+    /// persist. <paramref name="volume"/> is a linear loudness multiplier (1 = natural, up to 2).
+    /// A null <paramref name="pitch"/>/<paramref name="speed"/> keeps the previous entry's
+    /// value (child-pitch races stay child-pitched across voice edits); a supplied value
+    /// replaces it (fallback 1 on first sight).</summary>
+    void SetOverride(
+        string speakerKey,
+        string referenceVoiceId,
+        float exaggerationBias,
+        float volume = 1f,
+        float? pitch = null,
+        float? speed = null);
+
+    /// <summary>Empties every persisted entry (overrides and deterministic assignments)
+    /// and persists immediately. The next lookup re-assigns deterministically.</summary>
+    void Clear();
 
     /// <summary>
     /// Deletes any persisted entry (override or deterministic slot) for

@@ -22,7 +22,9 @@ public sealed class JsonProfileStore : IProfileStore
         [property: JsonPropertyName("exaggerationBias")] float ExaggerationBias,
         [property: JsonPropertyName("createdUtc")] DateTimeOffset CreatedUtc,
         [property: JsonPropertyName("custom")] bool Custom,
-        [property: JsonPropertyName("pitch")] float Pitch = 1f);
+        [property: JsonPropertyName("pitch")] float Pitch = 1f,
+        [property: JsonPropertyName("speed")] float Speed = 1f,
+        [property: JsonPropertyName("volume")] float Volume = 1f);
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
@@ -79,26 +81,41 @@ public sealed class JsonProfileStore : IProfileStore
         }
     }
 
-    public void SetOverride(string speakerKey, string referenceVoiceId, float exaggerationBias, float volume = 1f)
+    public void SetOverride(
+        string speakerKey,
+        string referenceVoiceId,
+        float exaggerationBias,
+        float volume = 1f,
+        float? pitch = null,
+        float? speed = null)
     {
         lock (this.gate)
         {
             this.EnsureLoadedUnlocked();
-            // Voice/bias overrides don't touch pitch/speed: keep the slot-derived values
-            // when the speaker already has them (manual overrides on child-pitch races
-            // stay child-pitched).
+            // Null pitch/speed keep the previous entry's values (manual overrides on
+            // child-pitch races stay child-pitched); supplied values replace them.
             var previous = this.entries.TryGetValue(speakerKey, out var existing) ? existing : null;
-            var pitch = previous?.Pitch ?? 1f;
-            var speed = previous?.Speed ?? 1f;
+            var effectivePitch = pitch ?? previous?.Pitch ?? 1f;
+            var effectiveSpeed = speed ?? previous?.Speed ?? 1f;
             this.entries[speakerKey] = new VoiceProfile(
                 speakerKey,
                 referenceVoiceId,
                 Math.Clamp(exaggerationBias, 0f, 1f),
                 DateTimeOffset.UtcNow,
                 Custom: true,
-                pitch,
-                speed,
+                effectivePitch,
+                effectiveSpeed,
                 Math.Clamp(volume, 0f, 2f));
+            this.SaveUnlocked();
+        }
+    }
+
+    public void Clear()
+    {
+        lock (this.gate)
+        {
+            this.EnsureLoadedUnlocked();
+            this.entries.Clear();
             this.SaveUnlocked();
         }
     }
@@ -145,7 +162,9 @@ public sealed class JsonProfileStore : IProfileStore
                     dto.ExaggerationBias,
                     dto.CreatedUtc,
                     dto.Custom,
-                    dto.Pitch);
+                    dto.Pitch,
+                    dto.Speed,
+                    dto.Volume);
             }
         }
         catch (Exception e) when (e is JsonException or FormatException or InvalidOperationException)
@@ -186,7 +205,9 @@ public sealed class JsonProfileStore : IProfileStore
                             kv.Value.ExaggerationBias,
                             kv.Value.CreatedUtc,
                             kv.Value.Custom,
-                            kv.Value.Pitch)),
+                            kv.Value.Pitch,
+                            kv.Value.Speed,
+                            kv.Value.Volume)),
                     JsonOptions));
             File.Move(temp, FilePath, overwrite: true);
         }

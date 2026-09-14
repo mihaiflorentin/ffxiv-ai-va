@@ -1,6 +1,7 @@
 namespace AIVoiceActing.UI;
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Numerics;
 using AIVoiceActing.Domain;
 using AIVoiceActing.Domain.Handlers;
@@ -68,6 +69,31 @@ public sealed class ConfigurationWindow : Window
     private readonly VoiceTable playerTable;
     private readonly VoiceTable npcTable;
 
+    private readonly Func<ICastingPresetStore> presetStore;
+    private readonly Action invalidateVoiceMap;
+    private readonly Func<IReadOnlyList<VoiceCatalogEntry>> voiceCatalog;
+
+    // Casting tab: edits live on the pure presenter's buffer until Save; the rest is
+    // per-frame view state (one editor instance per drawn set, keyed by set name).
+    private readonly CastingTabModel casting = new();
+    private bool castingInitialized;
+    private readonly Dictionary<string, VoiceSetEditor> setEditors = new(StringComparer.Ordinal);
+    private string presetImportBuffer = string.Empty;
+    private string forkNameBuffer = string.Empty;
+    private string scratchNameBuffer = string.Empty;
+    private string modelIdBuffer = string.Empty;
+    private string modelNameBuffer = string.Empty;
+    private string modelSetChoice = string.Empty;
+    private bool deleteArmed;
+
+    // Characters tab: slider edits hold a pending tuple per speaker, committed once on
+    // release (the same persist-once-per-interaction contract as VoiceTable).
+    private bool clearAllArmed;
+    private string assignmentImportBuffer = string.Empty;
+    private readonly VoiceSetEditor characterEditor = new();
+    private readonly Dictionary<string, (string VoiceId, float Bias, float Pitch, float Speed, float Volume)>
+        characterPending = new(StringComparer.Ordinal);
+
     // Download state, written from the download task, read on the draw thread.
     private volatile ModelAsset? downloading;
     private long progressReceived;
@@ -124,7 +150,10 @@ public sealed class ConfigurationWindow : Window
         Func<string, bool> openDirectory,
         Action<string> reportError,
         Action<string> logInfo,
-        Action<string, Exception?> logError)
+        Action<string, Exception?> logError,
+        Func<ICastingPresetStore> presetStore,
+        Action invalidateVoiceMap,
+        Func<IReadOnlyList<VoiceCatalogEntry>> voiceCatalog)
         : base("AI Voice Acting Settings###AIVAConfig")
     {
         this.config = config;
@@ -144,6 +173,13 @@ public sealed class ConfigurationWindow : Window
         this.localPlayer = localPlayer;
         this.logInfo = logInfo;
         this.logError = logError;
+        // Assignments for the two delegates below were missing since the window grew its
+        // folder-open/report plumbing: every status/error report would have NRE'd.
+        this.openDirectory = openDirectory;
+        this.reportError = reportError;
+        this.presetStore = presetStore;
+        this.invalidateVoiceMap = invalidateVoiceMap;
+        this.voiceCatalog = voiceCatalog;
 
         this.Size = new Vector2(620, 520);
         this.SizeCondition = ImGuiCond.FirstUseEver;
@@ -183,6 +219,18 @@ public sealed class ConfigurationWindow : Window
         if (ImGui.BeginTabItem("Voices"))
         {
             this.DrawVoicesTab();
+            ImGui.EndTabItem();
+        }
+
+        if (ImGui.BeginTabItem("Casting"))
+        {
+            this.DrawCastingTab();
+            ImGui.EndTabItem();
+        }
+
+        if (ImGui.BeginTabItem("Characters"))
+        {
+            this.DrawCharactersTab();
             ImGui.EndTabItem();
         }
 
@@ -1107,7 +1155,10 @@ public sealed class ConfigurationWindow : Window
                 null, null, null, null),
             TestBenchModel.BuildVoiceTestRequest(
                 profile.ReferenceVoiceId,
-                Math.Clamp(this.config.DefaultExaggeration + profile.ExaggerationBias, 0f, 1f))));
+                Math.Clamp(this.config.DefaultExaggeration + profile.ExaggerationBias, 0f, 1f),
+                profile.Pitch,
+                profile.Speed,
+                profile.Volume)));
 
     /// <summary>The direct ISpeechSynthesizer + ISpeechQueue path — the exact tail of the
     /// game pipeline (SpeechRequestHandler), reused for forced-emotion auditions.</summary>
@@ -1162,4 +1213,818 @@ public sealed class ConfigurationWindow : Window
             onSettled?.Invoke();
         }
     }
+
+    // ---- Tab 3: Casting ----
+
+    /// <summary>Named casting presets: activate, fork, edit, and share the race→voice-set
+    /// mapping (beast-tribe model-id overrides included). Edits stay in the pure
+    /// presenter's buffer until Save; activation re-overlays the container's voice map
+    /// for speakers without their own assignment.</summary>
+    private void DrawCastingTab()
+    {
+        var store = this.presetStore();
+        if (!this.castingInitialized)
+        {
+            var active = store.ActivePresetName;
+            this.casting.Load(active, LoadPreset(store, active));
+            this.castingInitialized = true;
+        }
+
+        var nameArray = store.PresetNames as string[] ?? [.. store.PresetNames];
+        var selected = Array.IndexOf(nameArray, this.casting.SelectedName);
+        ImGui.SetNextItemWidth(220f);
+        if (ImGui.Combo("##preset", ref selected, nameArray, nameArray.Length))
+        {
+            var name = nameArray[Math.Clamp(selected, 0, nameArray.Length - 1)];
+            if (name != this.casting.SelectedName)
+            {
+                this.casting.Load(name, LoadPreset(store, name));
+                this.deleteArmed = false;
+            }
+        }
+
+        var isDefault = this.casting.SelectedName == CastingPreset.DefaultPresetName;
+        var alreadyActive = store.ActivePresetName == this.casting.SelectedName;
+
+        ImGui.SameLine();
+        if (Controls.Button("Activate", enabled: !alreadyActive && !this.casting.Dirty,
+                alreadyActive ? "Already the active preset." : "Save or discard your edits first."))
+        {
+            try
+            {
+                store.Activate(this.casting.SelectedName);
+                this.invalidateVoiceMap();
+                this.ReportStatus(
+                    $"Activated preset \"{this.casting.SelectedName}\" — speakers without their own assignment re-cast on next sight.",
+                    isError: false);
+            }
+            catch (CastingPresetException e)
+            {
+                this.ReportStatus(e.Message, isError: true);
+            }
+        }
+
+        Controls.Tooltip("Makes this preset the live casting. Stored characters keep their voices; manage those in Characters.");
+
+        ImGui.SameLine();
+        if (Controls.Button("Save",
+                enabled: this.casting.Dirty && !isDefault,
+                !this.casting.Dirty ? "No unsaved edits." : "The built-in Default preset is immutable."))
+        {
+            try
+            {
+                store.Save(this.casting.EditBuffer);
+                this.casting.MarkSaved();
+                this.ReportStatus($"Saved preset \"{this.casting.EditBuffer.Name}\".", isError: false);
+            }
+            catch (CastingPresetException e)
+            {
+                this.ReportStatus(e.Message, isError: true);
+            }
+        }
+
+        ImGui.SameLine();
+        if (Controls.Button("Fork…", enabled: true))
+        {
+            this.forkNameBuffer = isDefault ? "My casting" : $"{this.casting.SelectedName} copy";
+            ImGui.OpenPopup("##fork-preset");
+        }
+
+        ImGui.SameLine();
+        if (Controls.Button("New", enabled: true))
+        {
+            this.scratchNameBuffer = "New casting";
+            ImGui.OpenPopup("##new-preset");
+        }
+
+        ImGui.SameLine();
+        if (Controls.Button(this.deleteArmed ? "Really delete?" : "Delete", enabled: !isDefault,
+                isDefault ? "The built-in Default preset cannot be deleted." : null))
+        {
+            if (this.deleteArmed)
+            {
+                try
+                {
+                    store.Delete(this.casting.SelectedName);
+                    this.casting.Load(CastingPreset.DefaultPresetName, store.GetDefault());
+                    this.ReportStatus("Preset deleted; the built-in casting is active again.", isError: false);
+                }
+                catch (CastingPresetException e)
+                {
+                    this.ReportStatus(e.Message, isError: true);
+                }
+
+                this.deleteArmed = false;
+            }
+            else
+            {
+                this.deleteArmed = true;
+            }
+        }
+
+        ImGui.SameLine();
+        if (Controls.Button("Export", enabled: true))
+        {
+            ImGui.SetClipboardText(ShareCodec.Encode(this.casting.EditBuffer));
+            this.ReportStatus("Preset share string copied to the clipboard.", isError: false);
+        }
+
+        ImGui.SameLine();
+        if (Controls.Button("Import", enabled: true))
+        {
+            this.presetImportBuffer = string.Empty;
+            ImGui.OpenPopup("##import-preset");
+        }
+
+        this.DrawForkPresetPopup(store);
+        this.DrawNewPresetPopup(store);
+        this.DrawImportPresetPopup(store);
+
+        ImGui.Separator();
+        Controls.Section("Race casting");
+        ImGui.TextWrapped(
+            "Which voice set each race/gender row uses. \"Ungendered\" covers unknown speakers and races without their own row.");
+
+        if (ImGui.BeginTable("##variant-grid", 2, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
+        {
+            ImGui.TableSetupColumn("Row", ImGuiTableColumnFlags.WidthStretch, 1f);
+            ImGui.TableSetupColumn("Voice set", ImGuiTableColumnFlags.WidthStretch, 1f);
+            ImGui.TableHeadersRow();
+            foreach (var (variantKey, setKey) in this.casting.EditBuffer.Variants)
+            {
+                ImGui.PushID(variantKey);
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(VariantLabel(variantKey));
+                ImGui.TableNextColumn();
+                if (this.DrawSetCombo("##variant-set", setKey, out var pickedSet))
+                {
+                    this.casting.SetVariant(variantKey, pickedSet);
+                }
+
+                ImGui.PopID();
+            }
+
+            ImGui.EndTable();
+        }
+
+        Controls.Section("Voice sets");
+        var catalog = this.voiceCatalog();
+        var rawIds = this.VoiceOptions;
+        var removeSlotAt = default((string SetKey, int Index)?);
+        foreach (var (setKey, slots) in this.casting.EditBuffer.Sets)
+        {
+            if (!ImGui.CollapsingHeader($"{setKey} ({slots.Length} voices)"))
+            {
+                continue;
+            }
+
+            var editor = this.EditorFor(setKey);
+            editor.DrawFilters(catalog);
+            var ids = editor.OfferedIds(catalog, rawIds);
+            ImGui.PushID(setKey);
+            if (ImGui.BeginTable(
+                    "##slots",
+                    7,
+                    ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY,
+                    new Vector2(-1, 240)))
+            {
+                ImGui.TableSetupScrollFreeze(0, 1);
+                ImGui.TableSetupColumn("##trash", ImGuiTableColumnFlags.WidthFixed, 24f);
+                ImGui.TableSetupColumn("Voice", ImGuiTableColumnFlags.WidthStretch, 2f);
+                ImGui.TableSetupColumn("Pitch", ImGuiTableColumnFlags.WidthFixed, 90f);
+                ImGui.TableSetupColumn("Speed", ImGuiTableColumnFlags.WidthFixed, 90f);
+                ImGui.TableSetupColumn("Vol", ImGuiTableColumnFlags.WidthFixed, 80f);
+                ImGui.TableSetupColumn("Bias", ImGuiTableColumnFlags.WidthFixed, 90f);
+                ImGui.TableSetupColumn("▶", ImGuiTableColumnFlags.WidthFixed, 36f);
+                ImGui.TableHeadersRow();
+
+                for (var i = 0; i < slots.Length; i++)
+                {
+                    var slot = slots[i];
+                    ImGui.PushID(i);
+                    ImGui.TableNextRow();
+                    ImGui.TableNextColumn();
+                    if (ImGui.SmallButton("🗑"))
+                    {
+                        removeSlotAt = (setKey, i);
+                    }
+
+                    ImGui.TableNextColumn();
+                    ImGui.SetNextItemWidth(-1);
+                    if (editor.DrawVoiceCombo("##voice", ids, slot.Id, out var picked) && picked != slot.Id)
+                    {
+                        this.casting.SetSlot(setKey, i, slot with { Id = picked });
+                        slot = this.casting.EditBuffer.Sets[setKey][i];
+                    }
+
+                    this.DrawSlotSlider(setKey, i, slot, "##pitch", 0.5f, 1.5f, slot.Pitch, static (s, v) => s with { Pitch = v }, "Playback pitch multiplier: 1 is natural; child-like races sit above 1.");
+                    this.DrawSlotSlider(setKey, i, slot, "##speed", 0.7f, 1.3f, slot.Speed, static (s, v) => s with { Speed = v }, "Pace multiplier: 1 is natural.");
+                    this.DrawSlotSlider(setKey, i, slot, "##volume", 0f, 2f, slot.Volume, static (s, v) => s with { Volume = v }, "Loudness multiplier: 1 plays as synthesized, up to 2 boosts quiet voices.");
+                    this.DrawSlotSlider(setKey, i, slot, "##bias", 0f, 1f, slot.ExaggerationBias, static (s, v) => s with { ExaggerationBias = v }, "Exaggeration bias added on top of the default for this cast.");
+
+                    ImGui.TableNextColumn();
+                    var ready = this.Synth.IsReady && this.activeRequests == 0;
+                    var test = ready
+                        ? ImGui.SmallButton("▶")
+                        : Controls.Button("▶", false, this.Synth.IsReady ? "Synthesizing…" : this.EngineReason());
+                    if (test)
+                    {
+                        this.SpeakVoiceTest(new VoiceProfile(
+                            $"preview:{slot.Id}", slot.Id, slot.ExaggerationBias,
+                            DateTimeOffset.UtcNow, Custom: true, slot.Pitch, slot.Speed, slot.Volume));
+                    }
+
+                    ImGui.PopID();
+                }
+
+                ImGui.EndTable();
+            }
+
+            if (ImGui.SmallButton("+ Add voice slot"))
+            {
+                this.casting.AddSlot(setKey, ids.Length > 0 ? ids[0] : rawIds.FirstOrDefault() ?? "default");
+            }
+
+            ImGui.PopID();
+        }
+
+        if (removeSlotAt is { } removal)
+        {
+            this.casting.RemoveSlot(removal.SetKey, removal.Index);
+        }
+
+        if (ImGui.CollapsingHeader("Model-id overrides (beast tribes and allied societies)"))
+        {
+            ImGui.TextWrapped(
+                "Bind a game model id to a named set: those models speak with that cast wherever they appear. "
+                + "Overrides in the active preset replace the built-in table.");
+            var setKeys = this.casting.EditBuffer.Sets.Keys.ToArray();
+            if (setKeys.Length > 0)
+            {
+                ImGui.SetNextItemWidth(90f);
+                ImGui.InputTextWithHint("##model-id", "Model id", ref this.modelIdBuffer, 12);
+                ImGui.SameLine();
+                ImGui.SetNextItemWidth(160f);
+                ImGui.InputTextWithHint("##model-name", "Label", ref this.modelNameBuffer, 64);
+                ImGui.SameLine();
+                if (this.modelSetChoice.Length == 0 || !setKeys.Contains(this.modelSetChoice))
+                {
+                    this.modelSetChoice = setKeys[0];
+                }
+
+                if (this.DrawSetCombo("##model-set", this.modelSetChoice, out var modelSet))
+                {
+                    this.modelSetChoice = modelSet;
+                }
+
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Add override"))
+                {
+                    if (!int.TryParse(this.modelIdBuffer.Trim(), out var modelId))
+                    {
+                        this.ReportStatus($"\"{this.modelIdBuffer}\" is not a model id (whole number).", isError: true);
+                    }
+                    else
+                    {
+                        this.casting.SetModelOverride(modelId, this.modelNameBuffer.Trim(), this.modelSetChoice);
+                        this.modelIdBuffer = string.Empty;
+                        this.modelNameBuffer = string.Empty;
+                    }
+                }
+            }
+
+            if (this.casting.EditBuffer.ModelOverrides.Count > 0
+                && ImGui.BeginTable("##model-overrides", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
+            {
+                ImGui.TableSetupColumn("Model id", ImGuiTableColumnFlags.WidthFixed, 80f);
+                ImGui.TableSetupColumn("Label", ImGuiTableColumnFlags.WidthStretch, 1f);
+                ImGui.TableSetupColumn("Voice set", ImGuiTableColumnFlags.WidthStretch, 1f);
+                ImGui.TableSetupColumn("##trash", ImGuiTableColumnFlags.WidthFixed, 24f);
+                ImGui.TableHeadersRow();
+                var removeModelId = default(int?);
+                foreach (var (modelKey, overrideDto) in this.casting.EditBuffer.ModelOverrides)
+                {
+                    ImGui.PushID(modelKey);
+                    ImGui.TableNextRow();
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted(modelKey);
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted(string.IsNullOrEmpty(overrideDto.Name) ? "—" : overrideDto.Name);
+                    ImGui.TableNextColumn();
+                    if (this.DrawSetCombo("##override-set", overrideDto.SetKey, out var pickedSet))
+                    {
+                        this.casting.SetModelOverride(int.Parse(modelKey, CultureInfo.InvariantCulture), overrideDto.Name, pickedSet);
+                    }
+
+                    ImGui.TableNextColumn();
+                    if (ImGui.SmallButton("🗑"))
+                    {
+                        removeModelId = int.Parse(modelKey, CultureInfo.InvariantCulture);
+                    }
+
+                    ImGui.PopID();
+                }
+
+                ImGui.EndTable();
+                if (removeModelId is { } removedModel)
+                {
+                    this.casting.RemoveModelOverride(removedModel);
+                }
+            }
+        }
+    }
+
+    /// <summary>Load-switch helper: "Default" derives from the map, everything else
+    /// comes from the file (a vanished preset falls back to Default).</summary>
+    private static CastingPreset LoadPreset(ICastingPresetStore store, string name)
+    {
+        if (name == CastingPreset.DefaultPresetName)
+        {
+            return store.GetDefault();
+        }
+
+        try
+        {
+            return store.Get(name);
+        }
+        catch (CastingPresetException)
+        {
+            return store.GetDefault();
+        }
+    }
+
+    private void DrawForkPresetPopup(ICastingPresetStore store)
+    {
+        var open = true;
+        if (!ImGui.BeginPopupModal("Fork preset", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            return;
+        }
+
+        ImGui.TextWrapped($"Copies \"{this.casting.SelectedName}\" under a new name; the original stays untouched.");
+        ImGui.SetNextItemWidth(300f);
+        ImGui.InputText("##fork-name", ref this.forkNameBuffer, 64);
+        if (ImGui.Button("Fork"))
+        {
+            var name = this.forkNameBuffer.Trim();
+            if (name.Length == 0)
+            {
+                this.ReportStatus("The fork needs a name.", isError: true);
+            }
+            else
+            {
+                try
+                {
+                    this.casting.Fork(this.casting.SelectedName, this.casting.EditBuffer, name);
+                    store.Save(this.casting.EditBuffer);
+                    this.casting.MarkSaved();
+                    this.ReportStatus($"Forked \"{name}\" — press Activate to apply it.", isError: false);
+                    ImGui.CloseCurrentPopup();
+                }
+                catch (CastingPresetException e)
+                {
+                    this.ReportStatus(e.Message, isError: true);
+                }
+            }
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel"))
+        {
+            ImGui.CloseCurrentPopup();
+        }
+
+        ImGui.EndPopup();
+    }
+
+    private void DrawNewPresetPopup(ICastingPresetStore store)
+    {
+        var open = true;
+        if (!ImGui.BeginPopupModal("New preset from scratch", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            return;
+        }
+
+        ImGui.TextWrapped("Starts with one empty voice set; every race row points at it until you reassign.");
+        ImGui.SetNextItemWidth(300f);
+        ImGui.InputText("##new-name", ref this.scratchNameBuffer, 64);
+        if (ImGui.Button("Create"))
+        {
+            var name = this.scratchNameBuffer.Trim();
+            if (name.Length == 0)
+            {
+                this.ReportStatus("The preset needs a name.", isError: true);
+            }
+            else
+            {
+                try
+                {
+                    this.casting.NewScratch(name);
+                    store.Save(this.casting.EditBuffer);
+                    this.casting.MarkSaved();
+                    this.ReportStatus($"Created \"{name}\" — fill its voice sets, then press Activate.", isError: false);
+                    ImGui.CloseCurrentPopup();
+                }
+                catch (CastingPresetException e)
+                {
+                    this.ReportStatus(e.Message, isError: true);
+                }
+            }
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel"))
+        {
+            ImGui.CloseCurrentPopup();
+        }
+
+        ImGui.EndPopup();
+    }
+
+    private void DrawImportPresetPopup(ICastingPresetStore store)
+    {
+        var open = true;
+        if (!ImGui.BeginPopupModal("Import preset", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            return;
+        }
+
+        ImGui.TextWrapped("Paste a preset share string (copied with Export):");
+        ImGui.InputTextMultiline("##import-preset-text", ref this.presetImportBuffer, 64_000, new Vector2(460, 120));
+        if (ImGui.Button("Import"))
+        {
+            try
+            {
+                var preset = ShareCodec.Decode<CastingPreset>(this.presetImportBuffer);
+                store.Save(preset);
+                this.casting.Load(preset.Name, preset);
+                this.ReportStatus($"Imported preset \"{preset.Name}\".", isError: false);
+                ImGui.CloseCurrentPopup();
+            }
+            catch (Exception e) when (e is ShareCodecException or CastingPresetException)
+            {
+                this.ReportStatus(e.Message, isError: true);
+            }
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel"))
+        {
+            ImGui.CloseCurrentPopup();
+        }
+
+        ImGui.EndPopup();
+    }
+
+    /// <summary>Set-key combo over the edit buffer's sets with an "Add new set…"
+    /// entry; a stored key missing from the buffer stays visible as "(missing)".</summary>
+    private bool DrawSetCombo(string label, string setKey, out string picked)
+    {
+        var keys = this.casting.EditBuffer.Sets.Keys.ToArray();
+        var index = Array.IndexOf(keys, setKey);
+        var missing = index < 0;
+        string[] display = missing
+            ? [.. keys, $"{setKey} (missing)", "Add new set…"]
+            : [.. keys, "Add new set…"];
+        if (missing)
+        {
+            index = keys.Length; // the "(missing)" placeholder keeps the row visible
+        }
+
+        var changed = ImGui.Combo(label, ref index, display, display.Length);
+        if (!changed)
+        {
+            picked = setKey;
+            return false;
+        }
+
+        var chosen = display[Math.Clamp(index, 0, display.Length - 1)];
+        if (chosen == "Add new set…")
+        {
+            picked = CastingTabModel.NextSetName(keys);
+            this.casting.EnsureSet(picked);
+            return true;
+        }
+
+        if (chosen.EndsWith(" (missing)", StringComparison.Ordinal))
+        {
+            picked = setKey;
+            return false;
+        }
+
+        picked = chosen;
+        return true;
+    }
+
+    /// <summary>Per-slot slider, written straight through to the edit buffer (in-memory
+    /// until Save — the Characters tab is the one that defers to release).</summary>
+    private void DrawSlotSlider(
+        string setKey,
+        int index,
+        VoiceSlotDto slot,
+        string label,
+        float min,
+        float max,
+        float value,
+        Func<VoiceSlotDto, float, VoiceSlotDto> apply,
+        string tooltip)
+    {
+        ImGui.TableNextColumn();
+        ImGui.SetNextItemWidth(-1);
+        var v = value;
+        if (ImGui.SliderFloat(label, ref v, min, max, "%.2f")
+            && Math.Abs(v - value) > float.Epsilon)
+        {
+            this.casting.SetSlot(setKey, index, apply(slot, Math.Clamp(v, min, max)));
+        }
+
+        Controls.Tooltip(tooltip);
+    }
+
+    /// <summary>Variant-grid row label: race display name + group, or the ungendered
+    /// fallback row; unknown keys render raw.</summary>
+    private static string VariantLabel(string variantKey)
+    {
+        if (variantKey == CastingPreset.UngenderedVariantKey)
+        {
+            return "Ungendered (unknown speakers)";
+        }
+
+        var pipe = variantKey.IndexOf('|');
+        if (pipe > 0 && byte.TryParse(variantKey[..pipe], out var raceId))
+        {
+            var race = Races.All.FirstOrDefault(r => r.Id == raceId);
+            if (race is not null)
+            {
+                return $"{race.Name} — {variantKey[(pipe + 1)..]}";
+            }
+        }
+
+        return variantKey;
+    }
+
+    private VoiceSetEditor EditorFor(string setKey)
+    {
+        if (!this.setEditors.TryGetValue(setKey, out var editor))
+        {
+            editor = new VoiceSetEditor();
+            this.setEditors[setKey] = editor;
+        }
+
+        return editor;
+    }
+
+    // ---- Tab 4: Characters ----
+
+    /// <summary>Every speaker with a persisted voice assignment: edit with the same
+    /// filtered pickers as Casting, preview, share via clipboard, or forget entirely.
+    /// Slider edits commit once per interaction through the profile store port.</summary>
+    private void DrawCharactersTab()
+    {
+        var store = this.profiles;
+        var entries = store.Entries;
+
+        if (Controls.Button(
+                this.clearAllArmed ? "Really clear all?" : "Clear all",
+                enabled: entries.Count > 0,
+                entries.Count > 0 ? null : "No stored assignments."))
+        {
+            if (this.clearAllArmed)
+            {
+                var count = entries.Count;
+                store.Clear();
+                this.characterPending.Clear();
+                this.ReportStatus($"Cleared {count} voice assignment(s); speakers re-assign from the active casting.", isError: false);
+                this.clearAllArmed = false;
+            }
+            else
+            {
+                this.clearAllArmed = true;
+            }
+        }
+
+        Controls.Tooltip("Forgets every stored assignment (players and NPCs). The next line a speaker says re-assigns from the active casting.");
+
+        ImGui.SameLine();
+        if (Controls.Button("Export", enabled: entries.Count > 0))
+        {
+            ImGui.SetClipboardText(CharacterVoicesModel.ShareText(store.Entries));
+            this.ReportStatus($"Copied {entries.Count} voice assignment(s) to the clipboard.", isError: false);
+        }
+
+        ImGui.SameLine();
+        if (Controls.Button("Import", enabled: true))
+        {
+            this.assignmentImportBuffer = string.Empty;
+            ImGui.OpenPopup("##import-assignments");
+        }
+
+        var importOpen = true;
+        if (ImGui.BeginPopupModal("Import voice assignments", ref importOpen, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.TextWrapped("Paste an assignment share string (copied with Export):");
+            ImGui.InputTextMultiline("##import-assignments-text", ref this.assignmentImportBuffer, 64_000, new Vector2(460, 120));
+            if (ImGui.Button("Import"))
+            {
+                try
+                {
+                    var shares = CharacterVoicesModel.ParseShare(this.assignmentImportBuffer);
+                    var known = store.Entries.Select(e => e.SpeakerKey).ToHashSet(StringComparer.Ordinal);
+                    var added = 0;
+                    var updated = 0;
+                    foreach (var share in shares)
+                    {
+                        if (string.IsNullOrEmpty(share.SpeakerKey))
+                        {
+                            continue;
+                        }
+
+                        if (known.Add(share.SpeakerKey))
+                        {
+                            added++;
+                        }
+                        else
+                        {
+                            updated++;
+                        }
+
+                        store.SetOverride(
+                            share.SpeakerKey,
+                            share.ReferenceVoiceId,
+                            share.ExaggerationBias,
+                            share.Volume,
+                            share.Pitch,
+                            share.Speed);
+                    }
+
+                    this.ReportStatus($"Imported {added} new and {updated} updated voice assignment(s).", isError: false);
+                    ImGui.CloseCurrentPopup();
+                }
+                catch (ShareCodecException e)
+                {
+                    this.ReportStatus(e.Message, isError: true);
+                }
+            }
+
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel"))
+            {
+                ImGui.CloseCurrentPopup();
+            }
+
+            ImGui.EndPopup();
+        }
+
+        var catalog = this.voiceCatalog();
+        this.characterEditor.DrawFilters(catalog);
+        var ids = this.characterEditor.OfferedIds(catalog, this.VoiceOptions);
+
+        ImGui.Separator();
+        var removeKey = default(string?);
+        if (ImGui.BeginTable(
+                "##characters",
+                9,
+                ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY,
+                new Vector2(-1, -1)))
+        {
+            ImGui.TableSetupScrollFreeze(0, 1);
+            ImGui.TableSetupColumn("##trash", ImGuiTableColumnFlags.WidthFixed, 24f);
+            ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch, 1.6f);
+            ImGui.TableSetupColumn("World", ImGuiTableColumnFlags.WidthFixed, 55f);
+            ImGui.TableSetupColumn("Voice", ImGuiTableColumnFlags.WidthStretch, 2f);
+            ImGui.TableSetupColumn("Bias", ImGuiTableColumnFlags.WidthFixed, 95f);
+            ImGui.TableSetupColumn("Pitch", ImGuiTableColumnFlags.WidthFixed, 95f);
+            ImGui.TableSetupColumn("Speed", ImGuiTableColumnFlags.WidthFixed, 95f);
+            ImGui.TableSetupColumn("Vol", ImGuiTableColumnFlags.WidthFixed, 80f);
+            ImGui.TableSetupColumn("▶", ImGuiTableColumnFlags.WidthFixed, 36f);
+            ImGui.TableHeadersRow();
+
+            foreach (var profile in CharacterVoicesModel.BuildView(store.Entries))
+            {
+                var key = SpeakerKeyView.Parse(profile.SpeakerKey);
+                ImGui.PushID(profile.SpeakerKey);
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                if (ImGui.SmallButton("🗑"))
+                {
+                    removeKey = profile.SpeakerKey;
+                }
+
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(key.Name);
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(key.World?.ToString() ?? "—");
+
+                ImGui.TableNextColumn();
+                var current = this.characterPending.TryGetValue(profile.SpeakerKey, out var pending)
+                    ? pending
+                    : (profile.ReferenceVoiceId, profile.ExaggerationBias, profile.Pitch, profile.Speed, profile.Volume);
+                var (voiceId, bias, pitch, speed, volume) = current;
+
+                ImGui.SetNextItemWidth(-1);
+                if (this.characterEditor.DrawVoiceCombo("##voice", ids, voiceId, out var picked) && picked != voiceId)
+                {
+                    this.characterPending.Remove(profile.SpeakerKey);
+                    this.CommitCharacter(profile.SpeakerKey, picked, bias, pitch, speed, volume);
+                    voiceId = picked;
+                }
+
+                ImGui.TableNextColumn();
+                ImGui.SetNextItemWidth(-1);
+                if (ImGui.SliderFloat("##bias", ref bias, 0f, 1f, "%.2f"))
+                {
+                    this.characterPending[profile.SpeakerKey] = (voiceId, Math.Clamp(bias, 0f, 1f), pitch, speed, volume);
+                }
+
+                Controls.Tooltip("Exaggeration bias added on top of the default for this speaker.");
+                this.CommitPendingCharacterOnRelease(store, profile.SpeakerKey);
+
+                ImGui.TableNextColumn();
+                ImGui.SetNextItemWidth(-1);
+                if (ImGui.SliderFloat("##pitch", ref pitch, 0.5f, 1.5f, "%.2f"))
+                {
+                    this.characterPending[profile.SpeakerKey] = (voiceId, Math.Clamp(bias, 0f, 1f), Math.Clamp(pitch, 0.5f, 1.5f), speed, volume);
+                }
+
+                Controls.Tooltip("Playback pitch multiplier: 1 is natural; child-pitched voices sit above 1.");
+                this.CommitPendingCharacterOnRelease(store, profile.SpeakerKey);
+
+                ImGui.TableNextColumn();
+                ImGui.SetNextItemWidth(-1);
+                if (ImGui.SliderFloat("##speed", ref speed, 0.7f, 1.3f, "%.2f"))
+                {
+                    this.characterPending[profile.SpeakerKey] = (voiceId, Math.Clamp(bias, 0f, 1f), pitch, Math.Clamp(speed, 0.7f, 1.3f), volume);
+                }
+
+                Controls.Tooltip("Pace multiplier: 1 is natural.");
+                this.CommitPendingCharacterOnRelease(store, profile.SpeakerKey);
+
+                ImGui.TableNextColumn();
+                ImGui.SetNextItemWidth(-1);
+                if (ImGui.SliderFloat("##volume", ref volume, 0f, 2f, "%.2f"))
+                {
+                    this.characterPending[profile.SpeakerKey] = (voiceId, Math.Clamp(bias, 0f, 1f), pitch, speed, Math.Clamp(volume, 0f, 2f));
+                }
+
+                Controls.Tooltip("Per-speaker loudness multiplier: 1 plays as synthesized, up to 2 boosts quiet voices.");
+                this.CommitPendingCharacterOnRelease(store, profile.SpeakerKey);
+
+                ImGui.TableNextColumn();
+                var ready = this.Synth.IsReady && this.activeRequests == 0;
+                var test = ready
+                    ? ImGui.SmallButton("▶")
+                    : Controls.Button("▶", false, this.Synth.IsReady ? "Synthesizing…" : this.EngineReason());
+                if (test)
+                {
+                    this.SpeakVoiceTest(profile with
+                    {
+                        ReferenceVoiceId = voiceId,
+                        ExaggerationBias = Math.Clamp(bias, 0f, 1f),
+                        Pitch = pitch,
+                        Speed = speed,
+                        Volume = Math.Clamp(volume, 0f, 2f),
+                    });
+                }
+
+                ImGui.PopID();
+            }
+
+            ImGui.EndTable();
+        }
+
+        if (removeKey is { } removed)
+        {
+            this.characterPending.Remove(removed);
+            store.Remove(removed);
+        }
+    }
+
+    /// <summary>Commit-on-release for one characters-row slider: while a drag is active
+    /// the pending tuple tracks it; the deactivated frame writes it through the store
+    /// exactly once (VoiceTable's persist-once-per-interaction contract).</summary>
+    private void CommitPendingCharacterOnRelease(IProfileStore store, string speakerKey)
+    {
+        if (ImGui.IsItemDeactivatedAfterEdit()
+            && this.characterPending.TryGetValue(speakerKey, out var committed))
+        {
+            this.CommitCharacter(
+                speakerKey,
+                committed.VoiceId,
+                committed.Bias,
+                committed.Pitch,
+                committed.Speed,
+                committed.Volume);
+            this.characterPending.Remove(speakerKey);
+        }
+    }
+
+    private void CommitCharacter(string speakerKey, string voiceId, float bias, float pitch, float speed, float volume) =>
+        this.profiles.SetOverride(
+            speakerKey,
+            voiceId,
+            Math.Clamp(bias, 0f, 1f),
+            Math.Clamp(volume, 0f, 2f),
+            pitch,
+            speed);
 }

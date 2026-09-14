@@ -2,6 +2,7 @@ namespace AIVoiceActing;
 
 using System.Reflection;
 using AIVoiceActing.Container;
+using AIVoiceActing.Domain;
 using AIVoiceActing.Infrastructure.Audio;
 using AIVoiceActing.Infrastructure.Onnx;
 using AIVoiceActing.Ports;
@@ -286,7 +287,12 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             },
             reportError: message => this.services.LogSink.Warn(message),
             logInfo: message => this.services.LogSink.Info(message),
-            logError: (message, ex) => this.services.LogSink.Error(message, ex));
+            logError: (message, ex) => this.services.LogSink.Error(message, ex),
+            presetStore: () => this.services.CastingPresetStore,
+            invalidateVoiceMap: () => this.services.InvalidateVoiceMap(),
+            voiceCatalog: () => VoiceCatalog.FromDirectory(Path.Combine(
+                PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
+                "voices")));
         this.stylesWindow = new StylesWindow(config, this.SaveConfig);
         this.windowSystem.AddWindow(this.configWindow);
         this.windowSystem.AddWindow(this.stylesWindow);

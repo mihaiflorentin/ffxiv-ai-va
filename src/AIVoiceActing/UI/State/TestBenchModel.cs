@@ -87,7 +87,18 @@ public sealed class TestBenchModel
             plan.Tags);
     }
 
-    /// <summary>The per-voice ▶ Test request through the same direct path.</summary>
-    public static SynthesisRequest BuildVoiceTestRequest(string referenceVoiceId, float exaggeration) =>
-        new(referenceVoiceId, VoiceTestLine, Math.Clamp(exaggeration, 0f, 1f), []);
+    /// <summary>The per-voice ▶ Test request through the same direct path, carrying the
+    /// profile's pitch/speed/volume so auditions match the real delivery.</summary>
+    public static SynthesisRequest BuildVoiceTestRequest(
+        string referenceVoiceId,
+        float exaggeration,
+        float pitch = 1f,
+        float speed = 1f,
+        float volume = 1f) =>
+        new(referenceVoiceId, VoiceTestLine, Math.Clamp(exaggeration, 0f, 1f), [])
+        {
+            Pitch = pitch,
+            Speed = speed,
+            Volume = volume,
+        };
 }

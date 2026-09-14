@@ -117,6 +117,46 @@ public sealed class JsonProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public void SetOverride_PersistsSpeedAndVolume_AcrossReload()
+    {
+        var store = this.NewStore();
+
+        store.SetOverride("npc:feo ul", "warm", 0.2f, volume: 1.5f, pitch: 1.18f, speed: 1.1f);
+        var reloaded = this.NewStore().Entries.Single(e => e.SpeakerKey == "npc:feo ul");
+
+        Assert.Equal(1.5f, reloaded.Volume);
+        Assert.Equal(1.18f, reloaded.Pitch);
+        Assert.Equal(1.1f, reloaded.Speed);
+    }
+
+    [Fact]
+    public void SetOverride_KeepsPreviousPitchAndSpeed_WhenNotSupplied()
+    {
+        var store = this.NewStore();
+        store.SetOverride("npc:feo ul", "warm", 0f, volume: 1f, pitch: 1.18f, speed: 1.1f);
+
+        store.SetOverride("npc:feo ul", "brisk", 0.4f);
+        var entry = store.Entries.Single(e => e.SpeakerKey == "npc:feo ul");
+
+        Assert.Equal("brisk", entry.ReferenceVoiceId);
+        Assert.Equal(1.18f, entry.Pitch);
+        Assert.Equal(1.1f, entry.Speed);
+    }
+
+    [Fact]
+    public void Clear_EmptiesAllEntries_AndPersists()
+    {
+        var store = this.NewStore();
+        store.SetOverride("npc:feo ul", "warm", 0f);
+        store.SetOverride("pc:A B@66", "warm", 0f);
+
+        store.Clear();
+
+        Assert.Empty(store.Entries);
+        Assert.Empty(this.NewStore().Entries);
+    }
+
+    [Fact]
     public void CorruptFile_IsBackedUp_AndStoreStartsFresh()
     {
         Directory.CreateDirectory(this.directory);

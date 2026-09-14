@@ -1,5 +1,6 @@
 namespace AIVoiceActing.Container;
 
+using System.Globalization;
 using AIVoiceActing.Domain;
 using AIVoiceActing.Domain.Handlers;
 using AIVoiceActing.Domain.Pipeline;
@@ -24,6 +25,7 @@ public sealed class ServiceContainer : IDisposable
     private readonly ILogSink? logSinkOverride;
     private readonly Func<ILogSink>? logSinkFactory;
     private readonly Func<string>? profileStorePathFactory;
+    private readonly Func<string>? castingPresetsPathFactory;
     private readonly Func<string>? modelsDirFactory;
     private readonly Func<string>? voicesManifestFactory;
     private readonly Func<IReadOnlyDictionary<string, string>>? lexiconEntriesFactory;
@@ -66,6 +68,7 @@ public sealed class ServiceContainer : IDisposable
 
     private ILogSink? logSink;
     private IProfileStore? profileStore;
+    private ICastingPresetStore? castingPresetStore;
     private IModelStore? modelStore;
     private IModelProvisioner? modelProvisioner;
     private ISpeechSynthesizer? speechSynthesizer;
@@ -94,6 +97,7 @@ public sealed class ServiceContainer : IDisposable
     public ServiceContainer(
         ILogSink? logSinkOverride = null,
         Func<ILogSink>? logSinkFactory = null,
+        Func<string>? castingPresetsPathFactory = null,
         Func<string>? profileStorePathFactory = null,
         Func<string>? modelsDirFactory = null,
         Func<string>? voicesManifestFactory = null,
@@ -136,6 +140,7 @@ public sealed class ServiceContainer : IDisposable
         this.logSinkOverride = logSinkOverride;
         this.logSinkFactory = logSinkFactory;
         this.profileStorePathFactory = profileStorePathFactory;
+        this.castingPresetsPathFactory = castingPresetsPathFactory;
         this.modelsDirFactory = modelsDirFactory;
         this.voicesManifestFactory = voicesManifestFactory;
         this.lexiconEntriesFactory = lexiconEntriesFactory;
@@ -709,19 +714,44 @@ public sealed class ServiceContainer : IDisposable
     }
 
     private IReadOnlyDictionary<int, string>? modelVoiceMap;
+    private IReadOnlyDictionary<int, string>? presetModelOverrides;
 
-    /// <summary>Model id → named voice set (lazy; from overridenModelIds.txt third column).</summary>
-    private IReadOnlyDictionary<int, string> ModelVoiceMap() =>
-        this.modelVoiceMap ??= Infrastructure.Dalamud.UngenderedModelIds.LoadVoiceMap();
+    /// <summary>
+    /// Model id → named voice set. When the active casting preset defines model
+    /// overrides, those win; otherwise the embedded overridenModelIds.txt table.
+    /// </summary>
+    private IReadOnlyDictionary<int, string> ModelVoiceMap()
+    {
+        var store = this.CastingPresetStoreUnlocked();
+        if (store.ActivePresetName != CastingPreset.DefaultPresetName)
+        {
+            if (this.presetModelOverrides is { } cached)
+            {
+                return cached;
+            }
+
+            try
+            {
+                var preset = store.Get(store.ActivePresetName);
+                if (preset.ModelOverrides.Count > 0)
+                {
+                    return this.presetModelOverrides ??= preset.ModelOverrides
+                        .Where(kv => int.TryParse(kv.Key, out _) && kv.Value.SetKey.Length > 0)
+                        .ToDictionary(kv => int.Parse(kv.Key, CultureInfo.InvariantCulture), kv => kv.Value.SetKey);
+                }
+            }
+            catch (CastingPresetException)
+            {
+                // Unreadable active preset: the voice-map overlay already fell back to
+                // the built-in casting; the embedded model table matches it.
+            }
+        }
+
+        return this.modelVoiceMap ??= Infrastructure.Dalamud.UngenderedModelIds.LoadVoiceMap();
+    }
 
     /// <summary>Model ids that force the Ungendered group (ids that carry a set key also force it, via the resolver's override list).</summary>
     private IReadOnlySet<int>? ModelVoiceMapKeys() => new HashSet<int>(this.ModelVoiceMap().Keys);
-
-    private RaceVoiceMap VoiceMapUnlocked() =>
-        this.voiceMap ??= RaceVoiceMap.FromJson(File.ReadAllText(
-            this.voicesManifestFactory?.Invoke()
-            ?? throw new InvalidOperationException(
-                "No voices manifest configured: pass voicesManifestFactory (in-game) or a temp path (tests).")));
 
 
     public ILogSink LogSink
@@ -733,6 +763,65 @@ public sealed class ServiceContainer : IDisposable
                 return this.LogSinkUnlocked();
             }
         }
+    }
+    private RaceVoiceMap LoadBaseVoiceMapUnlocked() => RaceVoiceMap.FromJson(File.ReadAllText(
+        this.voicesManifestFactory?.Invoke()
+        ?? throw new InvalidOperationException(
+            "No voices manifest configured: pass voicesManifestFactory (in-game) or a temp path (tests).")));
+
+    /// <summary>
+    /// The effective voice map: the base manifest, or the manifest overlaid with the
+    /// active casting preset (preset sets win per key, variants wholesale, and the
+    /// "ungendered" variant row re-points the group's fallback set). Cached like the
+    /// bare map was; <see cref="InvalidateVoiceMap"/> drops the cache.
+    /// </summary>
+    private RaceVoiceMap VoiceMapUnlocked()
+    {
+        if (this.voiceMap is { } cached)
+        {
+            return cached;
+        }
+
+        var baseMap = this.LoadBaseVoiceMapUnlocked();
+        var store = this.CastingPresetStoreUnlocked();
+        var active = store.ActivePresetName;
+        if (active == CastingPreset.DefaultPresetName)
+        {
+            return this.voiceMap = baseMap;
+        }
+
+        CastingPreset preset;
+        try
+        {
+            preset = store.Get(active);
+        }
+        catch (CastingPresetException e)
+        {
+            this.LogSinkUnlocked().Warn($"Active casting preset \"{active}\" is unreadable; using the built-in casting. {e.Message}");
+            return this.voiceMap = baseMap;
+        }
+
+        var sets = new Dictionary<string, VoiceSlot[]>(baseMap.Sets, StringComparer.Ordinal);
+        foreach (var (key, slots) in preset.Sets)
+        {
+            sets[key] = slots.Select(dto => dto.ToSlot()).ToArray();
+        }
+
+        VoiceSlot[]? ResolveAny(string key) =>
+            sets.TryGetValue(key, out var activeSet) ? activeSet
+            : baseMap.Disabled is { } parked && parked.Sets.TryGetValue(key, out var parkedSet) ? parkedSet
+            : null;
+
+        var variants = new Dictionary<string, string>(preset.Variants, StringComparer.Ordinal);
+        if (variants.TryGetValue(CastingPreset.UngenderedVariantKey, out var ungenderedKey)
+            && ResolveAny(ungenderedKey) is { } ungenderedSlots)
+        {
+            // Ungendered speakers have no race, so the variant lookup can never fire
+            // for them; re-pointing the fallback set is what makes the row live.
+            sets[CastingPreset.UngenderedVariantKey] = ungenderedSlots;
+        }
+
+        return this.voiceMap = new RaceVoiceMap(sets, variants, baseMap.Disabled);
     }
 
     /// <summary>Persistent voice-assignment store (JsonProfileStore over voice-assignments.json).</summary>
@@ -762,6 +851,43 @@ public sealed class ServiceContainer : IDisposable
             }
 
             this.disposables.Clear();
+        }
+    }
+
+    /// <summary>Casting preset store (JsonCastingPresetStore over casting-presets.json
+    /// next to the profile store by default).</summary>
+    public ICastingPresetStore CastingPresetStore
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.CastingPresetStoreUnlocked();
+            }
+        }
+    }
+
+    private ICastingPresetStore CastingPresetStoreUnlocked() =>
+        this.castingPresetStore ??= this.RegisterDisposable(new JsonCastingPresetStore(
+            this.castingPresetsPathFactory?.Invoke()
+            ?? (this.profileStorePathFactory is { } profilePathFactory
+                ? Path.Combine(Path.GetDirectoryName(profilePathFactory()) ?? ".", "casting-presets.json")
+                : throw new InvalidOperationException(
+                    "No casting presets path configured: pass a castingPresetsPathFactory (in-game) or a profileStorePathFactory (tests).")),
+            this.LoadBaseVoiceMapUnlocked,
+            this.LogSinkUnlocked()));
+
+    /// <summary>
+    /// Drops the cached voice map (and any cached preset model overrides) so the next
+    /// voice resolution rebuilds from the manifest plus the active casting preset. The
+    /// UI calls this after every preset mutation or activation.
+    /// </summary>
+    public void InvalidateVoiceMap()
+    {
+        lock (this.gate)
+        {
+            this.voiceMap = null;
+            this.presetModelOverrides = null;
         }
     }
 
