@@ -89,7 +89,7 @@ public sealed class VoiceSetEditor
         VoiceSex? sex = this.sexIndex > 0 && this.sexIndex <= Sexes.Length
             ? Sexes[this.sexIndex - 1].Sex
             : null;
-        var offered = [.. VoiceCatalog
+        string[] offered = [.. VoiceCatalog
             .Filter(catalog, language, sex, this.search)
             .Select(entry => entry.Id)
             .Order(StringComparer.Ordinal)];
