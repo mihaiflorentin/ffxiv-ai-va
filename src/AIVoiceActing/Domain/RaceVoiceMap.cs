@@ -95,6 +95,21 @@ public sealed class RaceVoiceMap
         throw new InvalidOperationException($"RaceVoiceMap has no set \"{setKey}\".");
     }
 
+    /// <summary>Active-set lookup that reports failure instead of throwing — beast
+    /// routing probes tribe buckets that may be absent (empty lists are never
+    /// overlaid). Parked sets do not participate.</summary>
+    public bool TrySlotsForSet(string setKey, out VoiceSlot[] slots)
+    {
+        if (this.sets.TryGetValue(setKey, out var set))
+        {
+            slots = (VoiceSlot[])set.Clone();
+            return true;
+        }
+
+        slots = [];
+        return false;
+    }
+
     /// <summary>The slot set for a voice group, nuanced by race; defensive copy.</summary>
     public VoiceSlot[] SlotsFor(VoiceGroup group, byte? race) =>
         (VoiceSlot[])this.ResolveSet(group, race).Clone();

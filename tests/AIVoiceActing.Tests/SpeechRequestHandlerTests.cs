@@ -329,4 +329,25 @@ public sealed class SpeechRequestHandlerTests
         Assert.Empty(h.Queue.Enqueued);
         Assert.Contains(h.Log.Snapshot(), c => c.Level == "Error");
     }
+
+    [Fact]
+    public async Task SpeakAsync_EmitsConversationIdentityLine()
+    {
+        var h = Harness.Create();
+        var speaker = new SpeakerIdentity(
+            "npc:amaljaa scout", "Amalj'aa Scout", Race: null, Tribe: 7, Sex: 0, World: 66, ModelCharaId: 748);
+
+        await h.Handler.SpeakAsync("s", speaker, "Hello.", CancellationToken.None);
+
+        var line = Assert.Single(
+            h.Log.Snapshot(),
+            call => call.Message.StartsWith("Conversation:", StringComparison.Ordinal));
+        Assert.Contains("name=\"Amalj'aa Scout\"", line.Message);
+        Assert.Contains("key=npc:amaljaa scout", line.Message);
+        Assert.Contains("race=?", line.Message);
+        Assert.Contains("tribe=7", line.Message);
+        Assert.Contains("sex=0", line.Message);
+        Assert.Contains("model=748", line.Message);
+        Assert.Contains("world=66", line.Message);
+    }
 }

@@ -8,7 +8,7 @@
     "id": "bm_fable"
    },
    {
-    "id": "am_eric"
+    "id": "bm_george"
    }
   ],
   "female": [
@@ -19,7 +19,7 @@
     "id": "bf_alice"
    },
    {
-    "id": "af_sarah"
+    "id": "bf_emma"
    }
   ],
   "poshMale": [
@@ -112,37 +112,37 @@
   ],
   "highlanderMale": [
    {
-    "id": "am_michael"
+    "id": "hm_omega"
    },
    {
-    "id": "am_adam"
+    "id": "pm_alex"
    }
   ],
   "highlanderFemale": [
    {
-    "id": "af_sarah"
+    "id": "hf_alpha"
    },
    {
-    "id": "af_aoede"
+    "id": "ef_dora"
    },
    {
-    "id": "af_jessica"
+    "id": "zf_xiaoni"
    }
   ],
   "keeperMale": [
    {
-    "id": "am_echo"
+    "id": "hm_psi"
    },
    {
-    "id": "am_eric"
+    "id": "zm_yunxi"
    }
   ],
   "keeperFemale": [
    {
-    "id": "af_nicole"
+    "id": "hf_beta"
    },
    {
-    "id": "af_sarah"
+    "id": "zf_xiaobei"
    }
   ],
   "ungendered": [
@@ -160,12 +160,6 @@
    },
    {
     "id": "hm_omega"
-   },
-   {
-    "id": "af_heart"
-   },
-   {
-    "id": "am_eric"
    }
   ],
   "vieraMale": [
@@ -191,13 +185,13 @@
     "id": "zf_xiaoxiao"
    },
    {
-    "id": "jf_alpha"
-   },
-   {
-    "id": "jf_tebukuro"
-   },
-   {
     "id": "zf_xiaoyi"
+   },
+   {
+    "id": "zf_xiaobei"
+   },
+   {
+    "id": "zf_xiaoni"
    }
   ],
   "roegadynMale": [
@@ -236,7 +230,7 @@
   "8|Female": "vieraFemale"
  },
  "disabledSets": {
-  "why": "Parked casts: activation = append 'modelId ; Name ; setKey' to overridenModelIds.txt. The jf_/jm_ (Japanese) bank garbles English on the v1.0 model (user-reported in game), so any cast using it stays parked. The zf_/zm_ (Chinese) bank was auditioned by the user on 2026-09-14 and is now ACTIVE for Au Ra. F5-clip casting (Piper-generated accents) was dropped the same day: play stays Kokoro-only. deepMale (am_onyx 0.88) parked 2026-09-14: user moved Roegadyn male to im_nicola after disliking am_fenrir. hrothgarMale/deepFemale parked 2026-09-14: user found no suitable Hrothgar voices; Hrothgar now shares the Roegadyn cast.",
+  "why": "Parked casts: 0.0.26 turns these sets into the beast-tribe rows of the Default preset (General Voices > Beast tribes binds model ids; pool/male/female lists per tribe). The jf_/jm_ (Japanese) bank garbles English on the v1.0 model (user-reported in game), so any cast using it stays parked. The zf_/zm_ (Chinese) bank was auditioned by the user on 2026-09-14 and is ACTIVE for Au Ra and several tribe pools. F5-clip casting (Piper-generated accents) was dropped the same day: play stays Kokoro-only. deepMale (am_onyx 0.88) parked 2026-09-14: user moved Roegadyn male to im_nicola after disliking am_fenrir. hrothgarMale/deepFemale parked 2026-09-14: user found no suitable Hrothgar voices; Hrothgar now shares the Roegadyn cast.",
   "sets": {
    "icelandicMale": [
     {
@@ -285,7 +279,7 @@
    ],
    "setSylph": [
     {
-     "id": "af_sky",
+     "id": "pm_alex",
      "pitch": 1.12
     },
     {
@@ -295,11 +289,11 @@
    ],
    "setKobold": [
     {
-     "id": "am_liam",
+     "id": "pm_alex",
      "pitch": 0.92
     },
     {
-     "id": "am_puck",
+     "id": "zm_yunxia",
      "pitch": 0.92
     }
    ],
@@ -315,22 +309,22 @@
    ],
    "setIxal": [
     {
-     "id": "af_sky",
+     "id": "pm_santa",
      "pitch": 1.08,
      "speed": 1.1
     },
     {
-     "id": "am_puck",
+     "id": "ef_dora",
      "pitch": 1.08
     }
    ],
    "setVanuVanu": [
     {
-     "id": "am_adam",
+     "id": "pm_alex",
      "pitch": 0.95
     },
     {
-     "id": "am_michael",
+     "id": "ef_dora",
      "pitch": 0.95
     }
    ],
@@ -346,12 +340,12 @@
    ],
    "setMoogle": [
     {
-     "id": "af_sky",
+     "id": "bm_george",
      "pitch": 1.25,
      "speed": 1.15
     },
     {
-     "id": "am_puck",
+     "id": "bf_lily",
      "pitch": 1.25,
      "speed": 1.15
     }
@@ -377,24 +371,26 @@
    ],
    "setNamazu": [
     {
-     "id": "am_puck",
+     "id": "pm_santa",
      "pitch": 1.25,
      "speed": 1.2
     },
     {
-     "id": "af_sky",
+     "id": "hf_beta",
      "pitch": 1.25,
      "speed": 1.2
     }
    ],
    "setPixie": [
     {
-     "id": "am_puck",
-     "pitch": 1.15
+     "id": "bf_lily",
+     "pitch": 1.12,
+     "speed": 1.05
     },
     {
-     "id": "af_sky",
-     "pitch": 1.15
+     "id": "bm_george",
+     "pitch": 1.12,
+     "speed": 1.05
     }
    ],
    "setDwarf": [
@@ -409,18 +405,18 @@
    ],
    "setQitari": [
     {
-     "id": "am_michael",
+     "id": "zm_yunyang",
      "pitch": 0.97,
      "speed": 0.95
     },
     {
-     "id": "af_aoede",
+     "id": "hf_beta",
      "pitch": 0.97
     }
    ],
    "setNuMou": [
     {
-     "id": "am_michael",
+     "id": "bm_daniel",
      "pitch": 0.95
     },
     {
@@ -452,27 +448,27 @@
    ],
    "setArkasodara": [
     {
-     "id": "am_michael",
+     "id": "hm_psi",
      "pitch": 0.97
     },
     {
-     "id": "af_sarah",
+     "id": "hf_alpha",
      "pitch": 0.97
     }
    ],
    "setOmicron": [
     {
-     "id": "am_echo",
+     "id": "zm_yunxia",
      "pitch": 0.95
     },
     {
-     "id": "af_nicole",
+     "id": "zf_xiaoni",
      "pitch": 0.95
     }
    ],
    "setPelupelu": [
     {
-     "id": "af_sarah",
+     "id": "ef_dora",
      "pitch": 1.05,
      "speed": 1.1
     },
@@ -483,17 +479,17 @@
    ],
    "setYokHuy": [
     {
-     "id": "am_onyx",
+     "id": "hm_omega",
      "pitch": 0.9
     },
     {
-     "id": "am_fenrir",
+     "id": "zm_yunjian",
      "pitch": 0.9
     }
    ],
    "setMamoolJa": [
     {
-     "id": "am_onyx",
+     "id": "pm_santa",
      "pitch": 0.95
     },
     {
@@ -512,11 +508,11 @@
    ],
    "setDragon": [
     {
-     "id": "am_fenrir",
+     "id": "bm_george",
      "pitch": 0.85
     },
     {
-     "id": "af_river",
+     "id": "ff_siwis",
      "pitch": 0.9
     }
    ],

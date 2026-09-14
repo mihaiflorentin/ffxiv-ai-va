@@ -13,13 +13,15 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 
 /// <summary>
-/// Four-tab configuration window: Engine (models + status + engine selection), Voices,
-/// Chat (capture, channels, triggers), Test. Driving adapter only: it reads/mutates
-/// <see cref="Configuration"/> and calls the container-resolved ports passed in from the
-/// plugin root — never Infrastructure concretes. Test buttons route through the exact
-/// same speech path as the game (SpeechRequestHandler, or its ISpeechSynthesizer +
-/// ISpeechQueue tail). Per-frame file/process probes are banned: the draw thread reads
-/// cached snapshots refreshed at most once per interval.
+/// Six-tab configuration window: Engine (models + status + engine selection), General
+/// Voices (casting presets over the race/gender + beast-tribe voice grid), NPC Voices
+/// and Player Voices (manual overrides), Chat (capture, channels, triggers), Test.
+/// Driving adapter only: it reads/mutates <see cref="Configuration"/> and calls the
+/// container-resolved ports passed in from the plugin root — never Infrastructure
+/// concretes. Test buttons route through the exact same speech path as the game
+/// (SpeechRequestHandler, or its ISpeechSynthesizer + ISpeechQueue tail). Per-frame
+/// file/process probes are banned: the draw thread reads cached snapshots refreshed at
+/// most once per interval.
 /// </summary>
 public sealed class ConfigurationWindow : Window
 {
@@ -66,29 +68,25 @@ public sealed class ConfigurationWindow : Window
     private readonly TestBenchModel test = new();
     private readonly VoiceEntryForm playerForm = new(player: true);
     private readonly VoiceEntryForm npcForm = new(player: false);
-    private readonly VoiceTable playerTable;
-    private readonly VoiceTable npcTable;
 
     private readonly Func<ICastingPresetStore> presetStore;
     private readonly Action invalidateVoiceMap;
     private readonly Func<IReadOnlyList<VoiceCatalogEntry>> voiceCatalog;
 
-    // Casting tab: edits live on the pure presenter's buffer until Save; the rest is
-    // per-frame view state (one editor instance per drawn set, keyed by set name).
+    // General Voices tab: edits live on the pure presenter's buffer until Save; the rest
+    // is per-frame view state (one editor instance per drawn row, keyed by bucket key).
     private readonly CastingTabModel casting = new();
     private bool castingInitialized;
     private readonly Dictionary<string, VoiceSetEditor> setEditors = new(StringComparer.Ordinal);
     private string presetImportBuffer = string.Empty;
     private string forkNameBuffer = string.Empty;
     private string scratchNameBuffer = string.Empty;
-    private string modelIdBuffer = string.Empty;
-    private string modelNameBuffer = string.Empty;
-    private string modelSetChoice = string.Empty;
+    private string bindModelIdBuffer = string.Empty;
     private bool deleteArmed;
 
-    // Characters tab: slider edits hold a pending tuple per speaker, committed once on
-    // release (the same persist-once-per-interaction contract as VoiceTable).
-    private bool clearAllArmed;
+    // NPC/Player Voices tabs: slider edits hold a pending tuple per speaker, committed
+    // once on release; clear-all arms per tab.
+    private bool clearTabArmed;
     private string assignmentImportBuffer = string.Empty;
     private readonly VoiceSetEditor characterEditor = new();
     private readonly Dictionary<string, (string VoiceId, float Bias, float Pitch, float Speed, float Volume)>
@@ -184,18 +182,8 @@ public sealed class ConfigurationWindow : Window
         this.Size = new Vector2(620, 520);
         this.SizeCondition = ImGuiCond.FirstUseEver;
 
-        this.playerTable = this.CreateTable(showWorld: true);
-        this.npcTable = this.CreateTable(showWorld: false);
     }
 
-    private VoiceTable CreateTable(bool showWorld) => new(showWorld, this.save)
-    {
-        SetOverride = (key, voiceId, bias, volume) => this.profiles.SetOverride(key, voiceId, bias, volume),
-        Remove = key => this.profiles.Remove(key),
-        SpeakTest = profile => this.SpeakVoiceTest(profile),
-        EngineReady = () => this.Synth.IsReady && this.activeRequests == 0,
-        EngineNotReadyReason = () => this.Synth.IsReady ? "Synthesizing…" : this.EngineReason(),
-    };
 
     private string[] VoiceOptions => this.voiceMap().DistinctVoiceIds();
 
@@ -216,21 +204,21 @@ public sealed class ConfigurationWindow : Window
             ImGui.EndTabItem();
         }
 
-        if (ImGui.BeginTabItem("Voices"))
+        if (ImGui.BeginTabItem("General Voices"))
         {
-            this.DrawVoicesTab();
+            this.DrawGeneralVoicesTab();
             ImGui.EndTabItem();
         }
 
-        if (ImGui.BeginTabItem("Casting"))
+        if (ImGui.BeginTabItem("NPC Voices"))
         {
-            this.DrawCastingTab();
+            this.DrawNpcVoicesTab();
             ImGui.EndTabItem();
         }
 
-        if (ImGui.BeginTabItem("Characters"))
+        if (ImGui.BeginTabItem("Player Voices"))
         {
-            this.DrawCharactersTab();
+            this.DrawPlayerVoicesTab();
             ImGui.EndTabItem();
         }
 
@@ -752,38 +740,6 @@ public sealed class ConfigurationWindow : Window
         }
     }
 
-    // ---- Tab 2: Voices ----
-
-    private void DrawVoicesTab()
-    {
-        var c = this.config;
-        Controls.Checkbox(
-            "Use race/gender voice presets for unlisted speakers",
-            "Speakers without a manual override get a deterministic voice from their race/gender set.",
-            () => c.UseRaceVoicePresets,
-            v => { c.UseRaceVoicePresets = v; this.save(); });
-
-        // Computed once per frame and handed to both tables — never per row.
-        var voiceIds = this.VoiceOptions;
-
-        if (ImGui.CollapsingHeader("Players", ImGuiTreeNodeFlags.DefaultOpen))
-        {
-            ImGui.TextWrapped("Manual player overrides (name + world id). Overrides win over the automatic assignment and persist.");
-            var entries = this.profiles.Entries
-                .Where(e => e.Custom && e.SpeakerKey.StartsWith("pc:", StringComparison.Ordinal))
-                .ToArray();
-            this.playerTable.Draw("##players", entries, e => SpeakerKeyView.Parse(e.SpeakerKey), this.playerForm, voiceIds);
-        }
-
-        if (ImGui.CollapsingHeader("NPCs", ImGuiTreeNodeFlags.DefaultOpen))
-        {
-            ImGui.TextWrapped("Manual NPC overrides by name. Overrides win over the automatic assignment and persist.");
-            var entries = this.profiles.Entries
-                .Where(e => e.Custom && e.SpeakerKey.StartsWith("npc:", StringComparison.Ordinal))
-                .ToArray();
-            this.npcTable.Draw("##npcs", entries, e => SpeakerKeyView.Parse(e.SpeakerKey), this.npcForm, voiceIds);
-        }
-    }
 
     // ---- Tab 3: Chat ----
 
@@ -1169,10 +1125,9 @@ public sealed class ConfigurationWindow : Window
     }
 
     /// <summary>
-    /// Resolves the deterministic voice for a test speaker WITHOUT touching assignment
-    /// state: an existing profile wins; otherwise the pure xxHash slot pick runs over the
-    /// race-map slots with no store entry — auditioning never writes
-    /// voice-assignments.json.
+    /// Resolves the voice for a test speaker WITHOUT touching assignment state: an
+    /// existing profile wins; otherwise a random slot pick runs over the voice-map slots
+    /// with no store entry — auditioning never writes voice-assignments.json.
     /// </summary>
     private string ResolveVoice(SpeakerIdentity speaker)
     {
@@ -1184,10 +1139,7 @@ public sealed class ConfigurationWindow : Window
 
         var map = this.voiceMap();
         var group = VoiceGroupResolver.Resolve(speaker.Race, speaker.Tribe, speaker.Sex, null, null);
-        return VoiceAssigner.AssignSlot(
-            speaker.Key,
-            map.SlotsFor(group, speaker.Race),
-            new Dictionary<string, VoiceProfile>()).ReferenceVoiceId;
+        return VoiceAssigner.AssignSlot(map.SlotsFor(group, speaker.Race)).ReferenceVoiceId;
     }
 
     /// <summary>Fire-and-forget wrapper: counts in-flight requests (disables the speak
@@ -1214,13 +1166,13 @@ public sealed class ConfigurationWindow : Window
         }
     }
 
-    // ---- Tab 3: Casting ----
+    // ---- Tab 2: General Voices ----
 
-    /// <summary>Named casting presets: activate, fork, edit, and share the race→voice-set
-    /// mapping (beast-tribe model-id overrides included). Edits stay in the pure
-    /// presenter's buffer until Save; activation re-overlays the container's voice map
-    /// for speakers without their own assignment.</summary>
-    private void DrawCastingTab()
+    /// <summary>Named casting presets over the flat voice grid: every race/gender row
+    /// and every beast tribe owns its voice list directly. Activate, fork, edit, share.
+    /// Edits stay in the pure presenter's buffer until Save; activation re-overlays the
+    /// container's voice map for speakers without their own assignment.</summary>
+    private void DrawGeneralVoicesTab()
     {
         var store = this.presetStore();
         if (!this.castingInitialized)
@@ -1341,25 +1293,153 @@ public sealed class ConfigurationWindow : Window
         this.DrawImportPresetPopup(store);
 
         ImGui.Separator();
-        Controls.Section("Race casting");
-        ImGui.TextWrapped(
-            "Which voice set each race/gender row uses. \"Ungendered\" covers unknown speakers and races without their own row.");
+        Controls.Checkbox(
+            "Use race/gender voice presets for unlisted speakers",
+            "Speakers without their own assignment pick randomly from their race/gender row; off resolves everyone from the Unknown row.",
+            () => this.config.UseRaceVoicePresets,
+            v => { this.config.UseRaceVoicePresets = v; this.save(); });
 
-        if (ImGui.BeginTable("##variant-grid", 2, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
+        var catalog = this.voiceCatalog();
+        var rawIds = this.VoiceOptions;
+
+        Controls.Section("Race & gender rows");
+        ImGui.TextWrapped(
+            "First sight of a speaker picks randomly from the matching row and is pinned from then on (override it in NPC/Player Voices). "
+            + "\"Unknown\" covers speakers whose race/gender cannot be read.");
+        foreach (var race in Races.All)
         {
-            ImGui.TableSetupColumn("Row", ImGuiTableColumnFlags.WidthStretch, 1f);
-            ImGui.TableSetupColumn("Voice set", ImGuiTableColumnFlags.WidthStretch, 1f);
-            ImGui.TableHeadersRow();
-            foreach (var (variantKey, setKey) in this.casting.EditBuffer.Variants)
+            this.DrawBucketSection(CastingDefaults.RaceBucketKey(race.Id, female: false), $"{race.Name} — Male", catalog, rawIds);
+            this.DrawBucketSection(CastingDefaults.RaceBucketKey(race.Id, female: true), $"{race.Name} — Female", catalog, rawIds);
+        }
+
+        this.DrawBucketSection(CastingDefaults.UnknownBucketKey, "Unknown (cannot identify)", catalog, rawIds);
+
+        Controls.Section("Beast tribes");
+        ImGui.TextWrapped(
+            "Tribe voices serve every member; male/female lists override the pool once filled. "
+            + "Bind model ids harvested from the plugin log's \"Conversation:\" lines so tribe members find their row.");
+        foreach (var tribe in this.casting.EditBuffer.BeastTribes)
+        {
+            if (!ImGui.CollapsingHeader($"{tribe.Name}###tribe-{tribe.Key}"))
             {
-                ImGui.PushID(variantKey);
+                continue;
+            }
+
+            ImGui.PushID($"tribe-{tribe.Key}");
+            this.DrawTribeList("Pool (unknown gender)", tribe, BeastVoiceList.Pool, tribe.Voices, catalog, rawIds);
+            this.DrawTribeList("Male voices", tribe, BeastVoiceList.Male, tribe.MaleVoices, catalog, rawIds);
+            this.DrawTribeList("Female voices", tribe, BeastVoiceList.Female, tribe.FemaleVoices, catalog, rawIds);
+            this.DrawTribeBindings(tribe);
+            ImGui.PopID();
+        }
+    }
+
+    /// <summary>One race/gender bucket: a collapsing header with the live voice count
+    /// over the shared voice-list editor.</summary>
+    private void DrawBucketSection(string bucketKey, string label, IReadOnlyList<VoiceCatalogEntry> catalog, string[] rawIds)
+    {
+        var slots = this.casting.EditBuffer.Buckets.GetValueOrDefault(bucketKey) ?? [];
+        if (!ImGui.CollapsingHeader($"{label} ({slots.Length} voices)###row-{bucketKey}"))
+        {
+            return;
+        }
+
+        this.DrawSlotList(
+            bucketKey,
+            slots,
+            catalog,
+            rawIds,
+            (key, index, slot) => this.casting.SetSlot(key, index, slot),
+            this.casting.RemoveVoice,
+            this.casting.AddVoice);
+    }
+
+    /// <summary>One beast-tribe voice list (pool or gendered), edited through the
+    /// tribe mutators so the list type rides along.</summary>
+    private void DrawTribeList(string label, BeastTribeCast tribe, BeastVoiceList list, IReadOnlyList<VoiceSlotDto> slots, IReadOnlyList<VoiceCatalogEntry> catalog, string[] rawIds)
+    {
+        if (!ImGui.CollapsingHeader($"{label} ({slots.Count} voices)"))
+        {
+            return;
+        }
+
+        this.DrawSlotList(
+            CastingDefaults.BeastBucketKey(tribe.Key, list),
+            slots,
+            catalog,
+            rawIds,
+            (key, index, slot) => this.casting.SetBeastVoice(tribe.Key, list, index, slot),
+            (key, index) => this.casting.RemoveBeastVoice(tribe.Key, list, index),
+            (key, voiceId) => this.casting.AddBeastVoice(tribe.Key, list, voiceId));
+    }
+
+    /// <summary>The shared voice-list editor: filter row, one row per voice (trash,
+    /// voice, pitch/speed/volume/bias, preview), and the add button. Mutations route
+    /// through the delegates so race buckets and tribe lists share one implementation.</summary>
+    private void DrawSlotList(
+        string rowKey,
+        IReadOnlyList<VoiceSlotDto> slots,
+        IReadOnlyList<VoiceCatalogEntry> catalog,
+        string[] rawIds,
+        Action<string, int, VoiceSlotDto> setSlot,
+        Action<string, int> removeSlot,
+        Action<string, string> addVoice)
+    {
+        var editor = this.EditorFor(rowKey);
+        editor.DrawFilters(catalog);
+        var ids = editor.OfferedIds(catalog, rawIds);
+        ImGui.PushID(rowKey);
+        var removeAt = default(int?);
+        if (ImGui.BeginTable(
+                "##slots",
+                7,
+                ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY,
+                new Vector2(-1, 240)))
+        {
+            ImGui.TableSetupScrollFreeze(0, 1);
+            ImGui.TableSetupColumn("##trash", ImGuiTableColumnFlags.WidthFixed, 24f);
+            ImGui.TableSetupColumn("Voice", ImGuiTableColumnFlags.WidthStretch, 2f);
+            ImGui.TableSetupColumn("Pitch", ImGuiTableColumnFlags.WidthFixed, 90f);
+            ImGui.TableSetupColumn("Speed", ImGuiTableColumnFlags.WidthFixed, 90f);
+            ImGui.TableSetupColumn("Vol", ImGuiTableColumnFlags.WidthFixed, 80f);
+            ImGui.TableSetupColumn("Bias", ImGuiTableColumnFlags.WidthFixed, 90f);
+            ImGui.TableSetupColumn("▶", ImGuiTableColumnFlags.WidthFixed, 36f);
+            ImGui.TableHeadersRow();
+
+            for (var i = 0; i < slots.Count; i++)
+            {
+                var slot = slots[i];
+                ImGui.PushID(i);
                 ImGui.TableNextRow();
                 ImGui.TableNextColumn();
-                ImGui.TextUnformatted(VariantLabel(variantKey));
-                ImGui.TableNextColumn();
-                if (this.DrawSetCombo("##variant-set", setKey, out var pickedSet))
+                if (ImGui.SmallButton("🗑"))
                 {
-                    this.casting.SetVariant(variantKey, pickedSet);
+                    removeAt = i;
+                }
+
+                ImGui.TableNextColumn();
+                ImGui.SetNextItemWidth(-1);
+                if (editor.DrawVoiceCombo("##voice", ids, slot.Id, out var picked) && picked != slot.Id)
+                {
+                    slot = slot with { Id = picked };
+                    setSlot(rowKey, i, slot);
+                }
+
+                this.DrawSlotSlider(v => setSlot(rowKey, i, v), slot, "##pitch", 0.5f, 1.5f, slot.Pitch, static (s, v) => s with { Pitch = v }, "Playback pitch multiplier: 1 is natural; child-like races sit above 1.");
+                this.DrawSlotSlider(v => setSlot(rowKey, i, v), slot, "##speed", 0.7f, 1.3f, slot.Speed, static (s, v) => s with { Speed = v }, "Pace multiplier: 1 is natural.");
+                this.DrawSlotSlider(v => setSlot(rowKey, i, v), slot, "##volume", 0f, 2f, slot.Volume, static (s, v) => s with { Volume = v }, "Loudness multiplier: 1 plays as synthesized, up to 2 boosts quiet voices.");
+                this.DrawSlotSlider(v => setSlot(rowKey, i, v), slot, "##bias", 0f, 1f, slot.ExaggerationBias, static (s, v) => s with { ExaggerationBias = v }, "Exaggeration bias added on top of the default for this cast.");
+
+                ImGui.TableNextColumn();
+                var ready = this.Synth.IsReady && this.activeRequests == 0;
+                var test = ready
+                    ? ImGui.SmallButton("▶")
+                    : Controls.Button("▶", false, this.Synth.IsReady ? "Synthesizing…" : this.EngineReason());
+                if (test)
+                {
+                    this.SpeakVoiceTest(new VoiceProfile(
+                        $"preview:{slot.Id}", slot.Id, slot.ExaggerationBias,
+                        DateTimeOffset.UtcNow, Custom: true, slot.Pitch, slot.Speed, slot.Volume));
                 }
 
                 ImGui.PopID();
@@ -1368,169 +1448,57 @@ public sealed class ConfigurationWindow : Window
             ImGui.EndTable();
         }
 
-        Controls.Section("Voice sets");
-        var catalog = this.voiceCatalog();
-        var rawIds = this.VoiceOptions;
-        var removeSlotAt = default((string SetKey, int Index)?);
-        foreach (var (setKey, slots) in this.casting.EditBuffer.Sets)
+        if (removeAt is { } removal)
         {
-            if (!ImGui.CollapsingHeader($"{setKey} ({slots.Length} voices)"))
+            removeSlot(rowKey, removal);
+        }
+
+        if (ImGui.SmallButton("+ Add voice"))
+        {
+            addVoice(rowKey, ids.Length > 0 ? ids[0] : rawIds.FirstOrDefault() ?? "default");
+        }
+
+        ImGui.PopID();
+    }
+
+    /// <summary>Model-id binding row for one tribe: bound ids as trash chips plus the
+    /// id input + Bind button. Bindings live on the preset and persist with Save.</summary>
+    private void DrawTribeBindings(BeastTribeCast tribe)
+    {
+        ImGui.TextDisabled("Model-id bindings:");
+        foreach (var modelId in tribe.ModelIds)
+        {
+            ImGui.PushID($"bind-{modelId}");
+            ImGui.TextUnformatted($"{modelId}");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("🗑"))
             {
-                continue;
-            }
-
-            var editor = this.EditorFor(setKey);
-            editor.DrawFilters(catalog);
-            var ids = editor.OfferedIds(catalog, rawIds);
-            ImGui.PushID(setKey);
-            if (ImGui.BeginTable(
-                    "##slots",
-                    7,
-                    ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY,
-                    new Vector2(-1, 240)))
-            {
-                ImGui.TableSetupScrollFreeze(0, 1);
-                ImGui.TableSetupColumn("##trash", ImGuiTableColumnFlags.WidthFixed, 24f);
-                ImGui.TableSetupColumn("Voice", ImGuiTableColumnFlags.WidthStretch, 2f);
-                ImGui.TableSetupColumn("Pitch", ImGuiTableColumnFlags.WidthFixed, 90f);
-                ImGui.TableSetupColumn("Speed", ImGuiTableColumnFlags.WidthFixed, 90f);
-                ImGui.TableSetupColumn("Vol", ImGuiTableColumnFlags.WidthFixed, 80f);
-                ImGui.TableSetupColumn("Bias", ImGuiTableColumnFlags.WidthFixed, 90f);
-                ImGui.TableSetupColumn("▶", ImGuiTableColumnFlags.WidthFixed, 36f);
-                ImGui.TableHeadersRow();
-
-                for (var i = 0; i < slots.Length; i++)
-                {
-                    var slot = slots[i];
-                    ImGui.PushID(i);
-                    ImGui.TableNextRow();
-                    ImGui.TableNextColumn();
-                    if (ImGui.SmallButton("🗑"))
-                    {
-                        removeSlotAt = (setKey, i);
-                    }
-
-                    ImGui.TableNextColumn();
-                    ImGui.SetNextItemWidth(-1);
-                    if (editor.DrawVoiceCombo("##voice", ids, slot.Id, out var picked) && picked != slot.Id)
-                    {
-                        this.casting.SetSlot(setKey, i, slot with { Id = picked });
-                        slot = this.casting.EditBuffer.Sets[setKey][i];
-                    }
-
-                    this.DrawSlotSlider(setKey, i, slot, "##pitch", 0.5f, 1.5f, slot.Pitch, static (s, v) => s with { Pitch = v }, "Playback pitch multiplier: 1 is natural; child-like races sit above 1.");
-                    this.DrawSlotSlider(setKey, i, slot, "##speed", 0.7f, 1.3f, slot.Speed, static (s, v) => s with { Speed = v }, "Pace multiplier: 1 is natural.");
-                    this.DrawSlotSlider(setKey, i, slot, "##volume", 0f, 2f, slot.Volume, static (s, v) => s with { Volume = v }, "Loudness multiplier: 1 plays as synthesized, up to 2 boosts quiet voices.");
-                    this.DrawSlotSlider(setKey, i, slot, "##bias", 0f, 1f, slot.ExaggerationBias, static (s, v) => s with { ExaggerationBias = v }, "Exaggeration bias added on top of the default for this cast.");
-
-                    ImGui.TableNextColumn();
-                    var ready = this.Synth.IsReady && this.activeRequests == 0;
-                    var test = ready
-                        ? ImGui.SmallButton("▶")
-                        : Controls.Button("▶", false, this.Synth.IsReady ? "Synthesizing…" : this.EngineReason());
-                    if (test)
-                    {
-                        this.SpeakVoiceTest(new VoiceProfile(
-                            $"preview:{slot.Id}", slot.Id, slot.ExaggerationBias,
-                            DateTimeOffset.UtcNow, Custom: true, slot.Pitch, slot.Speed, slot.Volume));
-                    }
-
-                    ImGui.PopID();
-                }
-
-                ImGui.EndTable();
-            }
-
-            if (ImGui.SmallButton("+ Add voice slot"))
-            {
-                this.casting.AddSlot(setKey, ids.Length > 0 ? ids[0] : rawIds.FirstOrDefault() ?? "default");
+                this.casting.UnbindModelId(tribe.Key, modelId);
             }
 
             ImGui.PopID();
+            ImGui.SameLine();
         }
 
-        if (removeSlotAt is { } removal)
+        ImGui.NewLine();
+        ImGui.SetNextItemWidth(90f);
+        var buffer = this.bindModelIdBuffer;
+        if (ImGui.InputTextWithHint("##bind-model", "Model id", ref buffer, 12))
         {
-            this.casting.RemoveSlot(removal.SetKey, removal.Index);
+            this.bindModelIdBuffer = buffer;
         }
 
-        if (ImGui.CollapsingHeader("Model-id overrides (beast tribes and allied societies)"))
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Bind"))
         {
-            ImGui.TextWrapped(
-                "Bind a game model id to a named set: those models speak with that cast wherever they appear. "
-                + "Overrides in the active preset replace the built-in table.");
-            var setKeys = this.casting.EditBuffer.Sets.Keys.ToArray();
-            if (setKeys.Length > 0)
+            if (!int.TryParse(this.bindModelIdBuffer.Trim(), out var modelId))
             {
-                ImGui.SetNextItemWidth(90f);
-                ImGui.InputTextWithHint("##model-id", "Model id", ref this.modelIdBuffer, 12);
-                ImGui.SameLine();
-                ImGui.SetNextItemWidth(160f);
-                ImGui.InputTextWithHint("##model-name", "Label", ref this.modelNameBuffer, 64);
-                ImGui.SameLine();
-                if (this.modelSetChoice.Length == 0 || !setKeys.Contains(this.modelSetChoice))
-                {
-                    this.modelSetChoice = setKeys[0];
-                }
-
-                if (this.DrawSetCombo("##model-set", this.modelSetChoice, out var modelSet))
-                {
-                    this.modelSetChoice = modelSet;
-                }
-
-                ImGui.SameLine();
-                if (ImGui.SmallButton("Add override"))
-                {
-                    if (!int.TryParse(this.modelIdBuffer.Trim(), out var modelId))
-                    {
-                        this.ReportStatus($"\"{this.modelIdBuffer}\" is not a model id (whole number).", isError: true);
-                    }
-                    else
-                    {
-                        this.casting.SetModelOverride(modelId, this.modelNameBuffer.Trim(), this.modelSetChoice);
-                        this.modelIdBuffer = string.Empty;
-                        this.modelNameBuffer = string.Empty;
-                    }
-                }
+                this.ReportStatus($"\"{this.bindModelIdBuffer}\" is not a model id (whole number).", isError: true);
             }
-
-            if (this.casting.EditBuffer.ModelOverrides.Count > 0
-                && ImGui.BeginTable("##model-overrides", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
+            else
             {
-                ImGui.TableSetupColumn("Model id", ImGuiTableColumnFlags.WidthFixed, 80f);
-                ImGui.TableSetupColumn("Label", ImGuiTableColumnFlags.WidthStretch, 1f);
-                ImGui.TableSetupColumn("Voice set", ImGuiTableColumnFlags.WidthStretch, 1f);
-                ImGui.TableSetupColumn("##trash", ImGuiTableColumnFlags.WidthFixed, 24f);
-                ImGui.TableHeadersRow();
-                var removeModelId = default(int?);
-                foreach (var (modelKey, overrideDto) in this.casting.EditBuffer.ModelOverrides)
-                {
-                    ImGui.PushID(modelKey);
-                    ImGui.TableNextRow();
-                    ImGui.TableNextColumn();
-                    ImGui.TextUnformatted(modelKey);
-                    ImGui.TableNextColumn();
-                    ImGui.TextUnformatted(string.IsNullOrEmpty(overrideDto.Name) ? "—" : overrideDto.Name);
-                    ImGui.TableNextColumn();
-                    if (this.DrawSetCombo("##override-set", overrideDto.SetKey, out var pickedSet))
-                    {
-                        this.casting.SetModelOverride(int.Parse(modelKey, CultureInfo.InvariantCulture), overrideDto.Name, pickedSet);
-                    }
-
-                    ImGui.TableNextColumn();
-                    if (ImGui.SmallButton("🗑"))
-                    {
-                        removeModelId = int.Parse(modelKey, CultureInfo.InvariantCulture);
-                    }
-
-                    ImGui.PopID();
-                }
-
-                ImGui.EndTable();
-                if (removeModelId is { } removedModel)
-                {
-                    this.casting.RemoveModelOverride(removedModel);
-                }
+                this.casting.BindModelId(tribe.Key, modelId);
+                this.bindModelIdBuffer = string.Empty;
             }
         }
     }
@@ -1677,51 +1645,10 @@ public sealed class ConfigurationWindow : Window
         ImGui.EndPopup();
     }
 
-    /// <summary>Set-key combo over the edit buffer's sets with an "Add new set…"
-    /// entry; a stored key missing from the buffer stays visible as "(missing)".</summary>
-    private bool DrawSetCombo(string label, string setKey, out string picked)
-    {
-        var keys = this.casting.EditBuffer.Sets.Keys.ToArray();
-        var index = Array.IndexOf(keys, setKey);
-        var missing = index < 0;
-        string[] display = missing
-            ? [.. keys, $"{setKey} (missing)", "Add new set…"]
-            : [.. keys, "Add new set…"];
-        if (missing)
-        {
-            index = keys.Length; // the "(missing)" placeholder keeps the row visible
-        }
-
-        var changed = ImGui.Combo(label, ref index, display, display.Length);
-        if (!changed)
-        {
-            picked = setKey;
-            return false;
-        }
-
-        var chosen = display[Math.Clamp(index, 0, display.Length - 1)];
-        if (chosen == "Add new set…")
-        {
-            picked = CastingTabModel.NextSetName(keys);
-            this.casting.EnsureSet(picked);
-            return true;
-        }
-
-        if (chosen.EndsWith(" (missing)", StringComparison.Ordinal))
-        {
-            picked = setKey;
-            return false;
-        }
-
-        picked = chosen;
-        return true;
-    }
-
     /// <summary>Per-slot slider, written straight through to the edit buffer (in-memory
-    /// until Save — the Characters tab is the one that defers to release).</summary>
+    /// until Save — the voices tables are the ones that defer to release).</summary>
     private void DrawSlotSlider(
-        string setKey,
-        int index,
+        Action<VoiceSlotDto> commit,
         VoiceSlotDto slot,
         string label,
         float min,
@@ -1736,88 +1663,80 @@ public sealed class ConfigurationWindow : Window
         if (ImGui.SliderFloat(label, ref v, min, max, "%.2f")
             && Math.Abs(v - value) > float.Epsilon)
         {
-            this.casting.SetSlot(setKey, index, apply(slot, Math.Clamp(v, min, max)));
+            commit(apply(slot, Math.Clamp(v, min, max)));
         }
 
         Controls.Tooltip(tooltip);
     }
 
-    /// <summary>Variant-grid row label: race display name + group, or the ungendered
-    /// fallback row; unknown keys render raw.</summary>
-    private static string VariantLabel(string variantKey)
+    /// <summary>Filter-state holder for one voice-list editor surface, keyed by the
+    /// row's bucket key (race rows and tribe lists).</summary>
+    private VoiceSetEditor EditorFor(string rowKey)
     {
-        if (variantKey == CastingPreset.UngenderedVariantKey)
-        {
-            return "Ungendered (unknown speakers)";
-        }
-
-        var pipe = variantKey.IndexOf('|');
-        if (pipe > 0 && byte.TryParse(variantKey[..pipe], out var raceId))
-        {
-            var race = Races.All.FirstOrDefault(r => r.Id == raceId);
-            if (race is not null)
-            {
-                return $"{race.Name} — {variantKey[(pipe + 1)..]}";
-            }
-        }
-
-        return variantKey;
-    }
-
-    private VoiceSetEditor EditorFor(string setKey)
-    {
-        if (!this.setEditors.TryGetValue(setKey, out var editor))
+        if (!this.setEditors.TryGetValue(rowKey, out var editor))
         {
             editor = new VoiceSetEditor();
-            this.setEditors[setKey] = editor;
+            this.setEditors[rowKey] = editor;
         }
 
         return editor;
     }
 
-    // ---- Tab 4: Characters ----
+    // ---- Tabs 4-5: NPC Voices / Player Voices ----
 
-    /// <summary>Every speaker with a persisted voice assignment: edit with the same
-    /// filtered pickers as Casting, preview, share via clipboard, or forget entirely.
-    /// Slider edits commit once per interaction through the profile store port.</summary>
-    private void DrawCharactersTab()
+    /// <summary>Manual overrides scoped to one speaker kind: NPC names (npc:) or players
+    /// (name + world, pc:). Assigned speakers persist; everyone else resolves from the
+    /// active casting's rows. The 9-column table and commit-on-release sliders are shared;
+    /// the add form, clear, export, and import all scope to the tab's prefix.</summary>
+    private void DrawNpcVoicesTab() => this.DrawVoicesTabFor("npc:", player: false);
+
+    private void DrawPlayerVoicesTab() => this.DrawVoicesTabFor("pc:", player: true);
+
+    private void DrawVoicesTabFor(string keyPrefix, bool player)
     {
         var store = this.profiles;
-        var entries = store.Entries;
+        var entries = store.Entries
+            .Where(e => e.SpeakerKey.StartsWith(keyPrefix, StringComparison.Ordinal))
+            .ToArray();
 
         if (Controls.Button(
-                this.clearAllArmed ? "Really clear all?" : "Clear all",
-                enabled: entries.Count > 0,
-                entries.Count > 0 ? null : "No stored assignments."))
+                this.clearTabArmed ? "Really clear all?" : "Clear all",
+                enabled: entries.Length > 0,
+                entries.Length > 0 ? null : "No stored assignments."))
         {
-            if (this.clearAllArmed)
+            if (this.clearTabArmed)
             {
-                var count = entries.Count;
-                store.Clear();
-                this.characterPending.Clear();
+                var count = entries.Count(entry => store.Remove(entry.SpeakerKey));
+                foreach (var key in this.characterPending.Keys
+                    .Where(k => k.StartsWith(keyPrefix, StringComparison.Ordinal))
+                    .ToArray())
+                {
+                    this.characterPending.Remove(key);
+                }
+
                 this.ReportStatus($"Cleared {count} voice assignment(s); speakers re-assign from the active casting.", isError: false);
-                this.clearAllArmed = false;
+                this.clearTabArmed = false;
             }
             else
             {
-                this.clearAllArmed = true;
+                this.clearTabArmed = true;
             }
         }
 
-        Controls.Tooltip("Forgets every stored assignment (players and NPCs). The next line a speaker says re-assigns from the active casting.");
+        Controls.Tooltip($"Forgets every stored {keyPrefix} assignment. The next line a speaker says picks from the active casting again.");
 
         ImGui.SameLine();
-        if (Controls.Button("Export", enabled: entries.Count > 0))
+        if (Controls.Button("Export", enabled: entries.Length > 0))
         {
-            ImGui.SetClipboardText(CharacterVoicesModel.ShareText(store.Entries));
-            this.ReportStatus($"Copied {entries.Count} voice assignment(s) to the clipboard.", isError: false);
+            ImGui.SetClipboardText(CharacterVoicesModel.ShareText(entries));
+            this.ReportStatus($"Copied {entries.Length} voice assignment(s) to the clipboard.", isError: false);
         }
 
         ImGui.SameLine();
         if (Controls.Button("Import", enabled: true))
         {
             this.assignmentImportBuffer = string.Empty;
-            ImGui.OpenPopup("##import-assignments");
+            ImGui.OpenPopup($"Import assignments###import{keyPrefix}");
         }
 
         var importOpen = true;
@@ -1833,10 +1752,17 @@ public sealed class ConfigurationWindow : Window
                     var known = store.Entries.Select(e => e.SpeakerKey).ToHashSet(StringComparer.Ordinal);
                     var added = 0;
                     var updated = 0;
+                    var skipped = 0;
                     foreach (var share in shares)
                     {
                         if (string.IsNullOrEmpty(share.SpeakerKey))
                         {
+                            continue;
+                        }
+
+                        if (!share.SpeakerKey.StartsWith(keyPrefix, StringComparison.Ordinal))
+                        {
+                            skipped++;
                             continue;
                         }
 
@@ -1858,7 +1784,10 @@ public sealed class ConfigurationWindow : Window
                             share.Speed);
                     }
 
-                    this.ReportStatus($"Imported {added} new and {updated} updated voice assignment(s).", isError: false);
+                    this.ReportStatus(
+                        $"Imported {added} new and {updated} updated voice assignment(s)"
+                        + (skipped > 0 ? $" ({skipped} skipped: wrong type for this tab)." : "."),
+                        isError: false);
                     ImGui.CloseCurrentPopup();
                 }
                 catch (ShareCodecException e)
@@ -1883,7 +1812,7 @@ public sealed class ConfigurationWindow : Window
         ImGui.Separator();
         var removeKey = default(string?);
         if (ImGui.BeginTable(
-                "##characters",
+                $"##voices{keyPrefix}",
                 9,
                 ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY,
                 new Vector2(-1, -1)))
@@ -1900,7 +1829,7 @@ public sealed class ConfigurationWindow : Window
             ImGui.TableSetupColumn("▶", ImGuiTableColumnFlags.WidthFixed, 36f);
             ImGui.TableHeadersRow();
 
-            foreach (var profile in CharacterVoicesModel.BuildView(store.Entries))
+            foreach (var profile in CharacterVoicesModel.BuildView(entries))
             {
                 var key = SpeakerKeyView.Parse(profile.SpeakerKey);
                 ImGui.PushID(profile.SpeakerKey);
@@ -1998,11 +1927,67 @@ public sealed class ConfigurationWindow : Window
             this.characterPending.Remove(removed);
             store.Remove(removed);
         }
+
+        this.DrawCharacterAddForm(player, entries, ids);
     }
 
-    /// <summary>Commit-on-release for one characters-row slider: while a drag is active
+    /// <summary>The add form under each voices table: name (plus world for players) and
+    /// an Add button; duplicates surface through the form's validation line.</summary>
+    private void DrawCharacterAddForm(bool player, IReadOnlyCollection<VoiceProfile> entries, IReadOnlyList<string> voiceIds)
+    {
+        var form = player ? this.playerForm : this.npcForm;
+        var existing = entries.Select(e => e.SpeakerKey).ToHashSet(StringComparer.Ordinal);
+        ImGui.SetNextItemWidth(180f);
+        var name = form.Name;
+        if (ImGui.InputTextWithHint(player ? "##add-player-name" : "##add-npc-name", "Name", ref name, 100))
+        {
+            form.Name = name;
+        }
+
+        Controls.Tooltip("The character's name exactly as it appears in chat.");
+
+        if (player)
+        {
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(80f);
+            var world = form.World;
+            if (ImGui.InputTextWithHint("##add-player-world", "World id", ref world, 16))
+            {
+                form.World = world;
+            }
+
+            Controls.Tooltip("Numeric world id distinguishing same-named characters across worlds.");
+        }
+
+        ImGui.SameLine();
+        if (Controls.Button("Add", enabled: true)
+            && form.TryBuildKey(out var key, out _)
+            && !existing.Contains(key)) // duplicates surface via the validation line below
+        {
+            this.profiles.SetOverride(key, this.DefaultNewVoiceId(), 0f, 1f);
+            form.Reset();
+        }
+
+        var error = form.Validate(existing);
+        if (error is not null && (form.Name.Length > 0 || form.World.Length > 0))
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
+            ImGui.TextUnformatted(error);
+            ImGui.PopStyleColor();
+        }
+    }
+
+    /// <summary>The voice a new override starts on: the first slot of the Unknown row
+    /// (the same pool unlisted speakers pick from), or a safe fallback.</summary>
+    private string DefaultNewVoiceId()
+    {
+        var slots = this.voiceMap().SlotsFor(VoiceGroup.Ungendered, null);
+        return slots.Length > 0 ? slots[0].Id : "default";
+    }
+
+    /// <summary>Commit-on-release for one voices-row slider: while a drag is active
     /// the pending tuple tracks it; the deactivated frame writes it through the store
-    /// exactly once (VoiceTable's persist-once-per-interaction contract).</summary>
+    /// exactly once (persist-once-per-interaction).</summary>
     private void CommitPendingCharacterOnRelease(IProfileStore store, string speakerKey)
     {
         if (ImGui.IsItemDeactivatedAfterEdit()

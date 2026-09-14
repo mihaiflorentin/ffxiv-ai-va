@@ -1,5 +1,6 @@
 namespace AIVoiceActing.Infrastructure.Kokoro;
 
+using AIVoiceActing.Domain;
 using AIVoiceActing.Infrastructure.Onnx;
 using AIVoiceActing.Ports;
 using KokoroSharp;
@@ -144,6 +145,9 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
                 throw new SpeechSynthesisException("Nothing to speak after tag stripping.");
             }
 
+            // The emotion plan's exaggeration becomes delivery: Kokoro's prosody is
+            // punctuation-driven, so the plan bends terminal punctuation (and pace below).
+            text = EmotionPunctuation.Shape(text, Math.Clamp(request.Exaggeration, 0f, 1f));
             // Exaggeration maps to pace: flat reads stay brisk, theatrical ones slow down.
             // The per-speaker slot speed (Lalafell bubbly 1.1) scales on top.
             var speed = request.Speed * (1.05f - (0.20f * Math.Clamp(request.Exaggeration, 0f, 1f)));

@@ -33,9 +33,9 @@ public interface IProfileStore
 
     /// <summary>
     /// Returns the stored profile for <paramref name="speakerKey"/>, creating and persisting a
-    /// deterministic slot assignment (over <paramref name="candidateVoiceSlots"/>) on first
-    /// sight. The chosen slot's (voice id, exaggeration bias) pair persists as one unit, so
-    /// candidates must carry their bias (see <see cref="Domain.RaceVoiceMap"/>).
+    /// random slot assignment (over <paramref name="candidateVoiceSlots"/>) on first sight. The
+    /// chosen slot's knobs persist as one unit, so candidates must carry their
+    /// bias/pitch/speed/volume (see <see cref="Domain.RaceVoiceMap"/>).
     /// </summary>
     VoiceProfile GetOrCreate(
         string speakerKey,
@@ -57,14 +57,14 @@ public interface IProfileStore
         float? pitch = null,
         float? speed = null);
 
-    /// <summary>Empties every persisted entry (overrides and deterministic assignments)
-    /// and persists immediately. The next lookup re-assigns deterministically.</summary>
+    /// <summary>Empties every persisted entry (overrides and first-sight assignments)
+    /// and persists immediately. The next lookup picks randomly again.</summary>
     void Clear();
 
     /// <summary>
-    /// Deletes any persisted entry (override or deterministic slot) for
+    /// Deletes any persisted entry (override or first-sight slot) for
     /// <paramref name="speakerKey"/>, persisting immediately. True when an entry existed.
-    /// The speaker is simply forgotten: the next lookup re-assigns deterministically.
+    /// The speaker is simply forgotten: the next lookup picks randomly again.
     /// </summary>
     bool Remove(string speakerKey);
 }

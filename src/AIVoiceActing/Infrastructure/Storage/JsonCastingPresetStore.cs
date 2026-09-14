@@ -7,12 +7,14 @@ using AIVoiceActing.Ports;
 
 /// <summary>
 /// JSON-backed <see cref="ICastingPresetStore"/> over <c>casting-presets.json</c>:
-/// <c>{"activePreset":"Default","presets":{...}}</c>. The built-in Default preset is
-/// never stored — <see cref="GetDefault"/> derives it from the injected base voice-map
-/// factory on every call (active sets merged with parked sets). Loaded lazily on first
+/// <c>{"activePreset":"Default","presets":{name:{"buckets":{...},"beastTribes":[...]}}}</c>.
+/// The built-in Default preset is never stored — <see cref="GetDefault"/> derives it from
+/// the injected base voice-map factory on every call (the 16 race/gender variant rows,
+/// the Unknown row, and one beast-tribe row per known tribe). Loaded lazily on first
 /// access; a corrupt file is backed up to ".bak" and the store starts fresh (logged,
-/// mirroring <see cref="JsonProfileStore"/>). Writes are atomic (temp file + move); a
-/// private lock guards all state.
+/// mirroring <see cref="JsonProfileStore"/>). Pre-0.0.26 preset entries (set/variant
+/// shape) are discarded on load rather than migrated. Writes are atomic (temp file +
+/// move); a private lock guards all state.
 /// </summary>
 public sealed class JsonCastingPresetStore : ICastingPresetStore
 {
@@ -73,29 +75,31 @@ public sealed class JsonCastingPresetStore : ICastingPresetStore
     public CastingPreset GetDefault()
     {
         var map = this.baseMapFactory();
-        var sets = new Dictionary<string, VoiceSlotDto[]>(StringComparer.Ordinal);
-        foreach (var (key, slots) in map.Sets)
+        var buckets = new Dictionary<string, VoiceSlotDto[]>(StringComparer.Ordinal);
+        foreach (var (variantKey, setKey) in map.RaceVariants)
         {
-            sets[key] = slots.Select(slot => slot.ToDto()).ToArray();
+            buckets[variantKey] = map.Sets.TryGetValue(setKey, out var slots)
+                ? slots.ToDtoArray()
+                : [];
         }
 
-        // Parked sets are part of the casting library: forks and model-id overrides may
-        // point at them even though the UI picker never lists them as active.
-        if (map.Disabled is { } parked)
-        {
-            foreach (var (key, slots) in parked.Sets)
-            {
-                sets[key] = slots.Select(slot => slot.ToDto()).ToArray();
-            }
-        }
+        buckets[CastingDefaults.UnknownBucketKey] = map.Sets.TryGetValue(CastingDefaults.UnknownBucketKey, out var unknown)
+            ? unknown.ToDtoArray()
+            : [];
 
-        var variants = new Dictionary<string, string>(map.RaceVariants, StringComparer.Ordinal)
-        {
-            [CastingPreset.UngenderedVariantKey] = CastingPreset.UngenderedVariantKey,
-        };
+        var tribes = CastingDefaults.Tribes
+            .Select(tribe => new BeastTribeCast(
+                Key: tribe.Key,
+                Name: tribe.Name,
+                ModelIds: [],
+                Voices: map.Disabled?.Sets.TryGetValue(tribe.ManifestSetKey, out var parked) == true
+                    ? parked.ToDtoArray()
+                    : [],
+                MaleVoices: [],
+                FemaleVoices: []))
+            .ToArray();
 
-        return new CastingPreset(
-            CastingPreset.DefaultPresetName, sets, variants, new Dictionary<string, ModelOverrideDto>());
+        return new CastingPreset(CastingPreset.DefaultPresetName, buckets, tribes);
     }
 
     public CastingPreset Get(string name)
@@ -197,7 +201,20 @@ public sealed class JsonCastingPresetStore : ICastingPresetStore
                 : CastingPreset.DefaultPresetName;
             foreach (var (name, preset) in file.Presets ?? [])
             {
+                // Pre-0.0.26 entries carried set/variant keys that no longer exist; an
+                // empty bucket map AND empty tribe list means the shape never converted.
+                if ((preset.Buckets?.Count ?? 0) == 0 && (preset.BeastTribes?.Count ?? 0) == 0)
+                {
+                    this.log.Info($"discarded pre-0.0.26 preset '{name}'");
+                    continue;
+                }
+
                 this.presets[name] = preset with { Name = name };
+            }
+
+            if (this.presets.Count == 0)
+            {
+                this.activePresetName = CastingPreset.DefaultPresetName;
             }
         }
         catch (Exception e) when (e is JsonException or FormatException or InvalidOperationException)

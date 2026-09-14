@@ -8,23 +8,25 @@ public sealed class ShareCodecTests
 {
     private static readonly CastingPreset Preset = new(
         Name: "Round Trip",
-        Sets: new Dictionary<string, VoiceSlotDto[]>(StringComparer.Ordinal)
+        Buckets: new Dictionary<string, VoiceSlotDto[]>(StringComparer.Ordinal)
         {
-            ["custom-1"] =
+            ["6|Male"] =
             [
-                new VoiceSlotDto("af_heart", 0.25f, 1.1f, 0.95f, 1.5f),
-                new VoiceSlotDto("zm_yunjian", 0f, 1.18f, 1.1f, 1f),
+                new VoiceSlotDto("zm_yunjian", 0.25f, 1.1f, 0.95f, 1.5f),
+                new VoiceSlotDto("zm_yunyang", 0f, 1.18f, 1.1f, 1f),
             ],
+            [CastingDefaults.UnknownBucketKey] = [new VoiceSlotDto("pf_dora")],
         },
-        Variants: new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["6|Male"] = "custom-1",
-            ["ungendered"] = "custom-1",
-        },
-        ModelOverrides: new Dictionary<string, ModelOverrideDto>(StringComparer.Ordinal)
-        {
-            ["1106"] = new ModelOverrideDto("Ixal", "setIxal"),
-        });
+        BeastTribes:
+        [
+            new BeastTribeCast(
+                "ixal",
+                "Ixal",
+                ModelIds: [1106],
+                Voices: [new VoiceSlotDto("pm_santa", 0f, 1.08f, 1.1f, 1f)],
+                MaleVoices: [],
+                FemaleVoices: [new VoiceSlotDto("ef_dora")]),
+        ]);
 
     [Fact]
     public void Encode_Decode_PreservesPreset()
@@ -34,9 +36,17 @@ public sealed class ShareCodecTests
 
         var decoded = ShareCodec.Decode<CastingPreset>(encoded);
         Assert.Equal(Preset.Name, decoded.Name);
-        Assert.Equal(Preset.Sets["custom-1"], decoded.Sets["custom-1"]);
-        Assert.Equal(Preset.Variants, decoded.Variants);
-        Assert.Equal(Preset.ModelOverrides["1106"].SetKey, decoded.ModelOverrides["1106"].SetKey);
+        Assert.Equal(2, decoded.Buckets.Count);
+        Assert.Equal(Preset.Buckets["6|Male"], decoded.Buckets["6|Male"]);
+        Assert.Equal(Preset.Buckets[CastingDefaults.UnknownBucketKey], decoded.Buckets[CastingDefaults.UnknownBucketKey]);
+
+        var tribe = Assert.Single(decoded.BeastTribes);
+        Assert.Equal("ixal", tribe.Key);
+        Assert.Equal("Ixal", tribe.Name);
+        Assert.Equal([1106], tribe.ModelIds);
+        Assert.Equal(Preset.BeastTribes[0].Voices, tribe.Voices);
+        Assert.Empty(tribe.MaleVoices);
+        Assert.Equal(Preset.BeastTribes[0].FemaleVoices, tribe.FemaleVoices);
     }
 
     [Fact]

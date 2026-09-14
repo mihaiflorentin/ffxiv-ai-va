@@ -39,9 +39,10 @@ public sealed class JsonProfileStoreTests : IDisposable
         var store = this.NewStore();
         var profile = store.GetOrCreate("pc:Mihai Testa@66", Candidates, AnyDemographics[0], AnyDemographics[1], AnyDemographics[2]);
 
-        var chosenSlot = Candidates()[VoiceAssigner.AssignIndex("pc:Mihai Testa@66", 3)];
-        Assert.Equal(chosenSlot.Id, profile.ReferenceVoiceId);
-        Assert.Equal(chosenSlot.ExaggerationBias, profile.ExaggerationBias);
+        // A random first-sight pick: the chosen (voiceId, bias) pair is one of the slots.
+        Assert.Contains(
+            (profile.ReferenceVoiceId, profile.ExaggerationBias),
+            Candidates().Select(slot => (slot.Id, slot.ExaggerationBias)));
         Assert.False(profile.Custom);
 
         Assert.True(File.Exists(this.FilePath));
@@ -50,20 +51,20 @@ public sealed class JsonProfileStoreTests : IDisposable
     }
 
     [Fact]
-    public void GetOrCreate_PersistsChosenSlotAsUnit_SameDemographicsDifferentSlots()
+    public void GetOrCreate_PersistsChosenSlotAsUnit_AcrossReload()
     {
-        // Same demographics on purpose (all-null race/tribe/sex): the only source of variety
-        // is the slot the hash picks. Derived pins (UTF-8 xxHash, 3 candidates):
-        // "npc:alpha npc" → index 1 (bias 0.10), "npc:gamma npc" → index 2 (bias 0.15).
+        // Same demographics on purpose (all-null race/tribe/sex): the only source of
+        // variety is the random pick. The chosen (voiceId, bias) pair persists as a unit.
         var store = this.NewStore();
         var a = store.GetOrCreate("npc:alpha npc", Candidates, null, null, null);
         var b = store.GetOrCreate("npc:gamma npc", Candidates, null, null, null);
 
-        Assert.Equal(1, VoiceAssigner.AssignIndex("npc:alpha npc", 3));
-        Assert.Equal(2, VoiceAssigner.AssignIndex("npc:gamma npc", 3));
-        Assert.Equal(("default", 0.10f), (a.ReferenceVoiceId, a.ExaggerationBias));
-        Assert.Equal(("default", 0.15f), (b.ReferenceVoiceId, b.ExaggerationBias));
-        Assert.NotEqual(a.ExaggerationBias, b.ExaggerationBias);
+        Assert.Contains(
+            (a.ReferenceVoiceId, a.ExaggerationBias),
+            Candidates().Select(slot => (slot.Id, slot.ExaggerationBias)));
+        Assert.Contains(
+            (b.ReferenceVoiceId, b.ExaggerationBias),
+            Candidates().Select(slot => (slot.Id, slot.ExaggerationBias)));
 
         // And the (voiceId, bias) pairs persist across store instances as one unit.
         var reloaded = this.NewStore();

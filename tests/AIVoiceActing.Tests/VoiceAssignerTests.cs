@@ -6,91 +6,88 @@ using Xunit;
 
 public sealed class VoiceAssignerTests
 {
-    private static readonly string[] Candidates = ["alpha", "beta", "gamma"];
+    private static readonly VoiceSlot[] Slots =
+    [
+        new("alpha", 0.05f, 0.9f, 1.1f, 1.2f),
+        new("beta", 0.2f),
+        new("gamma", 0f, 1.18f, 1.1f, 1f),
+    ];
 
     [Fact]
-    public void AssignIndex_Utf8Key_MatchesPrecomputedDigest()
+    public void SeededRng_IsDeterministic()
     {
-        // Derived once with a throwaway console referencing Standart.Hash.xxHash 4.0.5:
-        // (int)(xxHash32.ComputeHash(Encoding.UTF8.GetBytes(key)) % count)
-        // "pc:Mihai Testa@66": digest 1317929423, %3 = 2
-        Assert.Equal(2, VoiceAssigner.AssignIndex("pc:Mihai Testa@66", 3));
-        // "npc:feo ul": digest 3177869990, %5 = 0
-        Assert.Equal(0, VoiceAssigner.AssignIndex("npc:feo ul", 5));
-    }
-
-    [Fact]
-    public void SameKey_YieldsSameVoice_Across100Iterations()
-    {
-        IReadOnlyDictionary<string, VoiceProfile> existing = new Dictionary<string, VoiceProfile>();
-        var first = VoiceAssigner.Assign("pc:Mihai Testa@66", Candidates, existing);
+        var first = VoiceAssigner.AssignSlot(Slots, new Random(7));
         for (var i = 0; i < 100; i++)
         {
-            var again = VoiceAssigner.Assign("pc:Mihai Testa@66", Candidates, existing);
+            var again = VoiceAssigner.AssignSlot(Slots, new Random(7));
             Assert.Equal(first.ReferenceVoiceId, again.ReferenceVoiceId);
-            Assert.Equal(VoiceAssigner.AssignIndex("pc:Mihai Testa@66", Candidates.Length),
-                VoiceAssigner.AssignIndex("pc:Mihai Testa@66", Candidates.Length));
         }
     }
 
     [Fact]
-    public void DifferentKeys_DistributeAcrossCandidates()
+    public void Pick_IsAlwaysOneOfTheCandidates()
+    {
+        var ids = Slots.Select(slot => slot.Id).ToHashSet();
+        for (var seed = 0; seed < 50; seed++)
+        {
+            Assert.Contains(VoiceAssigner.AssignSlot(Slots, new Random(seed)).ReferenceVoiceId, ids);
+        }
+    }
+
+    [Fact]
+    public void DifferentSeeds_CanPickDifferentSlots()
     {
         var picks = new HashSet<string>();
-        for (var i = 0; i < 200; i++)
+        for (var seed = 0; seed < 200; seed++)
         {
-            var key = $"npc:npc-{i}";
-            picks.Add(Candidates[VoiceAssigner.AssignIndex(key, Candidates.Length)]);
+            picks.Add(VoiceAssigner.AssignSlot(Slots, new Random(seed)).ReferenceVoiceId);
         }
 
-        Assert.True(picks.Count > 1, "all 200 keys collapsed onto one candidate");
+        Assert.True(picks.Count > 1, "every seed collapsed onto one candidate");
     }
 
     [Fact]
-    public void ExistingProfile_IsReturnedUnchanged_NeverReassigned()
+    public void SlotKnobs_AreCarriedOntoTheProfile()
     {
-        var preserved = new VoiceProfile("pc:Old Key@66", "omega", 0.42f, DateTimeOffset.UtcNow, Custom: false);
-        var existing = new Dictionary<string, VoiceProfile> { ["pc:Old Key@66"] = preserved };
+        var slot = Slots[0];
+        var profile = VoiceAssigner.AssignSlot([slot], new Random(0));
 
-        var result = VoiceAssigner.Assign("pc:Old Key@66", ["alpha", "beta", "gamma"], existing);
-
-        Assert.Same(preserved, result);
-    }
-
-    [Fact]
-    public void AssignSlot_CarriesSlotBias_Deterministically()
-    {
-        var slots = new[] { new VoiceSlot("default", 0.05f), new VoiceSlot("default", 0.2f) };
-        var existing = new Dictionary<string, VoiceProfile>();
-        var profile = VoiceAssigner.AssignSlot("npc:feo ul", slots, existing);
-        var expectedSlot = slots[VoiceAssigner.AssignIndex("npc:feo ul", slots.Length)];
-
-        Assert.Equal(expectedSlot.Id, profile.ReferenceVoiceId);
-        Assert.Equal(expectedSlot.ExaggerationBias, profile.ExaggerationBias);
+        Assert.Equal(slot.Id, profile.ReferenceVoiceId);
+        Assert.Equal(Math.Clamp(slot.ExaggerationBias, 0f, 1f), profile.ExaggerationBias);
+        Assert.Equal(slot.Pitch, profile.Pitch);
+        Assert.Equal(slot.Speed, profile.Speed);
+        Assert.Equal(Math.Clamp(slot.Volume, 0f, 2f), profile.Volume);
         Assert.False(profile.Custom);
     }
 
     [Fact]
-    public void AssignSlot_ClampsSlotBiasToUnitRange()
+    public void NullRng_StillReturnsACandidate()
     {
-        var slots = new[] { new VoiceSlot("default", 7f) };
-        var profile = VoiceAssigner.AssignSlot(
-            "npc:feo ul", slots, new Dictionary<string, VoiceProfile>());
+        var ids = Slots.Select(slot => slot.Id).ToHashSet();
+        for (var i = 0; i < 20; i++)
+        {
+            Assert.Contains(VoiceAssigner.AssignSlot(Slots).ReferenceVoiceId, ids);
+        }
+    }
+
+    [Fact]
+    public void ReturnedProfile_HasEmptyKey_ForCallerStamping()
+    {
+        var profile = VoiceAssigner.AssignSlot([Slots[1]], new Random(0));
+        Assert.Equal(string.Empty, profile.SpeakerKey);
+    }
+
+    [Fact]
+    public void SlotBias_ClampsToUnitRange()
+    {
+        var profile = VoiceAssigner.AssignSlot([new VoiceSlot("default", 7f)], new Random(0));
         Assert.Equal(1f, profile.ExaggerationBias);
     }
 
     [Fact]
-    public void EmptyCandidates_Throw()
+    public void EmptyOrNullCandidates_Throw()
     {
-        var existing = new Dictionary<string, VoiceProfile>();
-        Assert.Throws<ArgumentException>(() => VoiceAssigner.Assign("npc:x", [], existing));
-        Assert.Throws<ArgumentException>(() => VoiceAssigner.AssignSlot("npc:x", [], existing));
-    }
-
-    [Fact]
-    public void AssignIndex_RejectsNonPositiveCounts()
-    {
-        Assert.Throws<ArgumentOutOfRangeException>(() => VoiceAssigner.AssignIndex("npc:x", 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => VoiceAssigner.AssignIndex("npc:x", -1));
+        Assert.Throws<ArgumentException>(() => VoiceAssigner.AssignSlot([]));
+        Assert.Throws<ArgumentException>(() => VoiceAssigner.AssignSlot(null!));
     }
 }

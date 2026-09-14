@@ -4,13 +4,13 @@ using AIVoiceActing.Domain;
 using Dalamud.Bindings.ImGui;
 
 /// <summary>
-/// Filtered voice picker shared by the Casting and Characters tabs: one instance per
-/// editor surface holds the transient filter state (language, sex, search) and draws
-/// both the filter row and array+count voice combos over the filtered ids. The combo
-/// copies <see cref="VoiceTable.DrawVoiceCombo"/>: a stored id missing from the bank is
-/// APPENDED as a "(missing)" placeholder so the stored value stays visible and any real
-/// pick commits a real voice. When the catalog is empty (off-bank install) the owner
-/// passes the raw id list and the filters are skipped entirely.
+/// Filtered voice picker shared by the General Voices and NPC/Player Voices tabs: one
+/// instance per editor surface holds the transient filter state (language, sex, search)
+/// and draws both the filter row and array+count voice combos over the filtered ids. A
+/// stored id missing from the bank is APPENDED as a "(missing)" placeholder so the
+/// stored value stays visible and any real pick commits a real voice. When the catalog
+/// is empty (off-bank install) the owner passes the raw id list and the filters are
+/// skipped entirely.
 /// </summary>
 public sealed class VoiceSetEditor
 {

@@ -1,86 +1,43 @@
 namespace AIVoiceActing.Domain;
 
-using System.Text;
 using AIVoiceActing.Ports;
-using Standart.Hash.xxHash;
 
 /// <summary>
-/// Deterministic, persistent voice assignment (TextToTalk parity):
-/// <c>xxHash32(speakerKey) % candidateCount</c>. xxHash is used instead of GetHashCode
-/// because the latter is randomized per process; xxHash32 over the UTF-8 key bytes is stable
-/// across runs, so a speaker keeps the same voice after a game restart. A key already present
-/// in <paramref name="existing"/> is returned unchanged — a speaker is never reassigned.
+/// First-sight voice assignment: a speaker's first resolution picks RANDOMLY from the
+/// matching row's voice slots; the profile store persists the pick, so the speaker keeps
+/// that voice forever (only <c>SetOverride</c> or an explicit remove changes it). Rows
+/// with several voices spread their cast across the crowd instead of pinning one voice
+/// per bucket.
 /// </summary>
 public static class VoiceAssigner
 {
     /// <summary>
-    /// Stable index into a candidate list: <c>xxHash32(UTF-8 key bytes) % candidateCount</c>.
-    /// Note: the library's string overload hashes UTF-16 code units — hash the UTF-8 bytes
-    /// explicitly (the binding and persistence contract).
+    /// Picks one slot from <paramref name="candidates"/> at random and builds the profile
+    /// for it, carrying the slot's performance knobs (bias/pitch/speed/volume;
+    /// Custom = false). Uses <paramref name="rng"/> when given (tests seed one for
+    /// determinism), <see cref="Random.Shared"/> otherwise. The returned profile has an
+    /// empty <see cref="VoiceProfile.SpeakerKey"/> — the caller stamps the key on
+    /// assignment.
     /// </summary>
-    public static int AssignIndex(string speakerKey, int candidateCount)
+    public static VoiceProfile AssignSlot(IReadOnlyList<VoiceSlot> candidates, Random? rng = null)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(candidateCount);
-        var hash = xxHash32.ComputeHash(Encoding.UTF8.GetBytes(speakerKey ?? string.Empty));
-        return (int)(hash % (uint)candidateCount);
-    }
-
-    /// <summary>
-    /// Returns the existing profile for the key, or assigns a new one over
-    /// <paramref name="candidates"/> (voice ids). New profiles carry no bias — bias lives in
-    /// slot-based assignment (<see cref="AssignSlot"/>) and manual overrides.
-    /// </summary>
-    public static VoiceProfile Assign(
-        string speakerKey,
-        string[] candidates,
-        IReadOnlyDictionary<string, VoiceProfile> existing)
-    {
-        if (existing.TryGetValue(speakerKey, out var existingProfile))
+        if (candidates is not { Count: > 0 })
         {
-            return existingProfile;
+            throw new ArgumentException("At least one candidate voice slot is required.", nameof(candidates));
         }
 
-        if (candidates is not { Length: > 0 })
-        {
-            throw new ArgumentException("At least one candidate voice id is required.", nameof(candidates));
-        }
-
-        var voiceId = candidates[AssignIndex(speakerKey, candidates.Length)];
-        return NewProfile(speakerKey, voiceId, exaggerationBias: 0f);
-    }
-
-    /// <summary>
-    /// Slot-based assignment over a <see cref="RaceVoiceMap"/> slot set: the hash picks the
-    /// slot, so the carried exaggeration bias is deterministic per speaker.
-    /// </summary>
-    public static VoiceProfile AssignSlot(
-        string speakerKey,
-        VoiceSlot[] slots,
-        IReadOnlyDictionary<string, VoiceProfile> existing)
-    {
-        if (existing.TryGetValue(speakerKey, out var existingProfile))
-        {
-            return existingProfile;
-        }
-
-        if (slots is not { Length: > 0 })
-        {
-            throw new ArgumentException("At least one candidate voice slot is required.", nameof(slots));
-        }
-
-        var slot = slots[AssignIndex(speakerKey, slots.Length)];
-        return NewProfile(speakerKey, slot.Id, slot.ExaggerationBias, slot.Pitch, slot.Speed, slot.Volume);
+        var slot = candidates[(rng ?? Random.Shared).Next(candidates.Count)];
+        return NewProfile(slot.Id, slot.ExaggerationBias, slot.Pitch, slot.Speed, slot.Volume);
     }
 
     private static VoiceProfile NewProfile(
-        string speakerKey,
         string voiceId,
         float exaggerationBias,
         float pitch = 1f,
         float speed = 1f,
         float volume = 1f) =>
         new(
-            speakerKey,
+            string.Empty,
             voiceId,
             Math.Clamp(exaggerationBias, 0f, 1f),
             DateTimeOffset.UtcNow,

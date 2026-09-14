@@ -7,7 +7,7 @@ using AIVoiceActing.Domain;
 public sealed class CastingPresetException(string message, Exception? inner = null)
     : Exception(message, inner);
 
-/// <summary>One persisted voice slot of a casting set: id plus per-slot performance knobs
+/// <summary>One persisted voice slot of a casting row: id plus per-slot performance knobs
 /// (the persistence shape of <see cref="Domain.VoiceSlot"/>).</summary>
 public sealed record VoiceSlotDto(
     string Id,
@@ -16,30 +16,38 @@ public sealed record VoiceSlotDto(
     float Speed = 1f,
     float Volume = 1f);
 
-/// <summary>One model-id override: game model chara id → named voice set, with the human
-/// label the TextToTalk-style override table carries.</summary>
-public sealed record ModelOverrideDto(string Name, string SetKey);
+/// <summary>One beast-tribe row of a casting preset. The tribe's voice pool serves every
+/// speaker of the tribe; gendered lists override the pool once filled. Model ids bound
+/// here route game model chara ids to the tribe (harvested from the Conversation log
+/// lines); empty until the user binds them.</summary>
+/// <param name="Key">Stable ascii id, e.g. "amaljaa".</param>
+/// <param name="Name">Display name, e.g. "Amalj'aa".</param>
+/// <param name="ModelIds">Bound model chara ids (empty until the user binds via logs).</param>
+/// <param name="Voices">Tribe pool: the tribe's default/fallback list.</param>
+/// <param name="MaleVoices">Empty until the user splits by gender.</param>
+/// <param name="FemaleVoices">Empty until the user splits by gender.</param>
+public sealed record BeastTribeCast(
+    string Key,
+    string Name,
+    IReadOnlyList<int> ModelIds,
+    IReadOnlyList<VoiceSlotDto> Voices,
+    IReadOnlyList<VoiceSlotDto> MaleVoices,
+    IReadOnlyList<VoiceSlotDto> FemaleVoices);
 
 /// <summary>
-/// A named casting: which voice sets exist (<paramref name="Sets"/>), which set each
-/// race/gender row uses (<paramref name="Variants"/>, keyed "&lt;raceId&gt;|&lt;Group&gt;"
-/// exactly as <see cref="Domain.RaceVoiceMap"/> resolves variants), and which model ids
-/// bind to which sets (<paramref name="ModelOverrides"/>). The built-in "Default" preset
-/// mirrors the shipped <c>voices.json</c> casting (parked sets included) and is immutable.
+/// A named casting: which voice slots each race/gender row uses (<paramref name="Buckets"/>,
+/// keyed "&lt;raceId&gt;|Male|Female" via <see cref="Domain.CastingDefaults.RaceBucketKey"/> plus
+/// <see cref="Domain.CastingDefaults.UnknownBucketKey"/>), and how each beast tribe is cast
+/// (<paramref name="BeastTribes"/>). The built-in "Default" preset mirrors the shipped
+/// <c>voices.json</c> casting and is immutable.
 /// </summary>
 public sealed record CastingPreset(
     string Name,
-    IReadOnlyDictionary<string, VoiceSlotDto[]> Sets,
-    IReadOnlyDictionary<string, string> Variants,
-    IReadOnlyDictionary<string, ModelOverrideDto> ModelOverrides)
+    IReadOnlyDictionary<string, VoiceSlotDto[]> Buckets,
+    IReadOnlyList<BeastTribeCast> BeastTribes)
 {
     /// <summary>The immutable built-in preset name.</summary>
     public const string DefaultPresetName = "Default";
-
-    /// <summary>Variant-grid row for the Ungendered group, keyed as
-    /// <see cref="Domain.RaceVoiceMap"/> composes its fallback key; activating a preset
-    /// re-points the fallback set to this row's target.</summary>
-    public const string UngenderedVariantKey = "ungendered";
 }
 
 /// <summary>Voice-slot conversions between the persistence DTO and the domain slot.</summary>
@@ -51,13 +59,11 @@ public static class CastingPresetConversion
     public static VoiceSlotDto ToDto(this VoiceSlot slot) =>
         new(slot.Id, slot.ExaggerationBias, slot.Pitch, slot.Speed, slot.Volume);
 
-    public static Dictionary<string, VoiceSlot[]> ToSlots(
-        this IReadOnlyDictionary<string, VoiceSlotDto[]> sets) =>
-        sets.ToDictionary(kv => kv.Key, kv => kv.Value.Select(ToSlot).ToArray(), StringComparer.Ordinal);
+    public static VoiceSlot[] ToSlotArray(this IReadOnlyList<VoiceSlotDto> dtos) =>
+        [.. dtos.Select(ToSlot)];
 
-    public static Dictionary<string, VoiceSlotDto[]> ToDtos(
-        this IReadOnlyDictionary<string, VoiceSlot[]> sets) =>
-        sets.ToDictionary(kv => kv.Key, kv => kv.Value.Select(ToDto).ToArray(), StringComparer.Ordinal);
+    public static VoiceSlotDto[] ToDtoArray(this IReadOnlyList<VoiceSlot> slots) =>
+        [.. slots.Select(ToDto)];
 }
 
 /// <summary>
@@ -75,7 +81,7 @@ public interface ICastingPresetStore
     IReadOnlyList<string> PresetNames { get; }
 
     /// <summary>Derives the built-in Default preset from the current base voice map on
-    /// every call: active sets plus parked sets, variants as shipped.</summary>
+    /// every call: the race/gender buckets plus one beast-tribe row per known tribe.</summary>
     CastingPreset GetDefault();
 
     /// <summary>Loads a user preset; "Default" is not stored — use <see cref="GetDefault"/>.

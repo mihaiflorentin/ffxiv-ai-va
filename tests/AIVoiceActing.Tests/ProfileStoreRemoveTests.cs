@@ -34,7 +34,7 @@ public sealed class ProfileStoreRemoveTests
             Assert.DoesNotContain(store.Entries, e => e.SpeakerKey == "pc:Test@66");
 
             // Persisted: a fresh store over the same file must not see the removed key,
-            // while the deterministic entry survives untouched.
+            // while the first-sight entry survives untouched.
             var reloaded = new JsonProfileStore(path, new NullLog());
             Assert.DoesNotContain(reloaded.Entries, e => e.SpeakerKey == "pc:Test@66");
             Assert.Contains(reloaded.Entries, e => e.SpeakerKey == "npc:test");
@@ -61,16 +61,17 @@ public sealed class ProfileStoreRemoveTests
     }
 
     [Fact]
-    public void RemovedSpeaker_ReassignsDeterministicallyOnNextLookup()
+    public void RemovedSpeaker_PicksAgainOnNextLookup()
     {
         var (store, path) = NewStore();
         try
         {
+            // One candidate: the re-pick is trivially the same voice; the fresh
+            // CreatedUtc proves the entry was re-created, not kept.
             var slots = new[] { new VoiceSlot("default", 0.5f) };
             var first = store.GetOrCreate("npc:sidurgu", () => slots, 1, 1, 0);
             store.Remove("npc:sidurgu");
             var second = store.GetOrCreate("npc:sidurgu", () => slots, 1, 1, 0);
-            // Same deterministic slot for the same key; a fresh CreatedUtc proves re-creation.
             Assert.Equal(first.ReferenceVoiceId, second.ReferenceVoiceId);
             Assert.True(second.CreatedUtc >= first.CreatedUtc);
         }

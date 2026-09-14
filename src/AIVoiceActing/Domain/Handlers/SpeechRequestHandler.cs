@@ -79,6 +79,14 @@ public sealed class SpeechRequestHandler
             return;
         }
 
+        // Per-conversation identity line: the harvest source for beast-tribe model ids.
+        // Talk to tribe NPCs, then bind the ids from these lines in General Voices.
+        this.log?.Info(
+            $"Conversation: name=\"{speaker.DisplayName}\" key={speaker.Key} " +
+            $"race={speaker.Race?.ToString() ?? "?"} tribe={speaker.Tribe?.ToString() ?? "?"} " +
+            $"sex={speaker.Sex?.ToString() ?? "?"} model={speaker.ModelCharaId?.ToString() ?? "?"} " +
+            $"world={speaker.World?.ToString() ?? "?"}");
+
         var (processed, styleTags) = this.PrepareText(text);
         this.log?.Info(
             $"Text prepared for \"{speaker.Key}\": {processed.Length} chars" +

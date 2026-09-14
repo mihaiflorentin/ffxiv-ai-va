@@ -1,11 +1,14 @@
 namespace AIVoiceActing.Tests;
 
 using AIVoiceActing.Domain;
+using AIVoiceActing.Infrastructure.Storage;
+using AIVoiceActing.Ports;
+using AIVoiceActing.Tests.Mock;
 using Xunit;
 
 public sealed class RaceVoiceMapTests
 {
-    private static RaceVoiceMap LoadDefault()
+    internal static RaceVoiceMap LoadDefault()
     {
         var path = Path.Combine(AppContext.BaseDirectory, "voices.json");
         Assert.True(File.Exists(path), $"Missing copied voices.json at {path}");
@@ -66,13 +69,13 @@ public sealed class RaceVoiceMapTests
     public void AuRa_UsesChineseBank()
     {
         var map = LoadDefault();
-        // zf_/zm_ verified by ear on the v1.0 model; jf_alpha and jf_tebukuro joined
-        // on user verdict. jm_kumo stays parked (garbles English).
+        // zf_/zm_ verified by ear on the v1.0 model. The jf_ (Japanese) pair left in
+        // 0.0.26: the bank garbles English on v1.0; zf_xiaobei/zf_xiaoni replaced it.
         Assert.Equal(
             new HashSet<string> { "zm_yunjian", "zm_yunyang" },
             map.SlotsFor(VoiceGroup.Male, 6).Select(s => s.Id).ToHashSet());
         Assert.Equal(
-            new HashSet<string> { "zf_xiaoxiao", "jf_alpha", "jf_tebukuro", "zf_xiaoyi" },
+            new HashSet<string> { "zf_xiaoxiao", "zf_xiaoyi", "zf_xiaobei", "zf_xiaoni" },
             map.SlotsFor(VoiceGroup.Female, 6).Select(s => s.Id).ToHashSet());
     }
 
@@ -145,5 +148,75 @@ public sealed class RaceVoiceMapTests
             new Dictionary<string, VoiceSlot[]>(),
             new Dictionary<string, string>());
         Assert.Throws<InvalidOperationException>(() => map.SlotsFor(VoiceGroup.Female, race: null));
+    }
+}
+
+/// <summary>
+/// The shipped manifest's Default casting shape (0.0.26): 17 buckets derived from the
+/// variant rows plus Unknown, all 23 beast tribes with seeded pools, and zero American
+/// or Japanese-bank voice ids anywhere the Default preset exposes.
+/// </summary>
+public sealed class DefaultPresetShapeTests
+{
+    private static JsonCastingPresetStore NewStore() => new(
+        Path.Combine(Path.GetTempPath(), $"aiva-default-{Guid.NewGuid():N}.json"),
+        RaceVoiceMapTests.LoadDefault,
+        new FakeLogSink());
+
+    [Fact]
+    public void Default_HasSeventeenBuckets_AndTwentyThreeSeededTribes()
+    {
+        var preset = NewStore().GetDefault();
+
+        Assert.Equal(17, preset.Buckets.Count);
+        Assert.Contains("6|Female", preset.Buckets.Keys);
+        Assert.Contains(CastingDefaults.UnknownBucketKey, preset.Buckets.Keys);
+        Assert.Equal(CastingDefaults.Tribes.Select(t => t.Key), preset.BeastTribes.Select(t => t.Key));
+        Assert.All(
+            preset.BeastTribes,
+            tribe => Assert.NotEmpty(tribe.Voices));
+        Assert.All(preset.BeastTribes, tribe =>
+        {
+            Assert.Empty(tribe.MaleVoices);
+            Assert.Empty(tribe.FemaleVoices);
+            Assert.Empty(tribe.ModelIds);
+        });
+    }
+
+    [Fact]
+    public void Default_ContainsNoAmericanOrJapaneseVoiceIds()
+    {
+        var preset = NewStore().GetDefault();
+
+        var ids = preset.Buckets.Values.SelectMany(slots => slots).Select(slot => slot.Id)
+            .Concat(preset.BeastTribes.SelectMany(t => t.Voices).Select(slot => slot.Id))
+            .ToHashSet();
+
+        Assert.DoesNotContain(ids, id => id.StartsWith("af_", StringComparison.Ordinal));
+        Assert.DoesNotContain(ids, id => id.StartsWith("am_", StringComparison.Ordinal));
+        Assert.DoesNotContain(ids, id => id.StartsWith("jf_", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Default_AuRaFemale_UsesChineseBank()
+    {
+        var preset = NewStore().GetDefault();
+
+        Assert.Equal(
+            ["zf_xiaoxiao", "zf_xiaoyi", "zf_xiaobei", "zf_xiaoni"],
+            preset.Buckets["6|Female"].Select(slot => slot.Id));
+    }
+
+    [Fact]
+    public void Default_PixiePool_KeepsLalafellTreatment()
+    {
+        var pixie = NewStore().GetDefault().BeastTribes.Single(t => t.Key == "pixie");
+
+        Assert.Equal(["bf_lily", "bm_george"], pixie.Voices.Select(slot => slot.Id));
+        Assert.All(pixie.Voices, slot =>
+        {
+            Assert.Equal(1.12f, slot.Pitch);
+            Assert.Equal(1.05f, slot.Speed);
+        });
     }
 }

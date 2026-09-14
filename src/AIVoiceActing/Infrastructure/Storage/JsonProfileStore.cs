@@ -11,9 +11,9 @@ using AIVoiceActing.Ports;
 /// deterministic assignments. Loaded lazily on first access; a corrupt file is backed up to
 /// ".bak" and the store starts fresh (logged). Writes are atomic (temp file + move).
 /// Single-process plugin: a private lock guards all state. Invariant: an existing entry is
-/// NEVER reassigned — only <see cref="SetOverride"/> (Custom = true) replaces one. Hashed
+/// NEVER reassigned — only <see cref="SetOverride"/> (Custom = true) replaces one. First-sight
 /// assignments go through <see cref="VoiceAssigner.AssignSlot"/>, so the chosen slot's
-/// (voice id, exaggeration bias) persists as one unit.
+/// (voice id, exaggeration bias, pitch, speed, volume) persists as one unit.
 /// </summary>
 public sealed class JsonProfileStore : IProfileStore
 {
@@ -74,7 +74,7 @@ public sealed class JsonProfileStore : IProfileStore
                 throw new ProfileStoreException($"No candidate voices provided for speaker \"{speakerKey}\".");
             }
 
-            var profile = VoiceAssigner.AssignSlot(speakerKey, slots, this.entries);
+            var profile = VoiceAssigner.AssignSlot(slots) with { SpeakerKey = speakerKey };
             this.entries[speakerKey] = profile;
             this.SaveUnlocked();
             return profile;

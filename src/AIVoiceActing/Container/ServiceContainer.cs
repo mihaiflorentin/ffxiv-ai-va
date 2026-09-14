@@ -652,11 +652,11 @@ public sealed class ServiceContainer : IDisposable
     }
 
     /// <summary>
-    /// Persistent profile resolution (Step 2 store): group resolved from customize data,
-    /// slots from the race map — unknown speakers still resolve via the store's
-    /// deterministic fallback. With UseRaceVoicePresets off (TTT default-bucket
-    /// semantics), every speaker resolves from the ungendered slot set instead of a
-    /// race/gender group; manual overrides still win in the store.
+    /// Persistent profile resolution: group resolved from customize data, slots from
+    /// the active casting's grid — the first sight picks randomly and the store pins
+    /// it forever. Bound beast-tribe model ids route to their tribe's lists first;
+    /// with UseRaceVoicePresets off, every speaker resolves from the Unknown row.
+    /// Manual overrides still win in the store.
     /// </summary>
     public VoiceProfile ResolveProfile(SpeakerIdentity speaker)
     {
@@ -674,22 +674,39 @@ public sealed class ServiceContainer : IDisposable
                 speaker.Race, speaker.Tribe, speaker.Sex, speaker.ModelCharaId, this.ModelVoiceMapKeys())
             : VoiceGroup.Ungendered;
 
-        // Beast-tribe/allied-society casting: a model id listed in overridenModelIds.txt
-        // with a set key draws from that named set (active or parked) before anything else.
-        var modelSet = speaker.ModelCharaId is { } modelId
-            && this.ModelVoiceMap().TryGetValue(modelId, out var setKey)
-            ? setKey
-            : null;
         var map = this.VoiceMapUnlocked();
-        var slots = modelSet is { } key
-            ? map.SlotsForSet(key)
-            : map.SlotsFor(group, racePresets ? speaker.Race : null);
+
+        // Beast-tribe casting: a model id bound in the active preset routes to the
+        // tribe's gendered list when the sex byte names a gender with a filled list,
+        // else the tribe pool. Empty lists are skipped by the overlay, so a miss here
+        // falls through to normal race/group resolution.
+        string? beastTribe = null;
+        VoiceSlot[]? beastSlots = null;
+        if (speaker.ModelCharaId is { } modelId
+            && this.ModelVoiceMap().TryGetValue(modelId, out var tribeKey))
+        {
+            beastTribe = tribeKey;
+            var sexKey = speaker.Sex == 1 ? CastingDefaults.BeastBucketKey(tribeKey, BeastVoiceList.Female)
+                : speaker.Sex == 0 ? CastingDefaults.BeastBucketKey(tribeKey, BeastVoiceList.Male)
+                : null;
+            if (sexKey is { } gendered && map.TrySlotsForSet(gendered, out var genderedSlots))
+            {
+                beastSlots = genderedSlots;
+            }
+            else if (map.TrySlotsForSet(CastingDefaults.BeastBucketKey(tribeKey, BeastVoiceList.Pool), out var pool))
+            {
+                beastSlots = pool;
+            }
+        }
+
+        var slots = beastSlots
+            ?? (racePresets ? map.SlotsFor(group, speaker.Race) : map.SlotsFor(VoiceGroup.Ungendered, null));
 
         this.LogSinkUnlocked().Info(
             $"Voice resolution for \"{speaker.Key}\": race={speaker.Race?.ToString() ?? "?"} " +
             $"tribe={speaker.Tribe?.ToString() ?? "?"} sex={speaker.Sex?.ToString() ?? "?"} " +
             $"model={speaker.ModelCharaId?.ToString() ?? "?"} → group {group}" +
-            (modelSet is { } activeSet ? $" (model set \"{activeSet}\")" : string.Empty));
+            (beastTribe is { } boundTribe ? $" (beast tribe \"{boundTribe}\")" : string.Empty));
 
         var store = this.ProfileStoreUnlocked();
         var profile = store.GetOrCreate(
@@ -701,7 +718,7 @@ public sealed class ServiceContainer : IDisposable
 
         // Engine migrations (Chatterbox clip ids → Kokoro voice names) retire ids that
         // the store's never-reassign invariant would keep forever; a retired id can
-        // never synthesize, so re-derive deterministically from the current bank.
+        // never synthesize, so re-derive a fresh random pick from the current bank.
         if (!map.DistinctVoiceIds().Contains(profile.ReferenceVoiceId))
         {
             this.LogSinkUnlocked().Info(
@@ -713,41 +730,47 @@ public sealed class ServiceContainer : IDisposable
         return profile;
     }
 
-    private IReadOnlyDictionary<int, string>? modelVoiceMap;
-    private IReadOnlyDictionary<int, string>? presetModelOverrides;
+    private static readonly IReadOnlyDictionary<int, string> EmptyBeastBindings =
+        new Dictionary<int, string>();
+    private IReadOnlyDictionary<int, string>? presetBeastBindings;
 
     /// <summary>
-    /// Model id → named voice set. When the active casting preset defines model
-    /// overrides, those win; otherwise the embedded overridenModelIds.txt table.
+    /// Model id → beast-tribe key, from the active casting preset's tribe bindings.
+    /// The Default preset binds nothing, so it resolves to an empty map.
     /// </summary>
     private IReadOnlyDictionary<int, string> ModelVoiceMap()
     {
         var store = this.CastingPresetStoreUnlocked();
-        if (store.ActivePresetName != CastingPreset.DefaultPresetName)
+        if (store.ActivePresetName == CastingPreset.DefaultPresetName)
         {
-            if (this.presetModelOverrides is { } cached)
-            {
-                return cached;
-            }
-
-            try
-            {
-                var preset = store.Get(store.ActivePresetName);
-                if (preset.ModelOverrides.Count > 0)
-                {
-                    return this.presetModelOverrides ??= preset.ModelOverrides
-                        .Where(kv => int.TryParse(kv.Key, out _) && kv.Value.SetKey.Length > 0)
-                        .ToDictionary(kv => int.Parse(kv.Key, CultureInfo.InvariantCulture), kv => kv.Value.SetKey);
-                }
-            }
-            catch (CastingPresetException)
-            {
-                // Unreadable active preset: the voice-map overlay already fell back to
-                // the built-in casting; the embedded model table matches it.
-            }
+            return EmptyBeastBindings;
         }
 
-        return this.modelVoiceMap ??= Infrastructure.Dalamud.UngenderedModelIds.LoadVoiceMap();
+        if (this.presetBeastBindings is { } cached)
+        {
+            return cached;
+        }
+
+        try
+        {
+            var preset = store.Get(store.ActivePresetName);
+            var bindings = new Dictionary<int, string>();
+            foreach (var tribe in preset.BeastTribes)
+            {
+                foreach (var modelId in tribe.ModelIds)
+                {
+                    bindings[modelId] = tribe.Key;
+                }
+            }
+
+            return this.presetBeastBindings = bindings;
+        }
+        catch (CastingPresetException)
+        {
+            // Unreadable active preset: the voice-map overlay already fell back to the
+            // built-in casting; no tribe bindings apply.
+            return this.presetBeastBindings = new Dictionary<int, string>();
+        }
     }
 
     /// <summary>Model ids that force the Ungendered group (ids that carry a set key also force it, via the resolver's override list).</summary>
@@ -770,10 +793,11 @@ public sealed class ServiceContainer : IDisposable
             "No voices manifest configured: pass voicesManifestFactory (in-game) or a temp path (tests).")));
 
     /// <summary>
-    /// The effective voice map: the base manifest, or the manifest overlaid with the
-    /// active casting preset (preset sets win per key, variants wholesale, and the
-    /// "ungendered" variant row re-points the group's fallback set). Cached like the
-    /// bare map was; <see cref="InvalidateVoiceMap"/> drops the cache.
+    /// The effective voice map: the base manifest, or the manifest's shape overlaid
+    /// with the active casting preset's flat grid (race/gender buckets, the Unknown
+    /// row, and one bucket per beast-tribe list; empty lists are skipped so resolution
+    /// falls through). Cached like the bare map was; <see cref="InvalidateVoiceMap"/>
+    /// drops the cache.
     /// </summary>
     private RaceVoiceMap VoiceMapUnlocked()
     {
@@ -801,25 +825,42 @@ public sealed class ServiceContainer : IDisposable
             return this.voiceMap = baseMap;
         }
 
-        var sets = new Dictionary<string, VoiceSlot[]>(baseMap.Sets, StringComparer.Ordinal);
-        foreach (var (key, slots) in preset.Sets)
+        var sets = new Dictionary<string, VoiceSlot[]>(StringComparer.Ordinal);
+        foreach (var (key, dtos) in preset.Buckets)
         {
-            sets[key] = slots.Select(dto => dto.ToSlot()).ToArray();
+            sets[key] = dtos.ToSlotArray();
         }
 
-        VoiceSlot[]? ResolveAny(string key) =>
-            sets.TryGetValue(key, out var activeSet) ? activeSet
-            : baseMap.Disabled is { } parked && parked.Sets.TryGetValue(key, out var parkedSet) ? parkedSet
-            : null;
-
-        var variants = new Dictionary<string, string>(preset.Variants, StringComparer.Ordinal);
-        if (variants.TryGetValue(CastingPreset.UngenderedVariantKey, out var ungenderedKey)
-            && ResolveAny(ungenderedKey) is { } ungenderedSlots)
+        foreach (var tribe in preset.BeastTribes)
         {
-            // Ungendered speakers have no race, so the variant lookup can never fire
-            // for them; re-pointing the fallback set is what makes the row live.
-            sets[CastingPreset.UngenderedVariantKey] = ungenderedSlots;
+            foreach (var (list, slots) in new[]
+                     {
+                         (BeastVoiceList.Pool, tribe.Voices),
+                         (BeastVoiceList.Male, tribe.MaleVoices),
+                         (BeastVoiceList.Female, tribe.FemaleVoices),
+                     })
+            {
+                if (slots.Count > 0)
+                {
+                    sets[CastingDefaults.BeastBucketKey(tribe.Key, list)] = slots.ToSlotArray();
+                }
+            }
         }
+
+        // The Unknown row must always resolve (race-presets-off path and unknown
+        // speakers land here); a preset without it falls back to the manifest's.
+        if (!sets.ContainsKey(CastingDefaults.UnknownBucketKey))
+        {
+            sets[CastingDefaults.UnknownBucketKey] = baseMap.SlotsFor(VoiceGroup.Ungendered, null);
+        }
+
+        // Legacy fallback aliases (unknown race bytes / group fallbacks without a race).
+        sets["male"] = sets[CastingDefaults.UnknownBucketKey];
+        sets["female"] = sets[CastingDefaults.UnknownBucketKey];
+
+        var variants = Enumerable.Range(1, 8)
+            .SelectMany(race => (string[])[$"{race}|Male", $"{race}|Female"])
+            .ToDictionary(key => key, key => key, StringComparer.Ordinal);
 
         return this.voiceMap = new RaceVoiceMap(sets, variants, baseMap.Disabled);
     }
@@ -878,16 +919,16 @@ public sealed class ServiceContainer : IDisposable
             this.LogSinkUnlocked()));
 
     /// <summary>
-    /// Drops the cached voice map (and any cached preset model overrides) so the next
-    /// voice resolution rebuilds from the manifest plus the active casting preset. The
-    /// UI calls this after every preset mutation or activation.
+    /// Drops the cached voice map (and the cached tribe bindings) so the next voice
+    /// resolution rebuilds from the manifest plus the active casting preset. The UI
+    /// calls this after every preset mutation or activation.
     /// </summary>
     public void InvalidateVoiceMap()
     {
         lock (this.gate)
         {
             this.voiceMap = null;
-            this.presetModelOverrides = null;
+            this.presetBeastBindings = null;
         }
     }
 
