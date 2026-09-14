@@ -192,6 +192,7 @@ public sealed class DefaultPresetShapeTests
         Assert.Equal([2520], preset.BeastTribes.Single(t => t.Key == "pixie").ModelIds);
         Assert.Equal([6], preset.BeastTribes.Single(t => t.Key == "goblin").ModelIds);
         Assert.Equal([3], preset.BeastTribes.Single(t => t.Key == "amaljaa").ModelIds);
+        Assert.Equal([1740], preset.BeastTribes.Single(t => t.Key == "ananta").ModelIds);
     }
 
     [Fact]
@@ -261,6 +262,25 @@ public sealed class DefaultPresetShapeTests
         {
             Assert.InRange(slot.Pitch, 0.87f, 0.89f);
             Assert.Equal(1f, slot.Speed);
+        });
+    }
+
+    [Fact]
+    public void Default_AnantaPool_IsHindiFemalePair_AtApprovedKnobs()
+    {
+        // User-approved Ananta sound (Eshana / Madhura tune): the hf_ pair at max
+        // exaggeration bias — theatrical snake-ladies. Pool-only: the game's sex
+        // byte reads male for them, and lore says all-female.
+        var ananta = NewStore().GetDefault().BeastTribes.Single(t => t.Key == "ananta");
+
+        Assert.Equal(
+            ["hf_beta", "hf_alpha"],
+            ananta.Voices.Select(slot => slot.Id));
+        Assert.All(ananta.Voices, slot =>
+        {
+            Assert.Equal(1f, slot.ExaggerationBias);
+            Assert.Equal(1.07f, slot.Pitch);
+            Assert.Equal(1.06f, slot.Speed);
         });
     }
 

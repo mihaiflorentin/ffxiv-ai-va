@@ -238,6 +238,9 @@
   ],
   "amaljaa": [
    3
+  ],
+  "ananta": [
+   1740
   ]
  },
  "disabledSets": {
@@ -384,12 +387,16 @@
    ],
    "setAnanta": [
     {
-     "id": "bf_isabella",
-     "pitch": 0.96
+     "id": "hf_beta",
+     "exaggerationBias": 1.0,
+     "pitch": 1.07,
+     "speed": 1.06
     },
     {
-     "id": "bf_emma",
-     "pitch": 0.96
+     "id": "hf_alpha",
+     "exaggerationBias": 1.0,
+     "pitch": 1.07,
+     "speed": 1.06
     }
    ],
    "setNamazu": [
