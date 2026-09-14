@@ -312,6 +312,9 @@
    967,
    4062,
    4064
+  ],
+  "mamooljafemale": [
+   4064
   ]
  },
  "disabledSets": {
@@ -633,6 +636,20 @@
      "exaggerationBias": 0.5,
      "pitch": 0.84,
      "speed": 0.92
+    }
+   ],
+   "setMamoolJaFemale": [
+    {
+     "id": "hf_alpha",
+     "exaggerationBias": 0.5,
+     "pitch": 0.97,
+     "speed": 0.98
+    },
+    {
+     "id": "hf_beta",
+     "exaggerationBias": 0.5,
+     "pitch": 0.97,
+     "speed": 0.98
     }
    ],
    "setMamoolJa": [

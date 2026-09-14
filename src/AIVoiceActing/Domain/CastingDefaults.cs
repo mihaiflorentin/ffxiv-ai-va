@@ -39,6 +39,7 @@ public static class CastingDefaults
         new("kojin", "Kojin", "setKojin"),
         new("loporrit", "Loporrit", "setLoporrit"),
         new("mamoolja", "Mamool Ja", "setMamoolJa"),
+        new("mamooljafemale", "Mamool Ja (female)", "setMamoolJaFemale"),
         new("moogle", "Moogle", "setMoogle"),
         new("namazu", "Namazu", "setNamazu"),
         new("numou", "Nu Mou", "setNuMou"),
