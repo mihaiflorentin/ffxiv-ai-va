@@ -1,28 +1,31 @@
 # AIVoiceActing
 
-Local AI voice acting for FFXIV. The plugin captures quest Talk dialogue, BattleTalk, cutscene lines, and chat channels, and speaks each line aloud with a locally-running neural TTS model (Chatterbox, ONNX). No cloud services, no Python sidecar — inference runs in-process through ONNX Runtime.
+Local AI voice acting for FFXIV. The plugin captures quest Talk dialogue, BattleTalk, cutscene lines, and chat channels, and speaks each line aloud with a locally-running neural TTS model (**Kokoro**, ONNX). No cloud services, no Python sidecar — inference runs in-process through ONNX Runtime.
 
 - Every character gets a **persistent voice**: assigned deterministically from race/tribe/gender (`xxHash32` of the character key), stored in `voice-assignments.json`, and never reassigned. Manual per-NPC and per-player overrides win.
+- **Lore-faithful casting**: every playable race maps to curated voice sets — French-accented for Elezen, Chinese and Japanese banks for Au Ra, pitched British voices for Lalafell, Italian for Roegadyn — with multiple voices per race/gender so crowds vary.
+- **Per-voice control**: the Voices tab exposes a voice picker, exaggeration bias, and a volume slider per character, plus a test button.
 - **Delivery is shaped by context**: a rules-based emotion director (zero cost, always on) sets exaggeration, pacing, and paralinguistic style per line; an optional small LLM director asset can read the recent cutscene dialogue for finer direction.
 - **The game's own voice acting always wins**: when a voiced line plays in-game, the plugin cancels its speech and stays silent for that line.
 
-English only in v1.
+Kokoro's accent banks cover English (US/UK), French, Spanish, Italian, Portuguese, Hindi, and Chinese. The Japanese bank is parked (it does not render English); f5, turbo, and legacy Chatterbox engines remain in the code but are hidden from the UI.
+
 
 ## Requirements
 
 - Windows 10/11 for in-game use (FFXIV + Dalamud via XIVLauncher). The audio sink (WASAPI) and the DirectML execution provider are Windows-only.
 - .NET 10 desktop runtime, installed by XIVLauncher/Dalamud.
-- ~1.1 GB of model files, downloaded once from the plugin's **Models** tab on first use (download only starts when you press the button).
-- macOS: the engine runs for local development (CPU; CoreML selectable), and XIV on Mac builds load with the CPU execution provider — see [GPU notes](#gpu-notes).
+- ~350 MB of model files for the default Kokoro engine, downloaded once from the **Engine** tab on first use (download only starts when you press the button). The parked f5/turbo engines add ~1.4 GB / ~1.1 GB if ever enabled.
+- macOS: the engine runs for local development and XIV on Mac builds load with the CPU execution provider — see [GPU notes](#gpu-notes).
 
 ## Models and licenses
 
 | Asset | Source | License |
 |---|---|---|
-| Chatterbox 0.5B voice model (speech encoder, embed tokens, q4 language model, conditional decoder) | [`onnx-community/chatterbox-ONNX`](https://huggingface.co/onnx-community/chatterbox-ONNX) (ONNX export of [Resemble AI's Chatterbox](https://github.com/resemble-ai/chatterbox)) | MIT (model and export) |
-| `default_voice.wav` reference clip | [`onnx-community/chatterbox-ONNX`](https://huggingface.co/onnx-community/chatterbox-ONNX) | MIT |
-| Tokenizer (`tokenizer.json`) | [`onnx-community/chatterbox-ONNX`](https://huggingface.co/onnx-community/chatterbox-ONNX) | MIT |
+| Kokoro v1.0 ONNX model (`kokoro-v1.0.onnx`, ~310 MB) | [Kokoro](https://huggingface.co/hexgrad/kokoro) (KokoroSharp ships the export) | Apache-2.0 |
+| Voice bank (`voices/*.npy`, 54 voices) | Kokoro v1.0/v1.1 style vectors, shipped with the plugin | Apache-2.0 |
 | Optional emotion-director LLM (Qwen3-0.6B ONNX; not required, off by default) | Qwen3 | Apache-2.0 |
+| Legacy Chatterbox assets (engine parked; only if manually enabled) | [`onnx-community/chatterbox-ONNX`](https://huggingface.co/onnx-community/chatterbox-ONNX) | MIT |
 
 Models are downloaded to `ConfigDirectory/models/` at runtime; nothing model-sized ships in the plugin zip.
 
@@ -61,7 +64,7 @@ unzip -q dalamud.zip -d .dalamud/dev
 export DALAMUD_HOME="$PWD/.dalamud/dev"
 
 dotnet build AIVoiceActing.sln -c Release
-dotnet test                       # ~380 unit tests
+dotnet test                       # 441 unit tests
 dotnet publish src/AIVoiceActing -c Release
 ```
 
@@ -73,9 +76,10 @@ CI (`.github/workflows/release.yml`) mirrors this: it builds on every push/PR, r
 
 Synthesis runs through ONNX Runtime execution providers, on a background thread — the game thread is never blocked.
 
-- **Windows** (default): **DirectML** — works on AMD and NVIDIA GPUs. CPU is the automatic fallback. Select the provider in **Speech Settings → Engine**.
-- **macOS** (XIV on Mac): **CPU** is the default and the usable choice today. CoreML is selectable, but the quantized language-model graph partitions into ~3,800 segments under CoreML and is not practically usable.
-- **Honest performance numbers**: CPU real-time factor is roughly 8 (one second of audio takes about eight seconds) on an Apple M1; expect similar or better on a mid-range Windows laptop, and substantially faster under DirectML on a discrete GPU. Turn-based dialogue tolerates this; fast chat backlogs will lag behind on CPU.
+- **Kokoro is real-time on CPU**: measured real-time factor ≈ 0.54 on a Ryzen 9800X3D (1 s of audio in ~0.5 s); older CPUs still keep up with dialogue pacing.
+- **DirectML stays CPU under Wine**: the DML EP fails in-game; the code falls back to CPU automatically. The execution-provider selector remains in the Engine tab for native Windows experiments.
+- **macOS** (XIV on Mac): CPU is the default and works.
+- The parked f5/turbo engines are an order of magnitude slower (F5 ≈ 8× real time on CPU) — why they stay out of the UI.
 
 ## Voiced-line courtesy
 
@@ -100,15 +104,12 @@ The game ships real voice acting for main-story cutscenes and some quest dialogu
 
 ## Configuration
 
-`/aivaconfig` has seven tabs, mirroring TextToTalk's layout plus engine controls:
+`/aivaconfig` has four tabs:
 
-1. **Speech Settings** — keybind, source toggles, engine (model status, execution-provider override, default exaggeration), stutter removal.
-2. **Models** — per-asset download rows with progress, open models/voices folders.
-3. **Player Voices** — per-player voice table with test button and exaggeration bias.
-4. **NPC Voices** — the same for NPCs by name.
-5. **Channel Settings** — chat-channel presets, per-preset keybinds, enable-all.
-6. **Triggers/Exclusions** — text/regex gates on what gets read.
-7. **Test** — free-text synthesis with speaker picker, emotion dropdown, exaggeration slider, and rules-vs-context director buttons.
+1. **Engine** — the engine card (Kokoro), model download/remove per asset with progress and cancel, execution-provider selector, load-engine-now button, and a live status strip (state, queue depth, models-dir size).
+2. **Voices** — Players and NPCs tables: voice picker, exaggeration bias, per-voice volume slider, test button, and add-form.
+3. **Chat** — master enable, keybinds, capture sources, channel presets, and triggers/exclusions.
+4. **Test** — free-text synthesis with speaker picker, emotion dropdown, forced-emotion audition, and rules-vs-context director buttons; failures surface in an in-window status line.
 
 Every capture source, filter, and courtesy behavior can be toggled individually; defaults follow TextToTalk where options are shared. `/aivastyles` opens the style-tag editor (custom styles, tag delimiter, style regex).
 
