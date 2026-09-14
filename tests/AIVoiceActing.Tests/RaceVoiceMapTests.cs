@@ -193,6 +193,7 @@ public sealed class DefaultPresetShapeTests
         Assert.Equal([6], preset.BeastTribes.Single(t => t.Key == "goblin").ModelIds);
         Assert.Equal([3], preset.BeastTribes.Single(t => t.Key == "amaljaa").ModelIds);
         Assert.Equal([1740, 2178], preset.BeastTribes.Single(t => t.Key == "ananta").ModelIds);
+        Assert.Equal([3263], preset.BeastTribes.Single(t => t.Key == "loporrit").ModelIds);
     }
 
     [Fact]
