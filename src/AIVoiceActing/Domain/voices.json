@@ -245,6 +245,9 @@
   "vanuvanu": [
    1101
   ],
+  "vath": [
+   832
+  ],
   "ananta": [
    1740,
    2178
@@ -384,12 +387,22 @@
    ],
    "setVath": [
     {
-     "id": "if_sara",
-     "pitch": 0.97
+     "id": "zm_yunxia",
+     "exaggerationBias": 0.4,
+     "pitch": 1.08,
+     "speed": 0.95
     },
     {
-     "id": "im_nicola",
-     "pitch": 0.97
+     "id": "pf_dora",
+     "exaggerationBias": 0.5,
+     "pitch": 1.05,
+     "speed": 0.97
+    },
+    {
+     "id": "bf_alice",
+     "exaggerationBias": 0.5,
+     "pitch": 1.02,
+     "speed": 0.97
     }
    ],
    "setMoogle": [
