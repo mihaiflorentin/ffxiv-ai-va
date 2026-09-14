@@ -202,6 +202,8 @@ public sealed class DefaultPresetShapeTests
         Assert.Equal([2519], preset.BeastTribes.Single(t => t.Key == "numou").ModelIds);
         Assert.Equal([3293], preset.BeastTribes.Single(t => t.Key == "arkasodara").ModelIds);
         Assert.Equal([4065], preset.BeastTribes.Single(t => t.Key == "yokhuy").ModelIds);
+        Assert.Equal([1251, 1252, 1253, 1254, 1255, 1256, 1257],
+            preset.BeastTribes.Single(t => t.Key == "dragon").ModelIds);
     }
 
     [Fact]
