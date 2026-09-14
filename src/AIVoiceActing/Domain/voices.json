@@ -260,6 +260,9 @@
   "numou": [
    2519
   ],
+  "arkasodara": [
+   3293
+  ],
   "ananta": [
    1740,
    2178
@@ -549,12 +552,13 @@
    ],
    "setArkasodara": [
     {
-     "id": "hm_psi",
-     "pitch": 0.97
+     "id": "hm_omega"
     },
     {
-     "id": "hf_alpha",
-     "pitch": 0.97
+     "id": "pf_dora"
+    },
+    {
+     "id": "ef_dora"
     }
    ],
    "setNuMou": [
