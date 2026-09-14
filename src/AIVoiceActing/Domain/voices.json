@@ -257,6 +257,9 @@
   "qitari": [
    14
   ],
+  "numou": [
+   2519
+  ],
   "ananta": [
    1740,
    2178
@@ -552,6 +555,18 @@
     {
      "id": "hf_alpha",
      "pitch": 0.97
+    }
+   ],
+   "setNuMou": [
+    {
+     "id": "bf_lily",
+     "pitch": 1.12,
+     "speed": 0.85
+    },
+    {
+     "id": "bf_isabella",
+     "pitch": 1.12,
+     "speed": 0.85
     }
    ],
    "setOmicron": [
