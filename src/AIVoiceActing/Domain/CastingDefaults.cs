@@ -33,6 +33,7 @@ public static class CastingDefaults
         new("dragon", "Dragon", "setDragon"),
         new("dwarf", "Dwarf", "setDwarf"),
         new("garlean", "Garlean", "setGarlean"),
+        new("goblin", "Goblin", "setGoblin"),
         new("ixal", "Ixal", "setIxal"),
         new("kobold", "Kobold", "setKobold"),
         new("kojin", "Kojin", "setKojin"),

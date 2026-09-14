@@ -180,10 +180,12 @@ public sealed class DefaultPresetShapeTests
             Assert.Empty(tribe.MaleVoices);
             Assert.Empty(tribe.FemaleVoices);
         });
-        // The shipped pixie binding: Feo Ul's base model id (user-confirmed fairies).
+        // Shipped bindings: pixie = Feo Ul's base model (user-confirmed fairies),
+        // goblin = the shared goblin base model (all sex bytes read male).
         Assert.Equal([2520], preset.BeastTribes.Single(t => t.Key == "pixie").ModelIds);
+        Assert.Equal([6], preset.BeastTribes.Single(t => t.Key == "goblin").ModelIds);
         Assert.All(
-            preset.BeastTribes.Where(t => t.Key != "pixie"),
+            preset.BeastTribes.Where(t => t.Key is not ("pixie" or "goblin")),
             tribe => Assert.Empty(tribe.ModelIds));
     }
 

@@ -232,6 +232,9 @@
  "beastTribes": {
   "pixie": [
    2520
+  ],
+  "goblin": [
+   6
   ]
  },
  "disabledSets": {
@@ -499,6 +502,17 @@
     },
     {
      "id": "bm_daniel"
+    }
+   ],
+   "setGoblin": [
+    {
+     "id": "bm_lewis"
+    },
+    {
+     "id": "bm_fable"
+    },
+    {
+     "id": "bm_george"
     }
    ],
    "setDragon": [
