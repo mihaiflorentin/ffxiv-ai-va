@@ -598,22 +598,10 @@
    ],
    "setOmicron": [
     {
-     "id": "am_adam",
+     "id": "hf_beta",
      "exaggerationBias": 0.25,
      "pitch": 0.95,
-     "speed": 0.97
-    },
-    {
-     "id": "am_onyx",
-     "exaggerationBias": 0.25,
-     "pitch": 0.88,
      "speed": 0.96
-    },
-    {
-     "id": "am_michael",
-     "exaggerationBias": 0.3,
-     "pitch": 1.0,
-     "speed": 0.98
     }
    ],
    "setPelupelu": [
