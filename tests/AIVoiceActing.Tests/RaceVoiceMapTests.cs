@@ -123,8 +123,8 @@ public sealed class RaceVoiceMapTests
 
         // Parked SET NAMES must never collide with active set names or variant targets:
         // the picker (DistinctVoiceIds) reads active sets only, so parked casts stay
-        // out of the UI while a model id in overridenModelIds.txt can still activate
-        // them via SlotsForSet.
+        // out of the UI; 0.0.26 seeds the beast-tribe pools from these parked sets
+        // instead of activating them via model-id overrides.
         Assert.All(map.Disabled.Sets.Keys, key => Assert.DoesNotContain(key, map.Sets.Keys));
         Assert.All(map.RaceVariants.Values, variant => Assert.Contains(variant, map.Sets.Keys));
     }

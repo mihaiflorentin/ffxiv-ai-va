@@ -2,9 +2,9 @@
 
 Local AI voice acting for FFXIV. The plugin captures quest Talk dialogue, BattleTalk, cutscene lines, and chat channels, and speaks each line aloud with a locally-running neural TTS model (**Kokoro**, ONNX). No cloud services, no Python sidecar — inference runs in-process through ONNX Runtime.
 
-- Every character gets a **persistent voice**: assigned deterministically from race/tribe/gender (`xxHash32` of the character key), stored in `voice-assignments.json`, and never reassigned. Manual per-NPC and per-player overrides win.
-- **Lore-faithful casting**: every playable race maps to curated voice sets — French-accented for Elezen, Chinese and Japanese banks for Au Ra, pitched British voices for Lalafell, Italian for Roegadyn — with multiple voices per race/gender so crowds vary.
-- **Per-voice control**: the Voices tab exposes a voice picker, exaggeration bias, and a volume slider per character, plus a test button.
+- Every character gets a **persistent voice**: a speaker's first line picks randomly from their race/gender row and the pick is pinned in `voice-assignments.json` forever. Manual per-NPC and per-player overrides win.
+- **Lore-faithful casting**: every playable race maps to curated voice sets — French-accented for Elezen, Chinese bank for Au Ra, pitched British voices for Lalafell, Italian for Roegadyn — with multiple voices per race/gender so crowds vary. Beast tribes get their own rows (pool + male/female lists), bound to in-game model ids.
+- **Per-voice control**: the General Voices tab shapes every row directly (voice picker, pitch/speed/volume/exaggeration per slot); the NPC Voices and Player Voices tabs override individual characters, with add forms, scoped clear, and clipboard export/import.
 - **Delivery is shaped by context**: a rules-based emotion director (zero cost, always on) sets exaggeration, pacing, and paralinguistic style per line; an optional small LLM director asset can read the recent cutscene dialogue for finer direction.
 - **The game's own voice acting always wins**: when a voiced line plays in-game, the plugin cancels its speech and stays silent for that line.
 
