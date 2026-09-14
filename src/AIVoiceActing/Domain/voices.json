@@ -383,14 +383,24 @@
    ],
    "setPixie": [
     {
-     "id": "bf_lily",
-     "pitch": 1.12,
-     "speed": 1.05
+     "id": "hf_alpha",
+     "pitch": 1.07,
+     "speed": 1.1
     },
     {
-     "id": "bm_george",
-     "pitch": 1.12,
-     "speed": 1.05
+     "id": "hf_beta",
+     "pitch": 1.07,
+     "speed": 1.1
+    },
+    {
+     "id": "bf_isabella",
+     "pitch": 1.07,
+     "speed": 1.1
+    },
+    {
+     "id": "bf_lily",
+     "pitch": 1.07,
+     "speed": 1.1
     }
    ],
    "setDwarf": [

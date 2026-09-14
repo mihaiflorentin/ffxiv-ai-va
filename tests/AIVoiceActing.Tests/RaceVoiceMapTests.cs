@@ -208,15 +208,19 @@ public sealed class DefaultPresetShapeTests
     }
 
     [Fact]
-    public void Default_PixiePool_KeepsLalafellTreatment()
+    public void Default_PixiePool_IsFemaleOnly_AtApprovedKnobs()
     {
+        // User-approved pixie sound (Guyf Uin, 2026-09-14): female voices only,
+        // pitched/paced like her tuned override — fairies are genderless.
         var pixie = NewStore().GetDefault().BeastTribes.Single(t => t.Key == "pixie");
 
-        Assert.Equal(["bf_lily", "bm_george"], pixie.Voices.Select(slot => slot.Id));
+        Assert.Equal(
+            ["hf_alpha", "hf_beta", "bf_isabella", "bf_lily"],
+            pixie.Voices.Select(slot => slot.Id));
         Assert.All(pixie.Voices, slot =>
         {
-            Assert.Equal(1.12f, slot.Pitch);
-            Assert.Equal(1.05f, slot.Speed);
+            Assert.Equal(1.07f, slot.Pitch);
+            Assert.Equal(1.1f, slot.Speed);
         });
     }
 }
