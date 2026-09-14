@@ -179,8 +179,26 @@ public sealed class DefaultPresetShapeTests
         {
             Assert.Empty(tribe.MaleVoices);
             Assert.Empty(tribe.FemaleVoices);
-            Assert.Empty(tribe.ModelIds);
         });
+        // The shipped pixie binding: Feo Ul's base model id (user-confirmed fairies).
+        Assert.Equal([2520], preset.BeastTribes.Single(t => t.Key == "pixie").ModelIds);
+        Assert.All(
+            preset.BeastTribes.Where(t => t.Key != "pixie"),
+            tribe => Assert.Empty(tribe.ModelIds));
+    }
+
+    [Fact]
+    public void BeastTribeBindings_Parse_AndDefaultToEmpty()
+    {
+        const string withBindings = """
+            {"sets":{"ungendered":[{"id":"em_alex"}]},"raceVariants":{},"beastTribes":{"pixie":[2520,748]}}
+            """;
+        Assert.Equal([2520, 748], RaceVoiceMap.FromJson(withBindings).BeastTribeBindings["pixie"]);
+
+        const string withoutBindings = """
+            {"sets":{"ungendered":[{"id":"em_alex"}]},"raceVariants":{}}
+            """;
+        Assert.Empty(RaceVoiceMap.FromJson(withoutBindings).BeastTribeBindings);
     }
 
     [Fact]
@@ -210,17 +228,16 @@ public sealed class DefaultPresetShapeTests
     [Fact]
     public void Default_PixiePool_IsFemaleOnly_AtApprovedKnobs()
     {
-        // User-approved pixie sound (Guyf Uin, 2026-09-14): female voices only,
+        // User-approved pixie sound (Guyf Uin, 2026-09-14): hf_ female pair only,
         // pitched/paced like her tuned override — fairies are genderless.
         var pixie = NewStore().GetDefault().BeastTribes.Single(t => t.Key == "pixie");
 
-        Assert.Equal(
-            ["hf_alpha", "hf_beta", "bf_isabella", "bf_lily"],
-            pixie.Voices.Select(slot => slot.Id));
+        Assert.Equal(["hf_alpha", "hf_beta"], pixie.Voices.Select(slot => slot.Id));
         Assert.All(pixie.Voices, slot =>
         {
             Assert.Equal(1.07f, slot.Pitch);
             Assert.Equal(1.1f, slot.Speed);
         });
     }
+
 }

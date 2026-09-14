@@ -91,7 +91,9 @@ public sealed class JsonCastingPresetStore : ICastingPresetStore
             .Select(tribe => new BeastTribeCast(
                 Key: tribe.Key,
                 Name: tribe.Name,
-                ModelIds: [],
+                ModelIds: map.BeastTribeBindings.TryGetValue(tribe.Key, out var boundIds)
+                    ? boundIds
+                    : [],
                 Voices: map.Disabled?.Sets.TryGetValue(tribe.ManifestSetKey, out var parked) == true
                     ? parked.ToDtoArray()
                     : [],

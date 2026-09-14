@@ -1291,6 +1291,11 @@ public sealed class ConfigurationWindow : Window
         this.DrawForkPresetPopup(store);
         this.DrawNewPresetPopup(store);
         this.DrawImportPresetPopup(store);
+        if (isDefault)
+        {
+            ImGui.TextDisabled("The Default preset is immutable — Fork carries your edits into a new preset.");
+        }
+
 
         ImGui.Separator();
         Controls.Checkbox(

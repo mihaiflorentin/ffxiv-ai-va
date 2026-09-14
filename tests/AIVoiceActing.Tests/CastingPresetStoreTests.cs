@@ -43,7 +43,11 @@ public sealed class CastingPresetStoreTests : IDisposable
             {
                 ["setPixie"] = [new VoiceSlot("bf_lily", 0f, 1.12f, 1.05f, 1f)],
             },
-            []));
+            []),
+        new Dictionary<string, IReadOnlyList<int>>(StringComparer.Ordinal)
+        {
+            ["pixie"] = [748],
+        });
 
     private static CastingPreset SamplePreset(string name = "Mine") => new(
         Name: name,
@@ -90,7 +94,11 @@ public sealed class CastingPresetStoreTests : IDisposable
         Assert.Equal(1.05f, pixie.Voices[0].Speed);
         Assert.Empty(pixie.MaleVoices);
         Assert.Empty(pixie.FemaleVoices);
-        Assert.All(preset.BeastTribes, tribe => Assert.Empty(tribe.ModelIds));
+        // Shipped manifest bindings land on their tribe rows.
+        Assert.Equal([748], preset.BeastTribes.Single(t => t.Key == "pixie").ModelIds);
+        Assert.All(
+            preset.BeastTribes.Where(t => t.Key != "pixie"),
+            tribe => Assert.Empty(tribe.ModelIds));
         // A tribe without a parked set still gets a (empty) row.
         Assert.Empty(preset.BeastTribes.Single(t => t.Key == "dragon").Voices);
     }

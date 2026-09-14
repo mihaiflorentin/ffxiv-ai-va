@@ -29,20 +29,24 @@ public sealed class RaceVoiceMap
     private sealed record ManifestFile(
         [property: JsonPropertyName("sets")] Dictionary<string, VoiceSlot[]>? Sets,
         [property: JsonPropertyName("raceVariants")] Dictionary<string, string>? RaceVariants,
-        [property: JsonPropertyName("disabledSets")] ManifestFile? DisabledSets);
+        [property: JsonPropertyName("disabledSets")] ManifestFile? DisabledSets,
+        [property: JsonPropertyName("beastTribes")] Dictionary<string, IReadOnlyList<int>>? BeastTribes);
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     private readonly Dictionary<string, VoiceSlot[]> sets;
     private readonly Dictionary<string, string> raceVariants;
+    private readonly Dictionary<string, IReadOnlyList<int>> beastTribeBindings;
 
     public RaceVoiceMap(
         Dictionary<string, VoiceSlot[]> sets,
         Dictionary<string, string> raceVariants,
-        RaceVoiceMap? disabled = null)
+        RaceVoiceMap? disabled = null,
+        Dictionary<string, IReadOnlyList<int>>? beastTribeBindings = null)
     {
         this.sets = new Dictionary<string, VoiceSlot[]>(sets, StringComparer.Ordinal);
         this.raceVariants = new Dictionary<string, string>(raceVariants, StringComparer.Ordinal);
+        this.beastTribeBindings = new(beastTribeBindings ?? [], StringComparer.Ordinal);
         this.Disabled = disabled;
     }
 
@@ -54,6 +58,11 @@ public sealed class RaceVoiceMap
 
     /// <summary>The parked accent implementations; never shown in the UI, never removed.</summary>
     public RaceVoiceMap? Disabled { get; }
+
+    /// <summary>Shipped beast-tribe model-id bindings (tribe key → game model chara
+    /// ids). The Default preset exposes them on its tribe rows and the container
+    /// resolves them while Default is active — shipped casts need no preset fork.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<int>> BeastTribeBindings => this.beastTribeBindings;
 
     public static RaceVoiceMap FromJson(string json)
     {
@@ -71,7 +80,11 @@ public sealed class RaceVoiceMap
             ? null
             : new RaceVoiceMap(disabledSets.Sets ?? [], disabledSets.RaceVariants ?? []);
 
-        return new RaceVoiceMap(manifest.Sets ?? [], manifest.RaceVariants ?? [], disabled);
+        return new RaceVoiceMap(
+            manifest.Sets ?? [],
+            manifest.RaceVariants ?? [],
+            disabled,
+            manifest.BeastTribes);
     }
 
     /// <summary>

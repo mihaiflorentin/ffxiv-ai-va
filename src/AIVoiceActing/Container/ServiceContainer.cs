@@ -730,20 +730,33 @@ public sealed class ServiceContainer : IDisposable
         return profile;
     }
 
-    private static readonly IReadOnlyDictionary<int, string> EmptyBeastBindings =
-        new Dictionary<int, string>();
     private IReadOnlyDictionary<int, string>? presetBeastBindings;
+    private IReadOnlyDictionary<int, string>? defaultBeastBindings;
 
     /// <summary>
-    /// Model id → beast-tribe key, from the active casting preset's tribe bindings.
-    /// The Default preset binds nothing, so it resolves to an empty map.
+    /// Model id → beast-tribe key. A user preset's bindings win; while the Default
+    /// preset is active, the shipped manifest bindings apply instead.
     /// </summary>
     private IReadOnlyDictionary<int, string> ModelVoiceMap()
     {
         var store = this.CastingPresetStoreUnlocked();
         if (store.ActivePresetName == CastingPreset.DefaultPresetName)
         {
-            return EmptyBeastBindings;
+            if (this.defaultBeastBindings is { } cachedDefault)
+            {
+                return cachedDefault;
+            }
+
+            var shipped = new Dictionary<int, string>();
+            foreach (var (tribeKey, modelIds) in this.LoadBaseVoiceMapUnlocked().BeastTribeBindings)
+            {
+                foreach (var modelId in modelIds)
+                {
+                    shipped[modelId] = tribeKey;
+                }
+            }
+
+            return this.defaultBeastBindings = shipped;
         }
 
         if (this.presetBeastBindings is { } cached)
@@ -793,11 +806,12 @@ public sealed class ServiceContainer : IDisposable
             "No voices manifest configured: pass voicesManifestFactory (in-game) or a temp path (tests).")));
 
     /// <summary>
-    /// The effective voice map: the base manifest, or the manifest's shape overlaid
-    /// with the active casting preset's flat grid (race/gender buckets, the Unknown
-    /// row, and one bucket per beast-tribe list; empty lists are skipped so resolution
-    /// falls through). Cached like the bare map was; <see cref="InvalidateVoiceMap"/>
-    /// drops the cache.
+    /// The effective voice map: the manifest's shape overlaid with the active casting
+    /// preset's flat grid (race/gender buckets, the Unknown row, and one bucket per
+    /// beast-tribe list; empty lists are skipped so resolution falls through). Default
+    /// participates too — its derived shape carries the shipped tribe pools and
+    /// bindings. Cached like the bare map was; <see cref="InvalidateVoiceMap"/> drops
+    /// the cache.
     /// </summary>
     private RaceVoiceMap VoiceMapUnlocked()
     {
@@ -809,21 +823,24 @@ public sealed class ServiceContainer : IDisposable
         var baseMap = this.LoadBaseVoiceMapUnlocked();
         var store = this.CastingPresetStoreUnlocked();
         var active = store.ActivePresetName;
+        CastingPreset preset;
         if (active == CastingPreset.DefaultPresetName)
         {
-            return this.voiceMap = baseMap;
+            preset = store.GetDefault();
+        }
+        else
+        {
+            try
+            {
+                preset = store.Get(active);
+            }
+            catch (CastingPresetException e)
+            {
+                this.LogSinkUnlocked().Warn($"Active casting preset \"{active}\" is unreadable; using the built-in casting. {e.Message}");
+                return this.voiceMap = baseMap;
+            }
         }
 
-        CastingPreset preset;
-        try
-        {
-            preset = store.Get(active);
-        }
-        catch (CastingPresetException e)
-        {
-            this.LogSinkUnlocked().Warn($"Active casting preset \"{active}\" is unreadable; using the built-in casting. {e.Message}");
-            return this.voiceMap = baseMap;
-        }
 
         var sets = new Dictionary<string, VoiceSlot[]>(StringComparer.Ordinal);
         foreach (var (key, dtos) in preset.Buckets)
@@ -929,6 +946,7 @@ public sealed class ServiceContainer : IDisposable
         {
             this.voiceMap = null;
             this.presetBeastBindings = null;
+            this.defaultBeastBindings = null;
         }
     }
 

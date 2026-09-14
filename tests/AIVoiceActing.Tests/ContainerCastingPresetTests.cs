@@ -48,6 +48,18 @@ public sealed class ContainerCastingPresetTests : IDisposable
                 ["6|Male"] = "male",
                 ["6|Female"] = "female",
             },
+            disabledSets = new
+            {
+                sets = new Dictionary<string, object[]>
+                {
+                    ["setPixie"] = new[] { new { id = "bf_lily", pitch = 1.07, speed = 1.1 } },
+                },
+                raceVariants = new Dictionary<string, string>(),
+            },
+            beastTribes = new Dictionary<string, int[]>
+            {
+                ["pixie"] = [748],
+            },
         }));
 
     private void WritePresetFile(string active, string auRaMaleVoiceId) => File.WriteAllText(
@@ -136,6 +148,21 @@ public sealed class ContainerCastingPresetTests : IDisposable
         var profile = container.ResolveProfile(AuRaMale());
 
         Assert.Equal("bm_lewis", profile.ReferenceVoiceId);
+    }
+
+    [Fact]
+    public void DefaultPreset_ResolvesShippedBeastBinding()
+    {
+        // With Default active, the manifest's own beastTribes bindings route the
+        // bound model to the tribe's pool — no user preset required.
+        this.WriteManifest();
+
+        using var container = this.NewContainer();
+        var profile = container.ResolveProfile(
+            new SpeakerIdentity(
+                "npc:shipped-pixie", "Shipped Pixie", Race: null, Tribe: 1, Sex: null, World: null, ModelCharaId: 748));
+
+        Assert.Equal("bf_lily", profile.ReferenceVoiceId);
     }
 
     [Fact]

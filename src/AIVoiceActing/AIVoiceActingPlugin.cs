@@ -142,7 +142,8 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         this.battleTalkPoller = new TalkAddonPoller(ClientState, Condition, GameGui, "_BattleTalk");
 
         this.services = new ServiceContainer(
-            logSinkFactory: () => new DalamudLogSink(PluginLog),
+            logSinkFactory: () => new Infrastructure.Dalamud.HarvestLogSink(
+                new DalamudLogSink(PluginLog), Path.Combine(configDir, "beast-tribe-harvest.log")),
             profileStorePathFactory: () => Path.Combine(configDir, "voice-assignments.json"),
             modelsDirFactory: () => Path.Combine(configDir, "models"),
             voicesManifestFactory: () => ExtractVoicesManifest(configDir),

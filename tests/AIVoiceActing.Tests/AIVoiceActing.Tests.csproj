@@ -41,6 +41,7 @@
        any OS alongside the pure domain). -->
   <ItemGroup>
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Dalamud\UngenderedModelIds.cs" Link="AIVoiceActing\Infrastructure\UngenderedModelIds.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Dalamud\HarvestLogSink.cs" Link="AIVoiceActing\Infrastructure\HarvestLogSink.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Dalamud\GameObjectSpeakerDirectory.cs" Link="AIVoiceActing\Infrastructure\GameObjectSpeakerDirectory.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Onnx\**\*.cs" Link="AIVoiceActing\Infrastructure\Onnx\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Kokoro\**\*.cs" Link="AIVoiceActing\Infrastructure\Kokoro\%(Filename)%(Extension)" />
