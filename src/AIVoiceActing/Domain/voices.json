@@ -306,7 +306,8 @@
    10,
    773,
    967,
-   4062
+   4062,
+   4064
   ]
  },
  "disabledSets": {
@@ -644,12 +645,10 @@
    ],
    "setMamoolJa": [
     {
-     "id": "pm_santa",
-     "pitch": 0.95
+     "id": "hm_omega"
     },
     {
-     "id": "em_alex",
-     "pitch": 0.95
+     "id": "em_alex"
     }
    ],
    "setGarlean": [
