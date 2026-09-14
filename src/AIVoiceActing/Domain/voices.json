@@ -251,6 +251,9 @@
   "kojin": [
    1699
   ],
+  "namazu": [
+   2226
+  ],
   "ananta": [
    1740,
    2178
@@ -457,13 +460,21 @@
    "setNamazu": [
     {
      "id": "pm_santa",
-     "pitch": 1.25,
-     "speed": 1.2
+     "exaggerationBias": 0.9,
+     "pitch": 1.12,
+     "speed": 1.08
     },
     {
-     "id": "hf_beta",
-     "pitch": 1.25,
-     "speed": 1.2
+     "id": "pf_dora",
+     "exaggerationBias": 0.9,
+     "pitch": 1.14,
+     "speed": 1.08
+    },
+    {
+     "id": "zf_xiaoyi",
+     "exaggerationBias": 0.9,
+     "pitch": 1.12,
+     "speed": 1.08
     }
    ],
    "setPixie": [
