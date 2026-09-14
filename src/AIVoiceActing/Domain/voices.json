@@ -254,6 +254,9 @@
   "namazu": [
    2226
   ],
+  "qitari": [
+   14
+  ],
   "ananta": [
    1740,
    2178
@@ -501,13 +504,22 @@
    ],
    "setQitari": [
     {
-     "id": "zm_yunyang",
-     "pitch": 0.97,
-     "speed": 0.95
+     "id": "bf_alice",
+     "exaggerationBias": 0.75,
+     "pitch": 1.1,
+     "speed": 1.07
     },
     {
-     "id": "hf_beta",
-     "pitch": 0.97
+     "id": "if_sara",
+     "exaggerationBias": 0.75,
+     "pitch": 1.08,
+     "speed": 1.06
+    },
+    {
+     "id": "im_nicola",
+     "exaggerationBias": 0.75,
+     "pitch": 1.1,
+     "speed": 1.06
     }
    ],
    "setNuMou": [
