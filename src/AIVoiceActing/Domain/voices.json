@@ -263,6 +263,9 @@
   "arkasodara": [
    3293
   ],
+  "yokhuy": [
+   4065
+  ],
   "ananta": [
    1740,
    2178
@@ -596,12 +599,22 @@
    ],
    "setYokHuy": [
     {
-     "id": "hm_omega",
-     "pitch": 0.9
+     "id": "zm_yunjian",
+     "exaggerationBias": 0.45,
+     "pitch": 0.84,
+     "speed": 0.95
     },
     {
-     "id": "zm_yunjian",
-     "pitch": 0.9
+     "id": "bm_daniel",
+     "exaggerationBias": 0.45,
+     "pitch": 0.82,
+     "speed": 0.95
+    },
+    {
+     "id": "hm_omega",
+     "exaggerationBias": 0.5,
+     "pitch": 0.84,
+     "speed": 0.96
     }
    ],
    "setMamoolJa": [
