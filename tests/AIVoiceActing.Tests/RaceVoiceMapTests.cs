@@ -221,15 +221,22 @@ public sealed class DefaultPresetShapeTests
     [Fact]
     public void Default_ContainsNoAmericanOrJapaneseVoiceIds()
     {
+        // User verdict: American accents are allowed for the Omicron robots only
+        // (flat machine read); the Japanese bank stays banned everywhere.
         var preset = NewStore().GetDefault();
 
-        var ids = preset.Buckets.Values.SelectMany(slots => slots).Select(slot => slot.Id)
-            .Concat(preset.BeastTribes.SelectMany(t => t.Voices).Select(slot => slot.Id))
+        var outsideOmicron = preset.Buckets.Values.SelectMany(slots => slots).Select(slot => slot.Id)
+            .Concat(preset.BeastTribes.Where(t => t.Key != "omicron")
+                .SelectMany(t => t.Voices).Select(slot => slot.Id))
             .ToHashSet();
 
-        Assert.DoesNotContain(ids, id => id.StartsWith("af_", StringComparison.Ordinal));
-        Assert.DoesNotContain(ids, id => id.StartsWith("am_", StringComparison.Ordinal));
-        Assert.DoesNotContain(ids, id => id.StartsWith("jf_", StringComparison.Ordinal));
+        Assert.DoesNotContain(outsideOmicron, id => id.StartsWith("af_", StringComparison.Ordinal));
+        Assert.DoesNotContain(outsideOmicron, id => id.StartsWith("am_", StringComparison.Ordinal));
+        Assert.DoesNotContain(outsideOmicron, id => id.StartsWith("jf_", StringComparison.Ordinal));
+
+        var omicron = preset.BeastTribes.Single(t => t.Key == "omicron")
+            .Voices.Select(slot => slot.Id);
+        Assert.DoesNotContain(omicron, id => id.StartsWith("jf_", StringComparison.Ordinal));
     }
 
     [Fact]

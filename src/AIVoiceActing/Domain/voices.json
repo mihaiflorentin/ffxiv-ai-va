@@ -266,6 +266,10 @@
   "yokhuy": [
    4065
   ],
+  "omicron": [
+   3264,
+   3313
+  ],
   "ananta": [
    1740,
    2178
@@ -578,12 +582,22 @@
    ],
    "setOmicron": [
     {
-     "id": "zm_yunxia",
-     "pitch": 0.95
+     "id": "am_adam",
+     "exaggerationBias": 0.25,
+     "pitch": 0.95,
+     "speed": 0.97
     },
     {
-     "id": "zf_xiaoni",
-     "pitch": 0.95
+     "id": "am_onyx",
+     "exaggerationBias": 0.25,
+     "pitch": 0.88,
+     "speed": 0.96
+    },
+    {
+     "id": "am_michael",
+     "exaggerationBias": 0.3,
+     "pitch": 1.0,
+     "speed": 0.98
     }
    ],
    "setPelupelu": [
@@ -650,11 +664,21 @@
    "setDragon": [
     {
      "id": "bm_george",
-     "pitch": 0.85
+     "exaggerationBias": 0.4,
+     "pitch": 0.82,
+     "speed": 0.94
     },
     {
-     "id": "ff_siwis",
-     "pitch": 0.9
+     "id": "bm_fable",
+     "exaggerationBias": 0.4,
+     "pitch": 0.83,
+     "speed": 0.94
+    },
+    {
+     "id": "bf_alice",
+     "exaggerationBias": 0.4,
+     "pitch": 0.82,
+     "speed": 0.94
     }
    ],
    "japaneseMale": [
