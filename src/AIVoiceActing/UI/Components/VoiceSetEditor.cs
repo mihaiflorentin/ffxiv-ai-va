@@ -92,8 +92,12 @@ public sealed class VoiceSetEditor
         return [.. VoiceCatalog
             .Filter(catalog, language, sex, this.search)
             .Select(entry => entry.Id)
+
             .Order(StringComparer.Ordinal)];
     }
+    /// <summary>The live voice-search text, so owner surfaces can also highlight
+    /// rows whose selected voice matches it.</summary>
+    public string Search => this.search;
 
     /// <summary>Array+count combo over <paramref name="ids"/>; see class doc for the
     /// "(missing)" placeholder semantics.</summary>

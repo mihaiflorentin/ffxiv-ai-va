@@ -1814,10 +1814,40 @@ public sealed class ConfigurationWindow : Window
         var catalog = this.voiceCatalog();
         this.characterEditor.DrawFilters(catalog);
         var ids = this.characterEditor.OfferedIds(catalog, this.VoiceOptions);
+        var rows = CharacterVoicesModel.BuildView(entries);
+        var voiceQuery = this.characterEditor.Search;
+
+        string EffectiveVoice(VoiceProfile profile) =>
+            this.characterPending.TryGetValue(profile.SpeakerKey, out var pendingEntry)
+                ? pendingEntry.VoiceId
+                : profile.ReferenceVoiceId;
+
         ImGui.Separator();
         ImGui.SetNextItemWidth(220f);
         ImGui.InputTextWithHint($"##name-search{keyPrefix}", "Search name…", ref this.characterNameSearch, 64);
         Controls.Tooltip("Filters the rows below by speaker name or world id. View-only: nothing is removed.");
+        if (this.characterNameSearch is { Length: > 0 } nameQuery)
+        {
+            ImGui.SameLine();
+            var shown = rows.Count(profile =>
+            {
+                var view = SpeakerKeyView.Parse(profile.SpeakerKey);
+                return view.Name.Contains(nameQuery, StringComparison.InvariantCultureIgnoreCase)
+                    || (view.World?.ToString().Contains(nameQuery, StringComparison.InvariantCultureIgnoreCase) ?? false);
+            });
+            ImGui.TextColored(new Vector4(0.7f, 0.85f, 1f, 1f), $"{shown}/{rows.Count} shown");
+        }
+
+        if (voiceQuery is { Length: > 0 })
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(
+                new Vector4(1f, 0.9f, 0.45f, 1f),
+                $"{rows.Count(profile => EffectiveVoice(profile).Contains(voiceQuery, StringComparison.InvariantCultureIgnoreCase))}"
+                + $" row(s) highlighted");
+        }
+
+        this.DrawCharacterAddForm(player, entries, ids);
         var removeKey = default(string?);
         if (ImGui.BeginTable(
                 $"##voices{keyPrefix}",
@@ -1825,19 +1855,7 @@ public sealed class ConfigurationWindow : Window
                 ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY,
                 new Vector2(-1, -1)))
         {
-            ImGui.TableSetupScrollFreeze(0, 1);
-            ImGui.TableSetupColumn("##trash", ImGuiTableColumnFlags.WidthFixed, 24f);
-            ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthStretch, 1.6f);
-            ImGui.TableSetupColumn("World", ImGuiTableColumnFlags.WidthFixed, 55f);
-            ImGui.TableSetupColumn("Voice", ImGuiTableColumnFlags.WidthStretch, 2f);
-            ImGui.TableSetupColumn("Bias", ImGuiTableColumnFlags.WidthFixed, 95f);
-            ImGui.TableSetupColumn("Pitch", ImGuiTableColumnFlags.WidthFixed, 95f);
-            ImGui.TableSetupColumn("Speed", ImGuiTableColumnFlags.WidthFixed, 95f);
-            ImGui.TableSetupColumn("Vol", ImGuiTableColumnFlags.WidthFixed, 80f);
-            ImGui.TableSetupColumn("▶", ImGuiTableColumnFlags.WidthFixed, 36f);
-            ImGui.TableHeadersRow();
-
-            foreach (var profile in CharacterVoicesModel.BuildView(entries))
+            foreach (var profile in rows)
             {
                 var key = SpeakerKeyView.Parse(profile.SpeakerKey);
                 if (this.characterNameSearch is { Length: > 0 } query
@@ -1849,6 +1867,13 @@ public sealed class ConfigurationWindow : Window
 
                 ImGui.PushID(profile.SpeakerKey);
                 ImGui.TableNextRow();
+                if (voiceQuery is { Length: > 0 } vq
+                    && EffectiveVoice(profile).Contains(vq, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    ImGui.TableSetBgColor(
+                        ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(new Vector4(0.98f, 0.82f, 0.25f, 0.35f)));
+                }
+
                 ImGui.TableNextColumn();
                 if (ImGui.SmallButton("🗑"))
                 {
@@ -1943,11 +1968,10 @@ public sealed class ConfigurationWindow : Window
             store.Remove(removed);
         }
 
-        this.DrawCharacterAddForm(player, entries, ids);
     }
 
-    /// <summary>The add form under each voices table: name (plus world for players) and
-    /// an Add button; duplicates surface through the form's validation line.</summary>
+    /// <summary>The manual-entry form above each voices table: name (plus world for
+    /// players) and a New button; duplicates surface through the form's validation line.</summary>
     private void DrawCharacterAddForm(bool player, IReadOnlyCollection<VoiceProfile> entries, IReadOnlyList<string> voiceIds)
     {
         var form = player ? this.playerForm : this.npcForm;
@@ -1973,9 +1997,8 @@ public sealed class ConfigurationWindow : Window
 
             Controls.Tooltip("Numeric world id distinguishing same-named characters across worlds.");
         }
-
         ImGui.SameLine();
-        if (Controls.Button("Add", enabled: true)
+        if (Controls.Button("New", enabled: true)
             && form.TryBuildKey(out var key, out _)
             && !existing.Contains(key)) // duplicates surface via the validation line below
         {
