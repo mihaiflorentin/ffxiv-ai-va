@@ -235,6 +235,9 @@
   ],
   "goblin": [
    6
+  ],
+  "amaljaa": [
+   3
   ]
  },
  "disabledSets": {
@@ -277,12 +280,24 @@
    ],
    "setAmaljaa": [
     {
-     "id": "em_alex",
-     "pitch": 0.95
+     "id": "ef_dora",
+     "pitch": 0.89
     },
     {
-     "id": "ef_dora",
-     "pitch": 0.95
+     "id": "em_alex",
+     "pitch": 0.87
+    },
+    {
+     "id": "em_santa",
+     "pitch": 0.88
+    },
+    {
+     "id": "pm_santa",
+     "pitch": 0.88
+    },
+    {
+     "id": "im_nicola",
+     "pitch": 0.88
     }
    ],
    "setSylph": [

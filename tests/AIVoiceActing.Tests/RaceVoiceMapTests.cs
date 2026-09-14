@@ -180,13 +180,18 @@ public sealed class DefaultPresetShapeTests
             Assert.Empty(tribe.MaleVoices);
             Assert.Empty(tribe.FemaleVoices);
         });
-        // Shipped bindings: pixie = Feo Ul's base model (user-confirmed fairies),
-        // goblin = the shared goblin base model (all sex bytes read male).
+        // Shipped bindings flow from the manifest's beastTribes section, per tribe.
+        var manifestBindings = RaceVoiceMapTests.LoadDefault().BeastTribeBindings;
+        Assert.All(
+            preset.BeastTribes,
+            tribe => Assert.Equal(
+                manifestBindings.GetValueOrDefault(tribe.Key, []),
+                tribe.ModelIds));
+        // Sentinels: pixie = Feo Ul's base model (fairies), goblin = shared goblin
+        // base (sex bytes male), amaljaa = the Amalj'aa base model.
         Assert.Equal([2520], preset.BeastTribes.Single(t => t.Key == "pixie").ModelIds);
         Assert.Equal([6], preset.BeastTribes.Single(t => t.Key == "goblin").ModelIds);
-        Assert.All(
-            preset.BeastTribes.Where(t => t.Key is not ("pixie" or "goblin")),
-            tribe => Assert.Empty(tribe.ModelIds));
+        Assert.Equal([3], preset.BeastTribes.Single(t => t.Key == "amaljaa").ModelIds);
     }
 
     [Fact]
@@ -239,6 +244,23 @@ public sealed class DefaultPresetShapeTests
         {
             Assert.Equal(1.07f, slot.Pitch);
             Assert.Equal(1.1f, slot.Speed);
+        });
+    }
+
+    [Fact]
+    public void Default_AmaljaaPool_IsDeepRomanceCast_AtApprovedKnobs()
+    {
+        // User-approved Amalj'aa sound (Yadovv Gah / amalj'aa vendor tune): deep
+        // Romance-bank voices at 0.87-0.89, natural speed.
+        var amaljaa = NewStore().GetDefault().BeastTribes.Single(t => t.Key == "amaljaa");
+
+        Assert.Equal(
+            ["ef_dora", "em_alex", "em_santa", "pm_santa", "im_nicola"],
+            amaljaa.Voices.Select(slot => slot.Id));
+        Assert.All(amaljaa.Voices, slot =>
+        {
+            Assert.InRange(slot.Pitch, 0.87f, 0.89f);
+            Assert.Equal(1f, slot.Speed);
         });
     }
 
