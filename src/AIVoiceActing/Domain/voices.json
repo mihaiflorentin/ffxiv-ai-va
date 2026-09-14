@@ -248,6 +248,9 @@
   "vath": [
    832
   ],
+  "kojin": [
+   1699
+  ],
   "ananta": [
    1740,
    2178
@@ -419,11 +422,22 @@
    ],
    "setKojin": [
     {
-     "id": "hm_omega"
+     "id": "zm_yunjian",
+     "exaggerationBias": 0.5,
+     "pitch": 0.87,
+     "speed": 0.96
     },
     {
-     "id": "pf_dora",
-     "pitch": 0.95
+     "id": "bm_daniel",
+     "exaggerationBias": 0.5,
+     "pitch": 0.85,
+     "speed": 0.96
+    },
+    {
+     "id": "bm_george",
+     "exaggerationBias": 0.6,
+     "pitch": 0.88,
+     "speed": 0.97
     }
    ],
    "setAnanta": [
