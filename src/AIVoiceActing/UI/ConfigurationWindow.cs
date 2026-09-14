@@ -91,6 +91,7 @@ public sealed class ConfigurationWindow : Window
     private readonly VoiceSetEditor characterEditor = new();
     private readonly Dictionary<string, (string VoiceId, float Bias, float Pitch, float Speed, float Volume)>
         characterPending = new(StringComparer.Ordinal);
+    private string characterNameSearch = string.Empty;
 
     // Download state, written from the download task, read on the draw thread.
     private volatile ModelAsset? downloading;
@@ -1813,8 +1814,10 @@ public sealed class ConfigurationWindow : Window
         var catalog = this.voiceCatalog();
         this.characterEditor.DrawFilters(catalog);
         var ids = this.characterEditor.OfferedIds(catalog, this.VoiceOptions);
-
         ImGui.Separator();
+        ImGui.SetNextItemWidth(220f);
+        ImGui.InputTextWithHint($"##name-search{keyPrefix}", "Search name…", ref this.characterNameSearch, 64);
+        Controls.Tooltip("Filters the rows below by speaker name or world id. View-only: nothing is removed.");
         var removeKey = default(string?);
         if (ImGui.BeginTable(
                 $"##voices{keyPrefix}",
@@ -1837,6 +1840,13 @@ public sealed class ConfigurationWindow : Window
             foreach (var profile in CharacterVoicesModel.BuildView(entries))
             {
                 var key = SpeakerKeyView.Parse(profile.SpeakerKey);
+                if (this.characterNameSearch is { Length: > 0 } query
+                    && !key.Name.Contains(query, StringComparison.InvariantCultureIgnoreCase)
+                    && !(key.World?.ToString().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false))
+                {
+                    continue;
+                }
+
                 ImGui.PushID(profile.SpeakerKey);
                 ImGui.TableNextRow();
                 ImGui.TableNextColumn();

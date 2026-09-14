@@ -47,13 +47,15 @@ public sealed class RaceVoiceMapTests
     }
 
     [Fact]
-    public void Elezen_UseFrenchVoice()
+    public void Elezen_UseBritishVoice_AtLowerPitch()
     {
         var map = LoadDefault();
-        // Ishgardian Elezen: ff_siwis is the bank's French voice; males ride it pitched down.
-        Assert.All(map.SlotsFor(VoiceGroup.Male, 2).Select(s => s.Id), id => Assert.Equal("ff_siwis", id));
-        Assert.All(map.SlotsFor(VoiceGroup.Female, 2).Select(s => s.Id), id => Assert.Equal("ff_siwis", id));
+        // User verdict 2026-09-14: the French casting didn't suit them — Elezen now
+        // ride the British bank pitched down (haughty, deep).
+        Assert.All(map.SlotsFor(VoiceGroup.Male, 2).Select(s => s.Id), id => Assert.Equal("bm_lewis", id));
+        Assert.All(map.SlotsFor(VoiceGroup.Female, 2).Select(s => s.Id), id => Assert.Equal("bf_emma", id));
         Assert.All(map.SlotsFor(VoiceGroup.Male, 2), slot => Assert.True(slot.Pitch < 1f));
+        Assert.All(map.SlotsFor(VoiceGroup.Female, 2), slot => Assert.True(slot.Pitch < 1f));
     }
 
     [Fact]

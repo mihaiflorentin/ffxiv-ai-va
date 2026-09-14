@@ -70,16 +70,20 @@
     "speed": 1.05
    }
   ],
-  "frenchMale": [
+  "britishMale": [
    {
-    "id": "ff_siwis",
-    "pitch": 0.84,
-    "note": "No French male voice exists in Kokoro v1.0 \u2014 ff_siwis deepened to read male; if too feminine, swap to em_alex (Spanish male) or park for an F5 French-male clip."
+    "id": "bm_lewis",
+    "exaggerationBias": 0.45,
+    "pitch": 0.86,
+    "speed": 0.97
    }
   ],
-  "frenchFemale": [
+  "britishFemale": [
    {
-    "id": "ff_siwis"
+    "id": "bf_emma",
+    "exaggerationBias": 0.45,
+    "pitch": 0.92,
+    "speed": 0.98
    }
   ],
   "midlanderMale": [
@@ -214,8 +218,8 @@
  "raceVariants": {
   "1|Male": "midlanderMale",
   "1|Female": "midlanderFemale",
-  "2|Male": "frenchMale",
-  "2|Female": "frenchFemale",
+  "2|Male": "britishMale",
+  "2|Female": "britishFemale",
   "3|Male": "childMale",
   "3|Female": "childFemale",
   "4|Male": "poshMale",
