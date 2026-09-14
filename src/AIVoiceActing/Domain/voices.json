@@ -242,6 +242,9 @@
   "loporrit": [
    3263
   ],
+  "vanuvanu": [
+   1101
+  ],
   "ananta": [
    1740,
    2178
@@ -373,12 +376,10 @@
    ],
    "setVanuVanu": [
     {
-     "id": "pm_alex",
-     "pitch": 0.95
-    },
-    {
-     "id": "ef_dora",
-     "pitch": 0.95
+     "id": "hm_omega",
+     "exaggerationBias": 0.0,
+     "pitch": 0.88,
+     "speed": 1.05
     }
    ],
    "setVath": [
