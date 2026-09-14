@@ -430,12 +430,24 @@
    ],
    "setLoporrit": [
     {
-     "id": "bf_alice",
-     "pitch": 1.15
+     "id": "bf_lily",
+     "pitch": 1.12,
+     "speed": 1.05
     },
     {
-     "id": "af_sky",
-     "pitch": 1.15
+     "id": "bf_isabella",
+     "pitch": 1.12,
+     "speed": 1.05
+    },
+    {
+     "id": "bm_fable",
+     "pitch": 1.12,
+     "speed": 1.05
+    },
+    {
+     "id": "bm_george",
+     "pitch": 1.12,
+     "speed": 1.05
     }
    ],
    "setArkasodara": [
