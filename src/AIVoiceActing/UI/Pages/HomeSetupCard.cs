@@ -1,5 +1,6 @@
 namespace AIVoiceActing.UI.Pages;
 
+using AIVoiceActing.Domain;
 using AIVoiceActing.Ports;
 using AIVoiceActing.UI.Components;
 using AIVoiceActing.UI.State;
@@ -113,11 +114,26 @@ internal sealed class HomeSetupCard
                 missing.Count == 0 ? 0 : provisioner.BytesNeeded(missing)));
         }
 
+        // The Turbo q4f16 build (graphs and weights only; the base group above stays required): the GPU choice.
+        var q4f16 = this.ctx.ModelAssets()
+            .Where(a => a.Group == SetupAdvisor.TurboQ4F16Group)
+            .Select(a => a.Asset)
+            .ToList();
+        var q4f16Missing = q4f16.Where(a => !this.ctx.Probes.IsDownloaded(a)).ToList();
+        var precisionGroups = new List<GroupStatus>
+        {
+            new(
+                SetupAdvisor.TurboQ4F16Group,
+                q4f16.Sum(a => a.SizeBytes ?? 0),
+                q4f16Missing.Count == 0 ? 0 : provisioner.BytesNeeded(q4f16Missing)),
+        };
+
         this.inputs = new SetupInputs(
             device.HasUsableGpu,
             this.ctx.ModelStore().FreeBytes(this.ctx.ModelsDir()),
             engines,
-            QualityTierModel.FromConfig(this.ctx.Config.Engine, this.ctx.EngineCatalog));
+            QualityTierModel.FromConfig(this.ctx.Config.Engine, this.ctx.EngineCatalog),
+            precisionGroups);
     }
 
     /// <summary>Feeds the model what happened this frame, then performs what it asks for.</summary>
@@ -171,16 +187,19 @@ internal sealed class HomeSetupCard
     private QualityTier AppliedTier() =>
         QualityTierModel.FromConfig(this.ctx.Config.Engine, this.ctx.EngineCatalog) ?? QualityTier.Fast;
 
-    /// <summary>Required assets of the applied tier that are not on disk, checked against the disk now.</summary>
+    /// <summary>
+    /// Assets of the applied tier that are not on disk, checked against the disk now. The groups come from
+    /// the advisor, so a machine with a verified GPU also gets the Turbo q4f16 build, not just the base set.
+    /// </summary>
     private List<ModelAsset> MissingForAppliedTier()
     {
         var provisioner = this.ctx.Provisioner();
+        var groups = SetupAdvisor.GroupsFor(this.AppliedTier(), this.ctx.DeviceInfo().HasUsableGpu);
         return
         [
-            .. QualityTierModel.EnginesFor(this.AppliedTier())
-                .Select(id => this.ctx.EngineCatalog.Find(id))
-                .OfType<EngineInfo>()
-                .SelectMany(info => EngineParts.RequiredAssets(this.ctx, info))
+            .. this.ctx.ModelAssets()
+                .Where(a => groups.Contains(a.Group))
+                .Select(a => a.Asset)
                 .Where(a => !provisioner.IsDownloaded(a))
                 .DistinctBy(a => a.FileName),
         ];
@@ -385,6 +404,11 @@ internal sealed class HomeSetupCard
         {
             StatusPill.Draw(Severity.Warning, blocked);
             return;
+        }
+
+        if (plan.Recommendation is { Precision: SetupAdvisor.Q4F16 })
+        {
+            Ui.MutedText("The expressive voice runs on your graphics card, using a compact build of the model.");
         }
 
         if (plan.BytesToDownload == 0)

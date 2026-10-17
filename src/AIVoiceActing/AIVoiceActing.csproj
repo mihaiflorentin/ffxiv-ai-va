@@ -54,7 +54,6 @@
          Voices ship inside this package (content/voices), copied to the output and
          packaged into latest.zip by DalamudPackager. -->
     <PackageReference Include="KokoroSharp" Version="0.8.4" />
-    <PackageReference Include="Horus.F5Tts.Onnx" Version="0.3.1" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Domain\voices.json" />
@@ -63,8 +62,7 @@
     <EmbeddedResource Include="Infrastructure\Dalamud\overridenModelIds.txt" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="assets\voices-f5\**\*.wav" CopyToOutputDirectory="PreserveNewest" Link="voices-f5\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Content Include="assets\voices-f5\**\*.txt" CopyToOutputDirectory="PreserveNewest" Link="voices-f5\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Include="assets\voices-clips\**\*.wav" CopyToOutputDirectory="PreserveNewest" Link="voices-clips\%(RecursiveDir)%(Filename)%(Extension)" />
     <Content Include="voices\default_voice.wav" CopyToOutputDirectory="PreserveNewest" />
     <!-- Bundled voice packs (voicepacks/<packId>/voicepack.json + files), scanned next to the plugin dll. -->
     <Content Include="voicepacks\**\*" CopyToOutputDirectory="PreserveNewest" Link="voicepacks\%(RecursiveDir)%(Filename)%(Extension)" />

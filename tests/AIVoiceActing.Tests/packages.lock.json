@@ -2,15 +2,6 @@
   "version": 1,
   "dependencies": {
     "net10.0": {
-      "Horus.F5Tts.Onnx": {
-        "type": "Direct",
-        "requested": "[0.3.1, )",
-        "resolved": "0.3.1",
-        "contentHash": "AeqX5GuQH5AA/Y43tjL0I64dpbIJQJ9VJojs4oLiHXQtDzBKIq0U8sCxCIzmFFlA1nsYn7G1oisJC05+vLMN6Q==",
-        "dependencies": {
-          "Microsoft.ML.OnnxRuntime.Managed": "1.20.1"
-        }
-      },
       "KokoroSharp": {
         "type": "Direct",
         "requested": "[0.8.4, )",

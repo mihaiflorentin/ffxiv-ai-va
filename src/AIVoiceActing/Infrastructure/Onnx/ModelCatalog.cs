@@ -4,7 +4,9 @@ using System.Text.Json;
 using AIVoiceActing.Ports;
 
 /// <summary>
-/// Pinned Chatterbox ONNX model assets (onnx-community/chatterbox-ONNX, MIT).
+/// Pinned model assets. The legacy Chatterbox (onnx-community/chatterbox-ONNX, MIT) and F5 groups are
+/// retired engines kept only so the Models page can still show and delete their files; the Turbo
+/// groups below are the live Chatterbox. The old constants stay because the catalog data and its tests use them.
 /// Sizes verified byte-exact against the HF API tree on 2026-09-12 and against
 /// .superpowers/sdd/.../ref-chatterbox-recipe.md; sha256 values are the HF API
 /// LFS oids (absent for non-LFS files → null). The optional "director" group

@@ -29,12 +29,14 @@ public enum SessionRole
 /// on a managed exception. The marker stays on disk until then, which is the crash guard's whole point.
 /// </summary>
 /// <param name="Ep">Provider actually attached.</param>
+/// <param name="DeviceMemory">Where a key-value cache must live to stay on the GPU; null on the CPU (and for DirectML, which copies).</param>
 /// <param name="FallbackReason">Plain-text reason when the plan wanted a GPU and this is a CPU build; else empty.</param>
 public sealed record SessionBuild(
     SessionOptions Options,
     DeviceEp Ep,
     string FallbackReason,
-    GpuCrashGuard.Scope? Guard)
+    GpuCrashGuard.Scope? Guard,
+    OrtMemoryInfo? DeviceMemory = null)
 {
     public bool IsGpu => this.Ep != DeviceEp.Cpu;
 }
@@ -78,7 +80,7 @@ public sealed class OnnxSessionFactory
             {
                 options = BareOptions(intraOpThreads);
                 this.runtime.Append(options, plan);
-                return new SessionBuild(options, DeviceEp.WebGpu, string.Empty, scope);
+                return new SessionBuild(options, DeviceEp.WebGpu, string.Empty, scope, this.runtime.DeviceMemory);
             }
 
             var (dml, effective) = EpSelector.CreateSessionOptions("directml", m => this.log?.Info(m), intraOpThreads);

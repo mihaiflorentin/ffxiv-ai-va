@@ -106,4 +106,82 @@ public sealed class ExpressiveRouterTests
         Assert.False(h.Router.IsReady);
         Assert.Equal("model missing", h.Router.NotReadyReason);
     }
+
+    // ---- failure cooldown, retry, variant, status --------------------------------------------------
+
+    [Fact]
+    public async Task AFailedExpressiveLine_SitsTheEngineOut_UntilTheCooldownPasses()
+    {
+        var now = 0L;
+        var main = new FakeSpeechSynthesizer();
+        var expressive = new FakeSpeechSynthesizer { Throw = new InvalidOperationException("gpu lost") };
+        var router = new ExpressiveRouter(() => main, () => expressive, (_, _) => Task.FromResult<string?>("/clip.wav"), clockMs: () => now);
+
+        await router.SynthesizeAsync(Line(0.9f), CancellationToken.None); // fails, lands on main
+        await router.SynthesizeAsync(Line(0.9f), CancellationToken.None); // skipped without a second attempt
+
+        Assert.Single(expressive.Calls);
+        Assert.Equal(2, main.Calls.Count);
+
+        now = (long)ExpressiveRouter.FailureCooldown.TotalMilliseconds + 1;
+        expressive.Throw = null;
+        await router.SynthesizeAsync(Line(0.9f), CancellationToken.None);
+
+        Assert.Equal(2, expressive.Calls.Count);
+        Assert.Equal(2, main.Calls.Count);
+    }
+
+    [Fact]
+    public async Task Retry_PassesTheModeToBothEngines_AndLetsTheExpressiveEngineTakeLinesAgain()
+    {
+        var main = new FakeSpeechSynthesizer();
+        var expressive = new FakeSpeechSynthesizer { Throw = new InvalidOperationException("gpu lost") };
+        var router = new ExpressiveRouter(() => main, () => expressive, (_, _) => Task.FromResult<string?>("/clip.wav"), clockMs: () => 0);
+        await router.SynthesizeAsync(Line(0.9f), CancellationToken.None);
+        expressive.Throw = null;
+
+        await router.RetryAsync(DeviceMode.Gpu);
+        await router.SynthesizeAsync(Line(0.9f), CancellationToken.None);
+
+        Assert.Equal([DeviceMode.Gpu], main.Retries);
+        Assert.Equal([DeviceMode.Gpu], expressive.Retries);
+        Assert.Equal(2, expressive.Calls.Count);
+    }
+
+    [Fact]
+    public async Task Retry_WithoutAnExpressiveEngine_OnlyRetriesTheMainOne()
+    {
+        var h = Create(expressivePresent: false);
+
+        await h.Router.RetryAsync(DeviceMode.Cpu);
+
+        Assert.Equal([DeviceMode.Cpu], h.Main.Retries);
+        Assert.Empty(h.Expressive.Retries);
+    }
+
+    [Fact]
+    public void RenderVariant_CoversBothEngines_SoAnExpressiveDeviceSwitchChangesTheCacheKey()
+    {
+        var h = Create();
+        h.Main.RenderVariant = string.Empty;
+        h.Expressive.RenderVariant = "q4f16/gpu";
+        var gpu = h.Router.RenderVariant;
+        h.Expressive.RenderVariant = "q4f16/cpu";
+        var cpu = h.Router.RenderVariant;
+
+        Assert.NotEqual(gpu, cpu);
+        Assert.NotEqual(SynthesisCache.EngineKey("kokoro", gpu), SynthesisCache.EngineKey("kokoro", cpu));
+        Assert.Equal("kokoro", SynthesisCache.EngineKey("kokoro", Create(expressivePresent: false).Router.RenderVariant));
+    }
+
+    [Fact]
+    public void ExpressiveStatus_IsTheExpressiveEnginesOwn_AndNullWhileRoutingIsOff()
+    {
+        var h = Create();
+        Assert.Equal(EngineState.Ready, h.Router.ExpressiveStatus!.State);
+        h.Expressive.IsReady = false;
+        h.Expressive.NotReadyReason = "Missing it";
+        Assert.Equal("Missing it", h.Router.ExpressiveStatus!.Reason);
+        Assert.Null(Create(expressivePresent: false).Router.ExpressiveStatus);
+    }
 }

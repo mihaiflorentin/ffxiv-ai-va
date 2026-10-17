@@ -15,6 +15,16 @@ public sealed class FakeSpeechSynthesizer : ISpeechSynthesizer
 
     public int WarmUpCalls { get; private set; }
 
+    public string RenderVariant { get; set; } = string.Empty;
+
+    public List<DeviceMode> Retries { get; } = [];
+
+    public Task RetryAsync(DeviceMode mode, CancellationToken cancellationToken = default)
+    {
+        this.Retries.Add(mode);
+        return Task.CompletedTask;
+    }
+
     public Exception? Throw { get; set; }
 
     public Func<SynthesisRequest, CancellationToken, SynthesisResult>? SynthesizeFunc { get; set; }

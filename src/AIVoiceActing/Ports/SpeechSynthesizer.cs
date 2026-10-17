@@ -107,6 +107,13 @@ public interface ISpeechSynthesizer
     EngineStatus Status => EngineStatus.FromReadiness(this.IsReady, this.NotReadyReason);
 
     /// <summary>
+    /// What, besides the request, shapes this engine's audio right now (for example "q4f16/gpu": the model
+    /// precision and the device class, never the adapter). Part of the render-cache key, so a switch
+    /// between precisions or between CPU and GPU never serves stale audio. Empty when nothing varies.
+    /// </summary>
+    string RenderVariant => string.Empty;
+
+    /// <summary>
     /// Rebuilds the engine's sessions with <paramref name="mode"/> for this instance (the setting
     /// itself is persisted by the caller). A GPU retry also clears the crash-guard flag. No-op for
     /// engines without a device choice.

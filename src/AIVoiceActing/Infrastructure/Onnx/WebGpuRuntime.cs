@@ -19,6 +19,13 @@ public interface IWebGpuRuntime
 
     /// <summary>Adds the WebGPU provider to <paramref name="options"/>; throws when it is unavailable.</summary>
     void Append(SessionOptions options, DevicePlan plan);
+
+    /// <summary>
+    /// The allocator description of the GPU's default buffer memory ("WebGPU_Buf"), after a successful
+    /// <see cref="Enumerate"/>; what a session bound to the GPU needs to keep tensors device-resident.
+    /// Null when the runtime is unavailable (and in fakes).
+    /// </summary>
+    OrtMemoryInfo? DeviceMemory { get; }
 }
 
 /// <summary>
@@ -47,6 +54,7 @@ public sealed class WebGpuRuntime : IWebGpuRuntime
     private readonly object gate = new();
     private WebGpuEnumeration? cached;
     private IReadOnlyList<OrtEpDevice> devices = [];
+    private OrtMemoryInfo? deviceMemory;
 
     /// <param name="pluginDirectory">Folder holding the runtime dlls (the plugin's AssemblyLocation directory).</param>
     /// <param name="libraryPathOverride">Absolute runtime path for hosts without the flat plugin layout (SmokeSynth on Linux).</param>
@@ -75,6 +83,19 @@ public sealed class WebGpuRuntime : IWebGpuRuntime
         lock (this.gate)
         {
             return this.cached ??= this.EnumerateCore();
+        }
+    }
+
+    public OrtMemoryInfo? DeviceMemory
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.deviceMemory ??= this.devices.Count > 0
+                    ? this.devices[0].GetMemoryInfo(OrtDeviceMemoryType.DEFAULT)
+                    : null;
+            }
         }
     }
 

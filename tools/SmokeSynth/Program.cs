@@ -3,14 +3,13 @@ namespace SmokeSynth;
 using System.Diagnostics;
 
 using AIVoiceActing.Domain;
-using AIVoiceActing.Infrastructure.F5;
 using AIVoiceActing.Infrastructure.Kokoro;
 using AIVoiceActing.Infrastructure.Onnx;
 using AIVoiceActing.Ports;
 
 /// <summary>
-/// Offline smoke harness for the AIVoiceActing synthesis engine: loads the Chatterbox ONNX
-/// sessions, performs one tagged/exaggerated synthesis, writes a canonical 24 kHz WAV, and
+/// Offline smoke harness for the AIVoiceActing synthesis engine: loads the Kokoro or Chatterbox Turbo
+/// sessions, performs one synthesis, writes a canonical 24 kHz WAV, and
 /// reports the real-time factor. Exit 0 on success; non-zero with a clear message otherwise.
 /// </summary>
 internal static class Program
@@ -23,7 +22,9 @@ internal static class Program
         string? executionProvider = null;
         string? output = null;
         string? modelsDir = null;
-        string? lmOverride = null;
+        string precision = "auto";
+        int? threads = null;
+        string? tokensOut = null;
         var tags = new List<string>();
         double exaggeration = 0.5;
         double pitch = 1.0;
@@ -84,8 +85,26 @@ internal static class Program
                 case "--models" when i + 1 < args.Length:
                     modelsDir = args[++i];
                     break;
-                case "--lm" when i + 1 < args.Length:
-                    lmOverride = args[++i];
+                case "--precision" when i + 1 < args.Length:
+                    precision = args[++i].ToLowerInvariant();
+                    if (precision is not ("auto" or "fp32" or "fp16" or "q4f16"))
+                    {
+                        Console.Error.WriteLine("--precision must be auto, fp32, fp16 or q4f16.");
+                        return 1;
+                    }
+
+                    break;
+                case "--threads" when i + 1 < args.Length:
+                    if (!int.TryParse(args[++i], out var parsedThreads) || parsedThreads < 1)
+                    {
+                        Console.Error.WriteLine("--threads must be a positive number.");
+                        return 1;
+                    }
+
+                    threads = parsedThreads;
+                    break;
+                case "--tokens-out" when i + 1 < args.Length:
+                    tokensOut = args[++i];
                     break;
                 case "--out" when i + 1 < args.Length:
                     output = args[++i];
@@ -142,9 +161,15 @@ internal static class Program
             Console.Error.WriteLine("--exaggeration must be within 0.0..1.0.");
             return 1;
         }
-        // Chatterbox default reference: the bundled MIT fallback clip. Kokoro takes a
-        // voice NAME (--ref af_heart); f5 takes a clip id resolved against its bank.
-        if (engine is null or "chatterbox" or "turbo")
+        // Turbo clones a reference clip (default: the bundled MIT fallback clip); Kokoro takes a voice NAME (--ref af_heart).
+        engine ??= "kokoro";
+        if (engine is not ("kokoro" or "turbo" or "chatterbox-turbo"))
+        {
+            Console.Error.WriteLine($"Unknown --engine \"{engine}\". Use kokoro or turbo.");
+            return 1;
+        }
+
+        if (engine != "kokoro")
         {
             reference ??= Path.Combine(AppContext.BaseDirectory, "voices", "default_voice.wav");
             if (!File.Exists(reference))
@@ -153,34 +178,23 @@ internal static class Program
                 return 1;
             }
         }
-        else if (reference is not null && (reference.Contains('/') || reference.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)))
-        {
-            reference = Path.GetFileNameWithoutExtension(reference);
-        }
 
         modelsDir ??= "models";
         try
         {
             var log = new ConsoleLogSink();
             ISpeechSynthesizer synthesizer;
-            if (engine == "f5")
-            {
-                synthesizer = new F5Synthesizer(
-                    () => modelsDir!,
-                    () => 4,
-                    log,
-                    voicesDirFactory: () => reference is null ? null : Path.GetDirectoryName(Path.GetFullPath(reference!)));
-            }
-            else if (engine == "turbo")
+            if (engine != "kokoro")
             {
                 synthesizer = ChatterboxSynthesizer.CreateTurbo(
                     modelsDir: modelsDir,
                     voicePathResolver: _ => reference,
                     executionProvider: executionProvider ?? "cpu",
                     log: log,
-                    devices: device is null ? null : BuildDeviceServices(modelsDir, device, api, power, log));
+                    intraOpThreads: threads,
+                    devices: device is null ? null : BuildDeviceServices(modelsDir, device, api, power, precision, log));
             }
-            else if (engine == "kokoro")
+            else
             {
                 if (device == "gpu")
                 {
@@ -193,28 +207,9 @@ internal static class Program
                     () => 4,
                     log);
             }
-            else
-            {
-                var tokenizer = new TokenizersDotNetTokenizer(
-                    Path.Combine(modelsDir, ModelCatalog.TokenizerJsonFileName));
-                Console.WriteLine(
-                    $"text ids: [{string.Join(", ", tokenizer.Encode(ChatterboxSynthesizer.BuildPromptText([.. tags], text)))}]");
-                synthesizer = new ChatterboxSynthesizer(
-                    modelsDir: modelsDir,
-                    voicePathResolver: _ => reference,
-                    tokenizerFactory: () => tokenizer,
-                    executionProvider: executionProvider ?? "auto",
-                    log: log,
-                    languageModelOverride: lmOverride);
-            }
 
             var request = new SynthesisRequest(
-                ReferenceVoiceId: engine switch
-                {
-                    "kokoro" => reference ?? "af_heart",
-                    "f5" => Path.GetFileNameWithoutExtension(reference ?? "uk_male_casual"),
-                    _ => "default",
-                },
+                ReferenceVoiceId: engine == "kokoro" ? reference ?? "af_heart" : "default",
                 Text: text,
                 Exaggeration: (float)exaggeration,
                 Tags: tags,
@@ -231,6 +226,16 @@ internal static class Program
             var durationSeconds = result.Samples.Length / (double)result.SampleRate;
 
             Console.WriteLine($"ep:          {(synthesizer is ChatterboxSynthesizer chatterbox ? chatterbox.EffectiveEp : "cpu")}");
+            if (synthesizer is ChatterboxSynthesizer turbo)
+            {
+                Console.WriteLine($"precision:   {turbo.EffectivePrecision} ({turbo.RenderVariant})");
+                Console.WriteLine($"tokens:      {turbo.LastSpeechTokens.Count}");
+                if (tokensOut is not null)
+                {
+                    File.WriteAllText(tokensOut, string.Join(',', turbo.LastSpeechTokens));
+                }
+            }
+
             Console.WriteLine($"audio:       {durationSeconds:0.00} s ({result.Samples.Length} samples @ {result.SampleRate} Hz)");
             Console.WriteLine($"out:         {output}");
             if (printRealTimeFactor)
@@ -277,7 +282,7 @@ internal static class Program
     /// Device plumbing for the Turbo path: probe the GPU, honour a leftover crash marker (this tool
     /// runs outside Dalamud, so it just forces the CPU for this run), and build the planner.
     /// </summary>
-    private static TurboDeviceServices BuildDeviceServices(string modelsDir, string device, string api, string power, ILogSink log)
+    private static TurboDeviceServices BuildDeviceServices(string modelsDir, string device, string api, string power, string precision, ILogSink log)
     {
         var runtime = new WebGpuRuntime(
             pluginDirectory: null,
@@ -309,7 +314,9 @@ internal static class Program
             crashed);
         return new TurboDeviceServices(
             new DevicePlanner(() => prefs, probe),
-            new OnnxSessionFactory(runtime, guard, log));
+            new OnnxSessionFactory(runtime, guard, log),
+            LmGpuLoopReady: true,
+            Precision: () => precision);
     }
 
     private static string? FindWebGpuLibrary()
@@ -335,10 +342,14 @@ internal static class Program
               --out <file.wav>     Output WAV path.
 
             Options:
-              --ref <voice.wav>      Reference voice clip (default: bundled voices/default_voice.wav).
+              --engine <kokoro|turbo>  Engine (default kokoro; --ref is then a voice name such as af_heart).
+              --ref <voice.wav>      Turbo: reference voice clip (default: bundled voices/default_voice.wav).
               --exaggeration <0..1>  Performance intensity (default 0.5).
               --tags <a,b,c>         Comma-separated paralinguistic tags.
-              --ep <name>            Execution provider (auto|coreml|cpu|directml; default auto).
+              --ep <name>            Turbo without --device: execution provider (auto|coreml|cpu|directml; default cpu).
+              --precision <p>        Turbo with --device: auto|fp32|fp16|q4f16 (default auto: q4f16 on a verified GPU, else fp32).
+              --threads <n>          Turbo: CPU threads for the encoder, embedding and decoder (default: half the logical cores; the plugin's CPU impact setting is 2/4/8).
+              --tokens-out <file>    Turbo: write the generated speech token ids (comma separated) for A/B comparison.
               --models <dir>         Model directory (default ./models).
               --rtf                  Print the real-time factor after synthesis.
               --device <cpu|gpu>     Turbo only: where the language model may run. Prints the probe, plan and status.

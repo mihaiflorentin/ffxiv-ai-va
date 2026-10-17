@@ -52,6 +52,9 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<string>? selectedEngineFactory;
     private readonly Func<bool>? streamSentencesFactory;
     private readonly Func<bool>? expressiveEngineFactory;
+    private readonly Func<string>? expressiveEngineIdFactory;
+    private readonly Func<string, string>? enginePrecisionFactory;
+    private readonly Func<string, string>? engineDeviceFactory;
     private readonly Func<IEngineCatalog>? engineCatalogFactory;
     private readonly Func<IReadOnlyDictionary<string, string>>? remoteExtraFactory;
     private readonly Func<IReadOnlyList<string>>? voicePackRootsFactory;
@@ -75,7 +78,7 @@ public sealed class ServiceContainer : IDisposable
     private ExpressiveRouter? expressiveRouter;
     private readonly Func<int>? cpuThreadsFactory;
     private readonly Func<string?>? kokoroVoicesDirFactory;
-    private readonly Func<string?>? f5VoicesDirFactory;
+    private readonly Func<string?>? referenceClipsDirFactory;
     private readonly Func<IEmotionDirector?>? llmDirectorFactory;
     private readonly Func<bool>? nameNpcWithSayFactory;
     private readonly Func<bool>? disallowMultipleSayFactory;
@@ -154,7 +157,7 @@ public sealed class ServiceContainer : IDisposable
         Func<string>? selectedEngineFactory = null,
         Func<int>? cpuThreadsFactory = null,
         Func<string?>? kokoroVoicesDirFactory = null,
-        Func<string?>? f5VoicesDirFactory = null,
+        Func<string?>? referenceClipsDirFactory = null,
         Func<IEmotionDirector?>? llmDirectorFactory = null,
         Func<bool>? cutsceneActiveFactory = null,
         Func<bool>? talkVisibleFactory = null,
@@ -167,6 +170,9 @@ public sealed class ServiceContainer : IDisposable
         Func<bool>? emotionClassifierEnabledFactory = null,
         Func<bool>? streamSentencesFactory = null,
         Func<bool>? expressiveEngineFactory = null,
+        Func<string>? expressiveEngineIdFactory = null,
+        Func<string, string>? enginePrecisionFactory = null,
+        Func<string, string>? engineDeviceFactory = null,
         Func<IEngineCatalog>? engineCatalogFactory = null,
         Func<IReadOnlyDictionary<string, string>>? remoteExtraFactory = null,
         Func<IReadOnlyList<string>>? voicePackRootsFactory = null,
@@ -191,6 +197,9 @@ public sealed class ServiceContainer : IDisposable
         this.remoteExtraFactory = remoteExtraFactory;
         this.engineCatalogFactory = engineCatalogFactory;
         this.expressiveEngineFactory = expressiveEngineFactory;
+        this.expressiveEngineIdFactory = expressiveEngineIdFactory;
+        this.enginePrecisionFactory = enginePrecisionFactory;
+        this.engineDeviceFactory = engineDeviceFactory;
         this.streamSentencesFactory = streamSentencesFactory;
         this.emotionClassifierEnabledFactory = emotionClassifierEnabledFactory;
         this.ageAwareCastingFactory = ageAwareCastingFactory;
@@ -227,7 +236,7 @@ public sealed class ServiceContainer : IDisposable
         this.selectedEngineFactory = selectedEngineFactory;
         this.cpuThreadsFactory = cpuThreadsFactory;
         this.kokoroVoicesDirFactory = kokoroVoicesDirFactory;
-        this.f5VoicesDirFactory = f5VoicesDirFactory;
+        this.referenceClipsDirFactory = referenceClipsDirFactory;
         this.llmDirectorFactory = llmDirectorFactory;
         this.talkVisibleFactory = talkVisibleFactory;
         this.useRaceVoicePresetsFactory = useRaceVoicePresetsFactory;
@@ -397,11 +406,27 @@ public sealed class ServiceContainer : IDisposable
             this.devicePreferencesFactory ?? (() => DevicePreferences.Default),
             this.DeviceProbeUnlocked());
 
-    private TurboDeviceServices TurboDevicesUnlocked()
+    /// <summary>
+    /// Device services for one Turbo instance: the shared planner and session factory, plus that engine's
+    /// own precision and device overrides from <c>Engine.PerEngine</c>, read live. The decode loop keeps its
+    /// key-value cache device-resident, so a GPU plan really runs on the GPU.
+    /// </summary>
+    private TurboDeviceServices TurboDevicesUnlocked(string engineId)
     {
         this.sessionFactory ??= new OnnxSessionFactory(
             this.WebGpuRuntimeUnlocked(), this.GpuCrashGuardUnlocked(), this.LogSinkUnlocked());
-        return new TurboDeviceServices(this.DevicePlannerUnlocked(), this.sessionFactory, this.clearGpuCrashFlag);
+        return new TurboDeviceServices(
+            this.DevicePlannerUnlocked(),
+            this.sessionFactory,
+            this.clearGpuCrashFlag,
+            LmGpuLoopReady: true,
+            Precision: () => this.enginePrecisionFactory?.Invoke(engineId) ?? "auto",
+            ModeOverride: () => this.engineDeviceFactory?.Invoke(engineId) switch
+            {
+                "gpu" => DeviceMode.Gpu,
+                "cpu" => DeviceMode.Cpu,
+                _ => null,
+            });
     }
 
     /// <summary>
@@ -441,7 +466,8 @@ public sealed class ServiceContainer : IDisposable
 
     /// <summary>
     /// The configured speech engine: "kokoro" (CPU real-time, default and the fallback for
-    /// unknown values), or the parked "f5", "chatterbox" and "turbo". Sessions load lazily
+    /// unknown values and retired engines), "chatterbox-turbo" (GPU recommended, expressive) or "remote".
+    /// Sessions load lazily
     /// on first use / warm-up.
     /// </summary>
     public ISpeechSynthesizer SpeechSynthesizer
@@ -459,34 +485,13 @@ public sealed class ServiceContainer : IDisposable
                 var engine = this.EngineCatalog.Resolve(this.selectedEngineFactory?.Invoke());
                 ISpeechSynthesizer created = engine switch
                 {
-                    "chatterbox" => new ChatterboxSynthesizer(
-                        this.ModelsDir,
-                        // Convention: the provisioner writes catalog assets flat, so the
-                        // bundled fallback clip id "default" resolves to
-                        // ModelsDir/default_voice.wav; plugin-installed clips live under
-                        // ModelsDir/voices/{id}.wav.
-                        voicePathResolver: this.ClippingResolver("default_voice.wav"),
-                        executionProvider: this.selectedEpFactory?.Invoke() ?? "auto",
-                        intraOpThreads: threads,
-                        log: this.LogSinkUnlocked()),
-                    "chatterbox-turbo" => Infrastructure.Onnx.ChatterboxSynthesizer.CreateTurbo(
-                        this.ModelsDir,
-                        voicePathResolver: this.ClippingResolver("turbo-default-voice.wav"),
-                        executionProvider: this.selectedEpFactory?.Invoke() ?? "cpu",
-                        intraOpThreads: threads,
-                        log: this.LogSinkUnlocked(),
-                        devices: this.TurboDevicesUnlocked()),
-                    "f5" => new Infrastructure.F5.F5Synthesizer(
-                        () => this.ModelsDir,
-                        () => Math.Max(1, threads ?? 4),
-                        this.LogSinkUnlocked(),
-                        voicesDirFactory: this.f5VoicesDirFactory,
-                        executionProviderFactory: this.selectedEpFactory),
+                    "chatterbox-turbo" => this.CreateTurboUnlocked(
+                        this.ClippingResolver(Infrastructure.Onnx.ModelCatalog.TurboDefaultVoiceFileName)),
                     "remote" => new Infrastructure.Net.RemoteSynthesizer(
                         this.remoteExtraFactory ?? (() => new Dictionary<string, string>()),
                         this.LogSinkUnlocked()),
-                    // A stale or unknown value (old configs) must never silently pick a
-                    // 1.4 GB parked engine.
+                    // A stale or unknown value (old configs, retired engines) must never silently
+                    // pick a multi-gigabyte engine.
                     _ => new Infrastructure.Kokoro.KokoroSynthesizer(
                         () => this.ModelsDir,
                         () => Math.Max(1, threads ?? 4),
@@ -505,6 +510,15 @@ public sealed class ServiceContainer : IDisposable
         }
     }
 
+    private Infrastructure.Onnx.ChatterboxSynthesizer CreateTurboUnlocked(Func<string, string?> voicePathResolver) =>
+        Infrastructure.Onnx.ChatterboxSynthesizer.CreateTurbo(
+            this.ModelsDir,
+            voicePathResolver,
+            executionProvider: this.selectedEpFactory?.Invoke() ?? "cpu",
+            intraOpThreads: this.cpuThreadsFactory?.Invoke(),
+            log: this.LogSinkUnlocked(),
+            devices: this.TurboDevicesUnlocked(DeviceModePolicy.TurboEngineId));
+
     /// <summary>Kokoro-rendered reference clips the expressive engine clones, one per voice and pitch.</summary>
     public const string ExpressiveClipsFolder = "voices-kokoro-ref";
 
@@ -514,17 +528,36 @@ public sealed class ServiceContainer : IDisposable
         "The morning light spilled across the harbor as the ships came in. Merchants called out " +
         "their wares, and somewhere a bell rang twice. It was, by all accounts, a perfectly ordinary day.";
 
-    /// <summary>True when every required file of the expressive engine (Turbo) is on disk.</summary>
+    /// <summary>
+    /// The configured expressive engine, resolved through the catalog. Only a live engine that clones a
+    /// reference clip qualifies; anything else (a retired id, Kokoro, a typo) means the default, Turbo.
+    /// </summary>
+    public string ExpressiveEngineId
+    {
+        get
+        {
+            var info = this.EngineCatalog.Find(this.expressiveEngineIdFactory?.Invoke());
+            return info is { Retired: false } && info.Consumes.Contains(RealizationKind.ReferenceClip)
+                ? info.Key
+                : ConfigMigrator.TurboId;
+        }
+    }
+
+    /// <summary>True when every required file of the expressive engine is on disk.</summary>
     public bool ExpressiveEngineInstalled =>
         this.modelsDirFactory is not null
-        && Infrastructure.Onnx.ModelCatalog.TurboRequiredAssets
-            .Where(a => !a.Optional)
-            .All(a => File.Exists(Path.Combine(this.ModelsDir, a.FileName)));
+        && this.EngineCatalog.Find(this.ExpressiveEngineId) is { } engine
+        && Infrastructure.Onnx.ModelCatalog.Assets
+            .Where(a => engine.AssetGroups.Contains(a.Group) && !a.Asset.Optional)
+            .All(a => File.Exists(Path.Combine(this.ModelsDir, a.Asset.FileName)));
 
-    /// <summary>Expressive routing applies: switched on, installed, and Kokoro is the main engine.</summary>
+    /// <summary>
+    /// Expressive routing applies: switched on, installed, and the main engine is a different one
+    /// (with Turbo as the main engine every line already goes through it, so there is nothing to route).
+    /// </summary>
     public bool ExpressiveRoutingActive =>
         this.expressiveEngineFactory?.Invoke() == true
-        && this.EngineCatalog.Resolve(this.selectedEngineFactory?.Invoke()) == "kokoro"
+        && this.EngineCatalog.Resolve(this.selectedEngineFactory?.Invoke()) != this.ExpressiveEngineId
         && this.ExpressiveEngineInstalled;
 
     /// <summary>
@@ -547,9 +580,10 @@ public sealed class ServiceContainer : IDisposable
     }
 
     /// <summary>
-    /// The secondary expressive engine (fp32 Chatterbox Turbo on CPU), built lazily while
-    /// routing is active; its sessions load on the first expressive line. Switching routing
-    /// off retires the instance in the background so its memory is returned.
+    /// The secondary expressive engine (Chatterbox Turbo; device and precision from the
+    /// configuration), built lazily while routing is active; its sessions load on the first
+    /// expressive line. Switching routing off retires the instance in the background so its
+    /// memory is returned.
     /// </summary>
     public ISpeechSynthesizer? ExpressiveSynthesizer
     {
@@ -564,16 +598,11 @@ public sealed class ServiceContainer : IDisposable
                     if (this.expressiveSynthesizer is null)
                     {
                         var fallbackClips = this.ClippingResolver(Infrastructure.Onnx.ModelCatalog.TurboDefaultVoiceFileName);
-                        this.expressiveSynthesizer = Infrastructure.Onnx.ChatterboxSynthesizer.CreateTurbo(
-                            this.ModelsDir,
-                            // The router hands over an absolute clip path; anything else
-                            // resolves like the parked Turbo engine does.
-                            voicePathResolver: id => Path.IsPathRooted(id) && File.Exists(id) ? id : fallbackClips(id),
-                            executionProvider: "cpu",
-                            intraOpThreads: this.cpuThreadsFactory?.Invoke(),
-                            log: this.LogSinkUnlocked(),
-                            devices: this.TurboDevicesUnlocked());
-                        this.LogSinkUnlocked().Info("Expressive engine instance created (Turbo, CPU).");
+                        // The router hands over an absolute clip path; anything else resolves like the
+                        // Turbo engine does when it is the main one.
+                        this.expressiveSynthesizer = this.CreateTurboUnlocked(
+                            id => Path.IsPathRooted(id) && File.Exists(id) ? id : fallbackClips(id));
+                        this.LogSinkUnlocked().Info("Expressive engine instance created (Chatterbox Turbo).");
                     }
 
                     return this.expressiveSynthesizer;
@@ -752,14 +781,14 @@ public sealed class ServiceContainer : IDisposable
 
     /// <summary>Speech pipeline: lexicon → stutter removal → director → synthesis → queue.</summary>
     /// <summary>
-    /// Reference-clip resolution for the cloning engines (turbo/legacy): profiles carry
+    /// Reference-clip resolution for the cloning engine (Turbo): profiles carry
     /// Kokoro voice ids, which only exist as files when the user adds clip overrides.
-    /// Fall back to the bundled F5 bank clip for that id, then to the engine default —
+    /// Fall back to a clip rendered earlier, then to the bundled bank clip for that id, then to the engine default —
     /// a missing clip must degrade to the default voice, never error the line.
     /// </summary>
     private Func<string, string?> ClippingResolver(string defaultClipFileName)
     {
-        var f5Dir = this.f5VoicesDirFactory?.Invoke();
+        var clipsDir = this.referenceClipsDirFactory?.Invoke();
         return voiceId =>
         {
             if (!string.IsNullOrWhiteSpace(voiceId) && voiceId != "default")
@@ -770,10 +799,16 @@ public sealed class ServiceContainer : IDisposable
                     return userClip;
                 }
 
-                if (!string.IsNullOrWhiteSpace(f5Dir))
+                // A clip the main engine already rendered for this voice (see PrepareExpressiveVoiceAsync).
+                var rendered = Path.Combine(this.ModelsDir, ExpressiveClipsFolder, $"{voiceId}_p100.wav");
+                if (File.Exists(rendered))
                 {
-                    var bundled = Path.Combine(
-                        f5Dir, $"{Infrastructure.F5.F5Synthesizer.ClipIdFor(voiceId)}.wav");
+                    return rendered;
+                }
+
+                if (!string.IsNullOrWhiteSpace(clipsDir))
+                {
+                    var bundled = Path.Combine(clipsDir, $"{ReferenceClipBank.ClipIdFor(voiceId)}.wav");
                     if (File.Exists(bundled))
                     {
                         return bundled;
@@ -806,6 +841,16 @@ public sealed class ServiceContainer : IDisposable
         };
     }
 
+    /// <summary>
+    /// Engine part of the render-cache key: the main engine's id and variant (precision and device class for
+    /// Turbo), plus the expressive engine's variant while routing is active.
+    /// </summary>
+    public string RenderEngineKey()
+    {
+        var id = this.EngineCatalog.Resolve(this.selectedEngineFactory?.Invoke());
+        return SynthesisCache.EngineKey(id, this.RoutedSynthesizer.RenderVariant);
+    }
+
     public SpeechRequestHandler SpeechHandler
     {
         get
@@ -832,8 +877,7 @@ public sealed class ServiceContainer : IDisposable
                     log: this.LogSinkUnlocked(),
                     streamSentences: this.streamSentencesFactory,
                     cache: this.SynthesisCache,
-                    engineKey: () => this.EngineCatalog.Resolve(this.selectedEngineFactory?.Invoke())
-                        + (this.ExpressiveRoutingActive ? "+turbo" : string.Empty));
+                    engineKey: this.RenderEngineKey);
             }
         }
     }

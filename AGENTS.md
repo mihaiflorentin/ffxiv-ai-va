@@ -45,9 +45,11 @@ dotnet build src/AIVoiceActing/AIVoiceActing.csproj -c Release -p:AllowMissingPr
 dotnet test tests/AIVoiceActing.Tests/AIVoiceActing.Tests.csproj -c Release -p:NetCoreTargetingPackRoot=$HOME/.cache/dotnet-official-packs/packs
 dotnet publish src/AIVoiceActing/AIVoiceActing.csproj -c Release -p:AllowMissingPrunePackageData=true   # produces latest.zip (DalamudPackager)
 
-# Engine smoke harness (no Dalamud needed). --engine kokoro is the default in-game
-# engine (needs --models pointing at a dir with kokoro-v1.0.onnx and --ref <voice name>
-# such as af_heart); omit --engine for the legacy Chatterbox path:
+# Engine smoke harness (no Dalamud needed). --engine kokoro is the default (needs --models
+# pointing at a dir with kokoro-v1.0.onnx and --ref <voice name> such as af_heart).
+# --engine turbo [--device cpu|gpu] [--precision auto|fp32|fp16|q4f16] [--bench] runs Chatterbox
+# Turbo from a models dir with the catalog's local file names; the GPU needs a Vulkan device
+# (it is hidden inside the Claude sandbox):
 dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMissingPrunePackageData=true -- \
   --engine kokoro --text "Life is but a dream." --ref af_heart \
   --models "$HOME/.cache/aiva-kokoro" --out /tmp/aiva-test.wav --rtf
@@ -60,7 +62,7 @@ dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMis
 
 The tests project and the SmokeSynth tool must NOT reference Dalamud; the plugin project's
 csproj carries the runtime packages (OnnxRuntime, DirectML, NAudio, Tokenizers.DotNet,
-Standart.Hash.xxHash, KokoroSharp). NuGet packages are added in the csproj that owns
+Standart.Hash.xxHash, KokoroSharp, the WebGPU EP pinned to 0.2.1). NuGet packages are added in the csproj that owns
 their runtime use, never transitively "while convenient".
 
 # Dev install (no GitHub releases): unzip latest.zip into

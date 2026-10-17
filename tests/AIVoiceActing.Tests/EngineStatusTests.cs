@@ -252,14 +252,6 @@ public sealed class EngineStatusTests : IDisposable
         Assert.Contains(planner.Calls, c => !c.Cheap && c.Override == DeviceMode.Cpu);
     }
 
-    [Fact]
-    public void LegacyChatterbox_KeepsTheReadinessDefault()
-    {
-        using var synth = new ChatterboxSynthesizer(this.NewDir(), _ => null, log: new FakeLogSink());
-
-        Assert.Equal(EngineState.NotInstalled, synth.Status.State);
-    }
-
     // ---- planner --------------------------------------------------------------------------------
 
     [Fact]

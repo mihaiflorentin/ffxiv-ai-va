@@ -15,6 +15,8 @@ public sealed class FakeWebGpuRuntime : IWebGpuRuntime
 
     public Exception? AppendThrows { get; set; }
 
+    public OrtMemoryInfo? DeviceMemory => null;
+
     public int EnumerateCalls { get; private set; }
 
     public List<DevicePlan> Appended { get; } = [];
@@ -63,6 +65,9 @@ public sealed class FakeDevicePlanner : IDevicePlanner
 
     public DevicePlan? CheapPlan { get; set; }
 
+    /// <summary>When set, picks the plan from the language model graph name (precision-dependent plans).</summary>
+    public Func<string, DevicePlan>? PlanByLm { get; set; }
+
     public List<(string Lm, bool Cheap, DeviceMode? Override)> Calls { get; } = [];
 
     /// <summary>When set, full (non-cheap) plans wait here until released.</summary>
@@ -81,6 +86,11 @@ public sealed class FakeDevicePlanner : IDevicePlanner
         {
             this.Entered.Set();
             gate.Wait(TimeSpan.FromSeconds(10));
+        }
+
+        if (this.PlanByLm is { } byLm)
+        {
+            return byLm(lmGraphFile);
         }
 
         return cheap && this.CheapPlan is { } preview ? preview : this.Plan;
