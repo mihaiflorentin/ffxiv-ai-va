@@ -3,6 +3,7 @@ namespace AIVoiceActing;
 using System.Reflection;
 using AIVoiceActing.Container;
 using AIVoiceActing.Domain;
+using AIVoiceActing.Domain.Pipeline;
 using AIVoiceActing.Infrastructure.Audio;
 using AIVoiceActing.Infrastructure.Onnx;
 using AIVoiceActing.Ports;
@@ -62,6 +63,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     [PluginService]
     public static ISigScanner SigScanner { get; private set; } = null!;
 
+    [PluginService]
+    public static IDataManager DataManager { get; private set; } = null!;
+
     private static readonly string[] CommandNames =
     [
         "/aivaconfig", "/aiva", "/cancelspeech", "/toggletts", "/enabletts",
@@ -76,6 +80,8 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     private readonly TalkAddonPoller talkPoller;
     private readonly TalkAddonPoller battleTalkPoller;
     private readonly ObjectTableHintProvider hints;
+    private readonly NpcSheetIndexLoader npcSheets;
+    private readonly RecentDialogueSpeakers recentSpeakers = new();
     private readonly TalkDialogueSource talkSource;
     private readonly BattleTalkDialogueSource battleTalkSource;
     private readonly ChatDialogueSource chatSource;
@@ -147,6 +153,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             profileStorePathFactory: () => Path.Combine(configDir, "voice-assignments.json"),
             profileSaveDelay: TimeSpan.FromSeconds(2),
             keepTempoWhenPitchedFactory: () => config.KeepTempoWhenPitched,
+            ageAwareCastingFactory: () => config.AgeAwareCasting,
             modelsDirFactory: () => Path.Combine(configDir, "models"),
             voicesManifestFactory: () => ExtractVoicesManifest(configDir),
             // Re-read on first use and whenever the processor sees changed files; the
@@ -197,7 +204,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             useRaceVoicePresetsFactory: () => config.UseRaceVoicePresets,
             adHocStyleTagsFactory: () => config.AdHocStyleTagsEnabled,
             styleTagRegexFactory: () => config.StyleRegex);
-        this.hints = new ObjectTableHintProvider(ObjectTable);
+        this.npcSheets = new NpcSheetIndexLoader(DataManager, PluginLog);
+        _ = this.npcSheets.StartAsync();
+        this.hints = new ObjectTableHintProvider(ObjectTable, npcSheets: () => this.npcSheets.Index);
 
         this.talkSource = new TalkDialogueSource(
             Framework, this.talkPoller, this.hints, this.services.SpeakerDirectory,
@@ -219,12 +228,15 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             readFromQuestTalkAddon: () => config.ReadFromQuestTalkAddon,
             readFromBattleTalkAddon: () => config.ReadFromBattleTalkAddon,
             skipMessagesFromYou: () => config.SkipMessagesFromYou,
-            this.services.PipelineSink);
+            this.services.PipelineSink,
+            this.recentSpeakers);
         this.subtitleSource = new CutsceneSubtitleSource(
             Framework, GameGui, this.services.SpeakerDirectory, conditions, PluginLog,
             // Verified addon name ("TalkSubtitle"); gated alongside the master toggle.
             enabled: () => config.Enabled && config.ReadCutsceneSubtitles,
-            this.services.PipelineSink);
+            this.services.PipelineSink,
+            this.recentSpeakers,
+            this.hints);
         this.voiceLineDetector = new VoiceLineDetector(SigScanner, GameInteropProvider, PluginLog);
 
         this.commands = new CommandRouter(

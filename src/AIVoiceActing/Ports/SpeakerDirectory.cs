@@ -10,6 +10,8 @@ using AIVoiceActing.Domain;
 /// <param name="Race">CustomizeData race, if resolvable.</param>
 /// <param name="Tribe">CustomizeData tribe, if resolvable.</param>
 /// <param name="Sex">CustomizeData sex, if resolvable.</param>
+/// <param name="BodyType">CustomizeData body type (1 adult, 3 elderly, 4 child), if resolvable.</param>
+/// <param name="Source">Where the identity facts came from.</param>
 public sealed record SpeakerHint(
     string Name,
     ushort? World,
@@ -17,7 +19,9 @@ public sealed record SpeakerHint(
     int? ModelCharaId,
     byte? Race,
     byte? Tribe,
-    byte? Sex);
+    byte? Sex,
+    byte? BodyType = null,
+    IdentitySource Source = IdentitySource.Unknown);
 
 /// <summary>Driven port resolving speaker hints into stable <see cref="SpeakerIdentity"/> values.</summary>
 public interface ISpeakerDirectory

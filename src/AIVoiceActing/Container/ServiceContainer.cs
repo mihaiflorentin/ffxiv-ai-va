@@ -27,6 +27,7 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<string>? profileStorePathFactory;
     private readonly TimeSpan? profileSaveDelay;
     private readonly Func<bool>? keepTempoWhenPitchedFactory;
+    private readonly Func<bool>? ageAwareCastingFactory;
     private readonly Func<string>? castingPresetsPathFactory;
     private readonly Func<string>? modelsDirFactory;
     private readonly Func<string>? voicesManifestFactory;
@@ -139,8 +140,10 @@ public sealed class ServiceContainer : IDisposable
         Func<bool>? adHocStyleTagsFactory = null,
         Func<string>? styleTagRegexFactory = null,
         TimeSpan? profileSaveDelay = null,
-        Func<bool>? keepTempoWhenPitchedFactory = null)
+        Func<bool>? keepTempoWhenPitchedFactory = null,
+        Func<bool>? ageAwareCastingFactory = null)
     {
+        this.ageAwareCastingFactory = ageAwareCastingFactory;
         this.keepTempoWhenPitchedFactory = keepTempoWhenPitchedFactory;
         this.profileSaveDelay = profileSaveDelay;
         this.logSinkOverride = logSinkOverride;
@@ -714,7 +717,8 @@ public sealed class ServiceContainer : IDisposable
         this.LogSinkUnlocked().Info(
             $"Voice resolution for \"{speaker.Key}\": race={speaker.Race?.ToString() ?? "?"} " +
             $"tribe={speaker.Tribe?.ToString() ?? "?"} sex={speaker.Sex?.ToString() ?? "?"} " +
-            $"model={speaker.ModelCharaId?.ToString() ?? "?"} → group {group}" +
+            $"model={speaker.ModelCharaId?.ToString() ?? "?"} body={speaker.BodyType?.ToString() ?? "?"} " +
+            $"source={speaker.Source} → group {group}" +
             (beastTribe is { } boundTribe ? $" (beast tribe \"{boundTribe}\")" : string.Empty));
 
         var store = this.ProfileStoreUnlocked();
@@ -736,7 +740,9 @@ public sealed class ServiceContainer : IDisposable
             profile = store.GetOrCreate(speaker.Key, () => slots, speaker.Race, speaker.Tribe, speaker.Sex)!;
         }
 
-        return profile;
+        return this.ageAwareCastingFactory?.Invoke() == false
+            ? profile
+            : AgeCasting.Apply(profile, speaker.BodyType);
     }
 
     private IReadOnlyDictionary<int, string>? presetBeastBindings;

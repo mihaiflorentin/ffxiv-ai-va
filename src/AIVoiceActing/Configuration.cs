@@ -117,6 +117,9 @@ public class Configuration
     /// <summary>Levels every line to the same loudness before the per-voice volume applies.</summary>
     public bool LevelVoiceLoudness { get; set; } = true;
 
+    /// <summary>Children get a higher, quicker take on their voice; elders a lower, slower one.</summary>
+    public bool AgeAwareCasting { get; set; } = true;
+
     /// <summary>Lines older than this are dropped at playback instead of played late. 0 keeps everything.</summary>
     public int StaleLineSeconds { get; set; } = 20;
 

@@ -14,7 +14,9 @@ using FFXIVClientStructs.FFXIV.Component.GUI;
 /// (one debug log). The fallback already flows: cutscene NPC dialogue reaches us through
 /// the chat NPC-dialogue channel via <see cref="ChatDialogueSource"/>.
 /// Text collection walks the addon's visible AtkTextNode tree (depth-limited); the speaker
-/// is not encoded in that surface, so lines resolve to an anonymous speaker.
+/// is not encoded in that surface, so the source waits briefly for the same line's echo in
+/// the NPC-dialogue chat channel (<see cref="RecentDialogueSpeakers"/>) and takes the
+/// speaker from there; only when none arrives does the line resolve to an anonymous speaker.
 /// </summary>
 public sealed class CutsceneSubtitleSource : IDialogueSource, IDisposable
 {
@@ -32,6 +34,13 @@ public sealed class CutsceneSubtitleSource : IDialogueSource, IDisposable
     private readonly PipelineSource<TextEmitEvent> sink;
 
     private readonly SubtitleChangeTracker tracker = new();
+    private readonly RecentDialogueSpeakers? recentSpeakers;
+    private readonly ObjectTableHintProvider? hints;
+    private string? pendingText;
+    private long pendingSince;
+
+    /// <summary>How long a new subtitle waits for its chat echo before going out anonymous.</summary>
+    private const long SpeakerWaitMs = 400;
     private IFramework.OnUpdateDelegate? updateHandler;
     private bool loggedMissingAddon;
 
@@ -42,8 +51,12 @@ public sealed class CutsceneSubtitleSource : IDialogueSource, IDisposable
         IGameConditions conditions,
         IPluginLog log,
         Func<bool> enabled,
-        PipelineSource<TextEmitEvent> sink)
+        PipelineSource<TextEmitEvent> sink,
+        RecentDialogueSpeakers? recentSpeakers = null,
+        ObjectTableHintProvider? hints = null)
     {
+        this.recentSpeakers = recentSpeakers;
+        this.hints = hints;
         this.Framework = framework;
         this.gui = gui;
         this.directory = directory;
@@ -74,20 +87,37 @@ public sealed class CutsceneSubtitleSource : IDialogueSource, IDisposable
             return;
         }
 
-        var hint = new SpeakerHint(
-            Name: "(cutscene)", World: null, ObjectIndex: null, ModelCharaId: null,
-            Race: null, Tribe: null, Sex: null);
-        var identity = this.directory.Resolve(hint);
+        var now = Environment.TickCount64;
+        if (this.pendingText != text)
+        {
+            this.pendingText = text;
+            this.pendingSince = now;
+        }
+
+        var speakerName = this.recentSpeakers?.Find(text, now);
+        if (speakerName is null && this.recentSpeakers is not null && now - this.pendingSince < SpeakerWaitMs)
+        {
+            return; // give the chat echo a moment to name the speaker
+        }
+
+        // The event keeps the "(cutscene)" display name so the consecutive-line dedupe
+        // behaves as before; only the voice identity comes from the named speaker.
+        var hint = speakerName is not null && this.hints is not null
+            ? this.hints.ForTalk(speakerName)
+            : new SpeakerHint(
+                Name: speakerName ?? "(cutscene)", World: null, ObjectIndex: null, ModelCharaId: null,
+                Race: null, Tribe: null, Sex: null);
+        const string displayName = "(cutscene)";
 
         // Change detection before emitting: the subtitle stays visible for many frames,
         // so the same (speaker, text) pair must not re-enter the pipeline per tick.
-        if (!this.tracker.ShouldEmit(identity.DisplayName, text))
+        if (!this.tracker.ShouldEmit(displayName, text))
         {
             return;
         }
 
         this.sink.Emit(new TextEmitEvent(
-            TextSource.CutsceneSubtitle, identity.DisplayName, text, text, hint, ChatType: 0));
+            TextSource.CutsceneSubtitle, displayName, text, text, hint, ChatType: 0));
     }
 
     private string? ReadSubtitleText()

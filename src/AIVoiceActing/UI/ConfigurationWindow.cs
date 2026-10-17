@@ -1308,6 +1308,11 @@ public sealed class ConfigurationWindow : Window
             "Speakers without their own assignment pick randomly from their race/gender row; off resolves everyone from the Unknown row.",
             () => this.config.UseRaceVoicePresets,
             v => { this.config.UseRaceVoicePresets = v; this.save(); });
+        Controls.Checkbox(
+            "Age-aware voices",
+            "Children speak a little higher and quicker, elders a little lower and slower, on top of their row's voice. Manual overrides are never changed.",
+            () => this.config.AgeAwareCasting,
+            v => { this.config.AgeAwareCasting = v; this.save(); });
 
         var catalog = this.voiceCatalog();
         var rawIds = this.VoiceOptions;
