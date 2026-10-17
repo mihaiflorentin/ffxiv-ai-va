@@ -1,6 +1,7 @@
 namespace AIVoiceActing.Tests;
 
 using AIVoiceActing.Container;
+using AIVoiceActing.UI.State;
 using Xunit;
 
 /// <summary>
@@ -118,6 +119,33 @@ public sealed class CommandRouterTests
 
         Assert.Equal(AivaCommand.OpenConfig, result.Action);
         Assert.Contains("not available", Assert.Single(result.Output));
+    }
+
+    [Fact]
+    public void StylesCommand_WithSettingsWindow_InvokesIt()
+    {
+        var rec = new Recorder { StylesUi = () => { } };
+        var result = rec.Router().Execute("/aivastyles", "");
+
+        Assert.Equal(AivaCommand.OpenStyles, result.Action);
+        Assert.Empty(result.Output);
+        Assert.Equal(1, rec.StylesUiInvocations);
+        Assert.Equal(0, rec.ConfigUiInvocations);
+    }
+
+    [Fact]
+    public void StylesCommand_DeepLinksToStyleTagsInWhatsRead()
+    {
+        // Wired the way the plugin does: the command's opener is the nav deep link.
+        var nav = new NavModel("Home", _ => { });
+        nav.TakeForcedTab();
+        var rec = new Recorder { StylesUi = nav.OpenStyleTags };
+
+        rec.Router().Execute("/aivastyles", "");
+
+        Assert.Equal(NavTab.Reading, nav.Selected);
+        Assert.Equal(NavTab.Reading, nav.TakeForcedTab());
+        Assert.Equal(ReadingAnchors.Styles, nav.ConsumeAnchor(NavTab.Reading));
     }
 
     [Fact]

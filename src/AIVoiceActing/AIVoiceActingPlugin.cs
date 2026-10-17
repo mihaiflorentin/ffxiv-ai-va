@@ -95,7 +95,6 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     private readonly VoiceLineDetector voiceLineDetector;
     private readonly WindowSystem windowSystem = new("AIVoiceActing");
     private readonly ConfigurationWindow configWindow;
-    private readonly StylesWindow stylesWindow;
     private readonly NowSpeakingWindow nowSpeakingWindow;
 
     /// <summary>Toast channel for UI pages (nothing calls it yet; the page tickets will).</summary>
@@ -296,6 +295,11 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         };
         Action<string> logInfo = message => this.services.LogSink.Info(message);
         Action<string, Exception?> logError = (message, ex) => this.services.LogSink.Error(message, ex);
+        var nav = new NavModel(config.LastPage, page =>
+        {
+            config.LastPage = page;
+            this.SaveConfig();
+        });
         this.configWindow = new ConfigurationWindow(new UiContext
         {
             Config = config,
@@ -329,11 +333,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             Status = status,
             Modals = new ModalHost(),
             Toasts = this.Toasts,
-            Nav = new NavModel(config.LastPage, page =>
-            {
-                config.LastPage = page;
-                this.SaveConfig();
-            }),
+            Nav = nav,
             Downloads = new DownloadQueueModel(() => this.services.ModelProvisioner, status, logInfo, logError),
             EngineSession = new EngineSessionModel(status, logInfo, logError),
             Probes = new CachedProbes(
@@ -369,16 +369,20 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
                 .Select(w => (w.RowId, w.Name.ExtractText()))
                 .Where(w => w.Item2.Length > 0)]),
         });
-        this.stylesWindow = new StylesWindow(config, this.SaveConfig);
         this.windowSystem.AddWindow(this.configWindow);
-        this.windowSystem.AddWindow(this.stylesWindow);
         this.nowSpeakingWindow = new NowSpeakingWindow(config, this.SaveConfig, this.services.SpeechQueue);
         this.windowSystem.AddWindow(this.nowSpeakingWindow);
 
         // /aivaconfig + /aivastyles route through the container hooks (headless-safe);
         // the game's own OpenConfigUi (system menu) opens our configuration window.
         this.services.OpenConfigurationUi = this.configWindow.Toggle;
-        this.services.OpenStylesUi = this.stylesWindow.Toggle;
+        // Style tags are a What's read setting now: the styles command opens the settings window
+        // there instead of a window of its own.
+        this.services.OpenStylesUi = () =>
+        {
+            nav.OpenStyleTags();
+            this.configWindow.IsOpen = true;
+        };
         this.openConfigUiHook = () => this.configWindow.IsOpen = true;
         var uiBuilder = PluginInterface.UiBuilder;
         // OpenMainUi is the modern Dalamud main-window hook (its absence raises a
@@ -388,7 +392,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         uiBuilder.OpenConfigUi += this.openConfigUiHook;
         uiBuilder.Draw += this.windowSystem.Draw;
 
-        this.services.LogSink.Info("AIVoiceActing UI: configuration and styles windows registered.");
+        this.services.LogSink.Info("AIVoiceActing UI: configuration window registered.");
         this.RegisterCommands();
 
         // Voiced-cutscene courtesy: the detector cancels current speech and re-samples the
@@ -514,7 +518,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         Add("/enabletts", "Enable AIVoiceActing's text-to-speech.");
         Add("/aivapreset", "Switch the active channel settings preset by name. Run with no arguments to show the current preset and list available presets.");
         Add("/aivavolume", "Adjust the global TTS volume. Pass a percentage (0-200) to set, or +N/-N to adjust relatively. Run with no arguments to show the current volume.");
-        Add("/aivastyles", "Toggle AIVoiceActing's styles window.");
+        Add("/aivastyles", "Open the style tag settings (What's read, More options).");
     }
 
     private void OnSpeechInterrupted()

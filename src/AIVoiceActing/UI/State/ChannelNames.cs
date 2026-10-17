@@ -150,6 +150,37 @@ public static class ChannelNames
         }
     }
 
+    /// <summary>
+    /// The channel groups matching <paramref name="query"/>, in <see cref="CategoryOrder"/> order,
+    /// empty groups dropped. Every whitespace-separated term must appear (case-insensitive) in the
+    /// channel name or its category, so "gm say" and "party" both work; a blank query returns
+    /// everything.
+    /// </summary>
+    public static IReadOnlyList<(string Category, IReadOnlyList<Channel> Channels)> Search(string? query)
+    {
+        var terms = (query ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (terms.Length == 0)
+        {
+            return [.. ByCategory()];
+        }
+
+        var result = new List<(string, IReadOnlyList<Channel>)>();
+        foreach (var (category, channels) in ByCategory())
+        {
+            var hits = channels
+                .Where(c => terms.All(t =>
+                    c.Name.Contains(t, StringComparison.OrdinalIgnoreCase) ||
+                    c.Category.Contains(t, StringComparison.OrdinalIgnoreCase)))
+                .ToArray();
+            if (hits.Length > 0)
+            {
+                result.Add((category, hits));
+            }
+        }
+
+        return result;
+    }
+
     /// <summary>One-line description of what a category covers (settings-UI tooltip).</summary>
     public static string CategoryDescription(string category) => category switch
     {

@@ -50,6 +50,37 @@ public sealed class NavModelTests
     }
 
     [Fact]
+    public void OpenStyleTags_SelectsWhatsRead_AndLeavesTheStylesAnchorOnce()
+    {
+        var saved = new List<string>();
+        var nav = new NavModel("Settings", saved.Add);
+        nav.TakeForcedTab();
+
+        nav.OpenStyleTags();
+
+        Assert.Equal(NavTab.Reading, nav.Selected);
+        Assert.Equal(["Reading"], saved);
+        Assert.Equal(NavTab.Reading, nav.TakeForcedTab());
+        Assert.Null(nav.ConsumeAnchor(NavTab.Settings));
+        Assert.Equal(ReadingAnchors.Styles, nav.ConsumeAnchor(NavTab.Reading));
+        Assert.Null(nav.ConsumeAnchor(NavTab.Reading));
+    }
+
+    [Fact]
+    public void OpenStyleTags_WhenAlreadyOnWhatsRead_StillForcesAndAnchors()
+    {
+        var saved = new List<string>();
+        var nav = new NavModel("Reading", saved.Add);
+        nav.TakeForcedTab();
+
+        nav.OpenStyleTags();
+
+        Assert.Empty(saved);
+        Assert.Equal(NavTab.Reading, nav.TakeForcedTab());
+        Assert.Equal(ReadingAnchors.Styles, nav.ConsumeAnchor(NavTab.Reading));
+    }
+
+    [Fact]
     public void FirstFrame_ForcesTheRestoredTab()
     {
         var nav = new NavModel("Reading", _ => { });
