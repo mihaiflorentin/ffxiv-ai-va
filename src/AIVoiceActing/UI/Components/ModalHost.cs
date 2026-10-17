@@ -16,10 +16,14 @@ public sealed class ModalHost
 
     public IReadOnlyCollection<string> RegisteredIds => this.entries.Keys;
 
-    /// <summary>Registers (or replaces) the modal <paramref name="id"/>; <paramref name="body"/> runs each frame while it is open.</summary>
-    public void Register(string id, string title, Action body)
+    /// <summary>
+    /// Registers (or replaces) the modal <paramref name="id"/>; <paramref name="body"/> runs each frame while it is open.
+    /// A modal that draws its own nested popup passes <paramref name="escapeBlocked"/>, which returns true while
+    /// that popup is open so Esc closes the inner popup only.
+    /// </summary>
+    public void Register(string id, string title, Action body, Func<bool>? escapeBlocked = null)
     {
-        this.entries[id] = new Entry(title, body);
+        this.entries[id] = new Entry(title, body, escapeBlocked);
     }
 
     /// <summary>Opens a registered modal on the next <see cref="Draw"/>. Returns false for an unknown id.</summary>
@@ -64,7 +68,8 @@ public sealed class ModalHost
             }
             finally
             {
-                if (this.pendingClose.Remove(id) || ImGui.IsKeyPressed(ImGuiKey.Escape))
+                if (this.pendingClose.Remove(id)
+                    || (ImGui.IsKeyPressed(ImGuiKey.Escape) && entry.EscapeBlocked?.Invoke() != true))
                 {
                     ImGui.CloseCurrentPopup();
                 }
@@ -77,5 +82,5 @@ public sealed class ModalHost
     // Visible title, stable id: the title may change without breaking the open/close pairing.
     private static string PopupId(string id, Entry entry) => entry.Title + "###aiva-modal-" + id;
 
-    private sealed record Entry(string Title, Action Body);
+    private sealed record Entry(string Title, Action Body, Func<bool>? EscapeBlocked);
 }

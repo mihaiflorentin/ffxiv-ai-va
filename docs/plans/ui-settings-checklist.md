@@ -10,14 +10,26 @@ Tabs: Home, Voices, What's read, Settings. Settings sections are collapsing head
 | `GlobalVolume` | "Global volume %" slider |
 | (derived) | engine status strip, first-run "Get started" guide, download progress |
 
-## Voices (segmented control: Casting defaults / NPC voices / Player voices)
+## Voices (ticket #16)
+Library on top, "Who sounds like who" below. The old segmented control (Casting defaults / NPC voices / Player voices) is gone; `VoiceSetEditor` and the id-prefix language/sex filters are retired from the UI.
+
 | Property / data | Control |
 |---|---|
-| `UseRaceVoicePresets` | Casting defaults: "Use race/gender voice presets for unlisted speakers" |
-| `AgeAwareCasting` | Casting defaults: "Age-aware voices" |
-| casting presets (`ICastingPresetStore`) | Casting defaults: preset bar (Activate, Save, Fork, New, Delete, Export, Import) |
-| race/gender rows, beast tribes, model-id bindings | Casting defaults: row sections, "Beast tribes" |
-| per-character overrides (`IProfileStore`) | NPC voices, Player voices: table, add form, Clear all, Export, Import |
+| `IVoiceLibrary.Voices` | Voice library: search (name, accent, description, id), accent/sex/age filters, "N of M shown", Clear filters, preview, "Use for..." chooser (race and gender row, beast tribe, named NPC, named player) |
+| `IVoiceLibrary.Packs` | Voice packs strip: licence, credit, problems list |
+| `Voices.DisabledPacks` | Voice packs strip: per-pack switch (saves, rescans, rebuilds the voice map); built-in voices cannot be switched off |
+| (pack folder) | Voice packs strip: "Open packs folder", "Rescan" |
+| `Voices.ExtraPackDirs` | Still config-file only |
+| `UseRaceVoicePresets` | Who sounds like who: "Choose voices automatically by race and gender" |
+| `AgeAwareCasting` | Who sounds like who: "Make children and elders sound their age" |
+| casting presets (`ICastingPresetStore`) | Settings > Casting presets (`CastingPresetPanel`; ticket #18 folds it into Advanced): Use this casting, Duplicate, New, Delete (asks first), Export, Import. Voices links to it ("Manage casting presets in Settings") |
+| unsaved casting edits | Voices: Save / Discard bar. Saving on the built-in casting keeps the edits as a new casting ("My casting") and switches to it |
+| race/gender rows (17 + Anyone else) | Race and gender: fingerprints and names per row, "Edit" opens the editor (add, change, remove, preview) |
+| per-slot pitch, speed, volume, expressiveness (`VoiceSlotDto`) | Editor: "Tune" popover; chips appear only when a knob is not at its default |
+| beast tribes, voice lists (any gender, male, female) | Beast tribes: one row per tribe, "Edit" |
+| model-id bindings, unassigned creature models | Beast tribes: inbox of creatures heard this session (Assign to..., Ignore); "Creature models" list in the tribe editor |
+| per-character overrides (`IProfileStore`) | Characters with their own voice: NPCs / Players, sortable named columns, search, "Add by name", voice picker, Tune popover (commits on release), delete with Undo, Export, Import, Clear all (asks first) |
+| voice not provided by any enabled pack | "Missing" row at the top of the library; "(missing)" next to the voice wherever it is used |
 
 ## What's read (ticket #17)
 Four cards, then a collapsed "More options". The styles command (`/aivastyles`) opens this tab with More options open, scrolled to Style tags (`NavModel.OpenStyleTags`, anchor `ReadingAnchors.Styles`). The separate Styles window is gone.
@@ -64,7 +76,7 @@ Four cards, then a collapsed "More options". The styles command (`/aivastyles`) 
 
 ## Not exposed in the old window either (unchanged)
 `DefaultExaggeration`, `Lexicons`,
-`SelectedAudioDeviceIndex`, `Voices.*`, `Device.Mode/AdapterId/Backend/Api/GpuImpact/FallbackToCpu`,
+`SelectedAudioDeviceIndex`, `Voices.ExtraPackDirs`, `Device.Mode/AdapterId/Backend/Api/GpuImpact/FallbackToCpu`,
 `Engine.PerEngine`, migration and onboarding fields. Later tickets (#15-#18) surface the ones that matter.
 
 ## Behaviour notes

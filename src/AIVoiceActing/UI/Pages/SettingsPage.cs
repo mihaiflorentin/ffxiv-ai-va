@@ -6,13 +6,14 @@ using Dalamud.Bindings.ImGui;
 
 /// <summary>
 /// Settings: the old Engine tab, Test tab, Keybinds and Experimental sections as collapsing
-/// sections. A nav anchor ("engine", "test", "keybinds", "experimental") opens its section.
+/// sections. A nav anchor ("engine", "test", "casting-presets", "keybinds", "experimental") opens its section.
 /// The Settings page ticket reshapes this into Quality / Processor / Downloads / Advanced.
 /// </summary>
 public sealed class SettingsPage(UiContext ctx) : IPage
 {
     private readonly EnginePanel engine = new(ctx);
     private readonly TestPanel test = new(ctx);
+    private readonly CastingPresetPanel castingPresets = new(ctx);
 
     public NavTab Tab => NavTab.Settings;
 
@@ -33,6 +34,11 @@ public sealed class SettingsPage(UiContext ctx) : IPage
         if (Section("Test", "test", anchor, ImGuiTreeNodeFlags.None))
         {
             this.test.Draw();
+        }
+
+        if (Section("Casting presets", "casting-presets", anchor, ImGuiTreeNodeFlags.None))
+        {
+            this.castingPresets.Draw();
         }
 
         if (Section("Keybinds", "keybinds", anchor, ImGuiTreeNodeFlags.None))

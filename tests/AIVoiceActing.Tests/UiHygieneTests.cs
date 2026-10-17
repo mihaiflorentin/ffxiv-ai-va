@@ -9,8 +9,8 @@ using Xunit;
 /// allowlist. Theme.cs and Ui.cs are the sanctioned homes of scale maths; the legacy files
 /// below predate the redesign. THE ALLOWLIST ONLY SHRINKS: delete a legacy entry when its
 /// page moves to the new components, never add one. The shell and all pages (#7) comply;
-/// the remaining legacy entries (VoiceSetEditor, Controls, NowSpeakingWindow)
-/// shrink away in the page tickets #15-#18.
+/// the remaining legacy entries (Controls, NowSpeakingWindow)
+/// shrink away in the page tickets #16-#18.
 /// </summary>
 public sealed class UiHygieneTests
 {
@@ -18,7 +18,6 @@ public sealed class UiHygieneTests
     {
         "Theme.cs",
         "Ui.cs",
-        "VoiceSetEditor.cs",
         "NowSpeakingWindow.cs",
         "Controls.cs",
     };

@@ -94,8 +94,9 @@ public sealed class TestBenchModel
         float exaggeration,
         float pitch = 1f,
         float speed = 1f,
-        float volume = 1f) =>
-        new(referenceVoiceId, VoiceTestLine, Math.Clamp(exaggeration, 0f, 1f), [])
+        float volume = 1f,
+        string? line = null) =>
+        new(referenceVoiceId, string.IsNullOrWhiteSpace(line) ? VoiceTestLine : line, Math.Clamp(exaggeration, 0f, 1f), [])
         {
             Pitch = pitch,
             Speed = speed,
