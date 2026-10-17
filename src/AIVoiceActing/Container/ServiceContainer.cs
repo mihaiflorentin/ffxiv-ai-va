@@ -707,10 +707,12 @@ public sealed class ServiceContainer : IDisposable
     }
 
     /// <summary>
-    /// The reference clip the expressive engine clones for this request: the user's own clip
-    /// for the voice when there is one, else a clip the main (Kokoro) engine renders once per
-    /// voice and pitch, so the expressive take keeps the speaker's timbre. Null when no clip
-    /// can be made (the line then stays on the main engine).
+    /// The reference clip the expressive engine clones for this request, in order: the user's own clip
+    /// for the voice; a real recorded clip from a voice pack (the voice's own, or for a generated blend its
+    /// dominant source's), pitched by resampling when the profile asks for it, so the accent survives; else a
+    /// clip the main (Kokoro) engine renders once per voice and pitch, so the expressive take keeps the
+    /// speaker's timbre. Null when no clip can be made (the line then goes to the engine's id-based fallback,
+    /// which is sex-aware, see <see cref="ClippingResolver"/>).
     /// </summary>
     private async Task<string?> PrepareExpressiveVoiceAsync(SynthesisRequest request, CancellationToken cancellationToken)
     {
@@ -723,13 +725,22 @@ public sealed class ServiceContainer : IDisposable
         var userClip = Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav");
         if (File.Exists(userClip))
         {
+            this.LogClipChoice(voiceId, "user clip", userClip);
             return userClip;
         }
 
         var pitchTag = (int)MathF.Round(Math.Clamp(request.Pitch, 0.5f, 1.5f) * 100f);
+        if (this.RealClipFor(voiceId) is { } real)
+        {
+            var pitched = this.PitchedCopy(real.Path, voiceId, pitchTag);
+            this.LogClipChoice(voiceId, real.Source, pitched);
+            return pitched;
+        }
+
         var clip = Path.Combine(this.ModelsDir, ExpressiveClipsFolder, $"{voiceId}_p{pitchTag:000}.wav");
         if (File.Exists(clip))
         {
+            this.LogClipChoice(voiceId, "rendered", clip);
             return clip;
         }
 
@@ -752,7 +763,101 @@ public sealed class ServiceContainer : IDisposable
         Infrastructure.Onnx.WavCodec.WriteMono24k(partial, reference.Samples);
         File.Move(partial, clip, overwrite: true);
         this.LogSinkOptional?.Info($"Rendered expressive reference clip for \"{voiceId}\" (pitch {pitchTag / 100f:0.00}).");
+        this.LogClipChoice(voiceId, "rendered", clip);
         return clip;
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> loggedClipChoices = new(StringComparer.Ordinal);
+
+    /// <summary>Info line the first time a voice gets a clip from a given source (clip source and sex), for in-game reports.</summary>
+    private void LogClipChoice(string voiceId, string source, string? path)
+    {
+        if (this.loggedClipChoices.TryAdd($"{voiceId}|{source}", 0))
+        {
+            this.LogSinkOptional?.Info(
+                $"Reference clip for \"{voiceId}\": {source}, sex {this.SexOf(voiceId) ?? "unknown"} " +
+                $"({(path is null ? "engine default" : Path.GetFileName(path))}).");
+        }
+    }
+
+    /// <summary>The sex of a voice: the library's (generated blends included), else what the id spells out.</summary>
+    private string? SexOf(string voiceId) =>
+        this.VoiceLibrary.Find(voiceId) is { Sex: "female" or "male" } info
+            ? info.Sex
+            : ReferenceClipBank.SexFromId(voiceId);
+
+    /// <summary>
+    /// A real recorded clip for a voice: its own pack ReferenceClip realization, or for a generated blend
+    /// the clip of its dominant-weight source (then the next heaviest) that has one. Null when none exists,
+    /// so only voices with no real clip are spoken from a Kokoro-rendered reference.
+    /// </summary>
+    private (string Path, string Source)? RealClipFor(string voiceId)
+    {
+        static string? ClipOf(VoiceInfo? voice) =>
+            voice?.Realizations.FirstOrDefault(r =>
+                r.Kind == RealizationKind.ReferenceClip && r.Available && File.Exists(r.Path))?.Path;
+
+        var library = this.VoiceLibrary;
+        if (ClipOf(library.Find(voiceId)) is { } own)
+        {
+            return (own, "pack clip");
+        }
+
+        if (VoiceBlend.IsGeneratedId(voiceId))
+        {
+            IGeneratedVoiceStore? store;
+            lock (this.gate)
+            {
+                store = this.GeneratedVoiceStoreUnlocked();
+            }
+
+            if (store?.Find(voiceId) is { } record)
+            {
+                foreach (var part in record.Sources.OrderByDescending(p => p.Weight))
+                {
+                    if (ClipOf(library.Find(part.VoiceId)) is { } sourceClip)
+                    {
+                        return (sourceClip, $"pack clip of blend source {part.VoiceId}");
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The clip at the requested pitch. Turbo has no pitch control of its own (pitch lives in the reference),
+    /// so a pitched voice gets a resampled copy of the real clip, the same shift Kokoro applies to its output.
+    /// Pitch 1 uses the pack file itself. Any trouble reading the clip falls back to the unpitched file.
+    /// </summary>
+    private string PitchedCopy(string source, string voiceId, int pitchTag)
+    {
+        if (pitchTag == 100)
+        {
+            return source;
+        }
+
+        var dest = Path.Combine(this.ModelsDir, ExpressiveClipsFolder, $"{voiceId}_pack_p{pitchTag:000}.wav");
+        if (File.Exists(dest))
+        {
+            return dest;
+        }
+
+        try
+        {
+            var shifted = ClipPitch.Resample(Infrastructure.Onnx.WavCodec.ReadMono24k(source), pitchTag / 100f);
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            var partial = dest + ".part";
+            Infrastructure.Onnx.WavCodec.WriteMono24k(partial, shifted);
+            File.Move(partial, dest, overwrite: true);
+            return dest;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            this.LogSinkOptional?.Warn($"Could not pitch the reference clip of \"{voiceId}\" ({ex.Message}); using it unpitched.");
+            return source;
+        }
     }
 
     /// <summary>Race/voice-group slot manifest (voicesManifestFactory or a hard error).</summary>
@@ -856,36 +961,53 @@ public sealed class ServiceContainer : IDisposable
 
     /// <summary>Speech pipeline: lexicon → stutter removal → director → synthesis → queue.</summary>
     /// <summary>
-    /// Reference-clip resolution for the cloning engine (Turbo): profiles carry
-    /// Kokoro voice ids, which only exist as files when the user adds clip overrides.
-    /// Fall back to a clip rendered earlier, then to the bundled bank clip for that id, then to the engine default —
-    /// a missing clip must degrade to the default voice, never error the line.
+    /// Reference-clip resolution for the cloning engine (Turbo): profiles carry Kokoro voice ids, which
+    /// only exist as files when the user adds clip overrides. A rooted path that exists is a clip prepared by
+    /// <see cref="PrepareExpressiveVoiceAsync"/> and is used as is. An id resolves to: the user's clip, a real
+    /// pack clip (the voice's own or its blend's source), a clip rendered earlier (the unpitched one, else the
+    /// nearest pitch), then the bundled bank clip chosen by the voice's sex, then the engine default. A
+    /// missing clip must degrade to a voice of the right sex, never error the line.
     /// </summary>
     private Func<string, string?> ClippingResolver(string defaultClipFileName)
     {
         var clipsDir = this.referenceClipsDirFactory?.Invoke();
         return voiceId =>
         {
-            if (!string.IsNullOrWhiteSpace(voiceId) && voiceId != "default")
+            if (!string.IsNullOrWhiteSpace(voiceId) && Path.IsPathRooted(voiceId) && File.Exists(voiceId))
+            {
+                return voiceId;
+            }
+
+            if (!string.IsNullOrWhiteSpace(voiceId) && voiceId != "default"
+                && voiceId.IndexOfAny([.. Path.GetInvalidFileNameChars(), '*', '?']) < 0)
             {
                 var userClip = Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav");
                 if (File.Exists(userClip))
                 {
+                    this.LogClipChoice(voiceId, "user clip", userClip);
                     return userClip;
                 }
 
-                // A clip the main engine already rendered for this voice (see PrepareExpressiveVoiceAsync).
-                var rendered = Path.Combine(this.ModelsDir, ExpressiveClipsFolder, $"{voiceId}_p100.wav");
-                if (File.Exists(rendered))
+                if (this.RealClipFor(voiceId) is { } real)
                 {
+                    this.LogClipChoice(voiceId, real.Source, real.Path);
+                    return real.Path;
+                }
+
+                // A clip the main engine already rendered for this voice (see PrepareExpressiveVoiceAsync):
+                // the unpitched one, else whichever pitch is closest (the timbre is what matters here).
+                if (RenderedClipFor(Path.Combine(this.ModelsDir, ExpressiveClipsFolder), voiceId) is { } rendered)
+                {
+                    this.LogClipChoice(voiceId, "rendered", rendered);
                     return rendered;
                 }
 
                 if (!string.IsNullOrWhiteSpace(clipsDir))
                 {
-                    var bundled = Path.Combine(clipsDir, $"{ReferenceClipBank.ClipIdFor(voiceId)}.wav");
+                    var bundled = Path.Combine(clipsDir, $"{ReferenceClipBank.ClipIdFor(voiceId, this.SexOf(voiceId))}.wav");
                     if (File.Exists(bundled))
                     {
+                        this.LogClipChoice(voiceId, "bank", bundled);
                         return bundled;
                     }
                 }
@@ -894,6 +1016,7 @@ public sealed class ServiceContainer : IDisposable
             var defaultClip = Path.Combine(this.ModelsDir, defaultClipFileName);
             if (File.Exists(defaultClip))
             {
+                this.LogClipChoice(voiceId, "default", defaultClip);
                 return defaultClip;
             }
 
@@ -906,6 +1029,7 @@ public sealed class ServiceContainer : IDisposable
                 var bundledDefault = Path.Combine(kokoroVoicesDir, "default_voice.wav");
                 if (File.Exists(bundledDefault))
                 {
+                    this.LogClipChoice(voiceId, "default", bundledDefault);
                     return bundledDefault;
                 }
             }
@@ -914,6 +1038,27 @@ public sealed class ServiceContainer : IDisposable
             // SpeechSynthesisException; a missing clip never errors the line hard.
             return null;
         };
+    }
+
+    private static string? RenderedClipFor(string folder, string voiceId)
+    {
+        var unpitched = Path.Combine(folder, $"{voiceId}_p100.wav");
+        if (File.Exists(unpitched))
+        {
+            return unpitched;
+        }
+
+        if (!Directory.Exists(folder))
+        {
+            return null;
+        }
+
+        return Directory.EnumerateFiles(folder, $"{voiceId}_p???.wav")
+            .Select(f => (File: f, Tag: int.TryParse(Path.GetFileNameWithoutExtension(f)[^3..], out var t) ? t : int.MaxValue))
+            .Where(c => c.Tag != int.MaxValue)
+            .OrderBy(c => Math.Abs(c.Tag - 100))
+            .Select(c => c.File)
+            .FirstOrDefault();
     }
 
     /// <summary>
