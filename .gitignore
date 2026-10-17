@@ -8,3 +8,7 @@ models/
 .dalamud/
 artifacts/
 src/AIVoiceActing/publish/
+
+# Claude Code sandbox placeholders / local agent config
+.claude/
+.mcp.json
