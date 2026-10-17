@@ -10,6 +10,7 @@ using AIVoiceActing.Ports;
 using AIVoiceActing.UI.Components;
 using AIVoiceActing.UI.State;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
 using Dalamud.Interface.Windowing;
 
 /// <summary>
@@ -268,7 +269,6 @@ public sealed class ConfigurationWindow : Window
         }
 
         ImGui.EndTabBar();
-        this.DrawStatusLine();
     }
 
     /// <summary>In-window status line: one pinned line, red on error, fading after ~10 s.</summary>
@@ -1425,14 +1425,14 @@ public sealed class ConfigurationWindow : Window
         if (Controls.Button("Fork…", enabled: true))
         {
             this.forkNameBuffer = isDefault ? "My casting" : $"{this.casting.SelectedName} copy";
-            ImGui.OpenPopup("##fork-preset");
+            ImGui.OpenPopup("Fork preset###fork-preset");
         }
 
         ImGui.SameLine();
         if (Controls.Button("New", enabled: true))
         {
             this.scratchNameBuffer = "New casting";
-            ImGui.OpenPopup("##new-preset");
+            ImGui.OpenPopup("New preset from scratch###new-preset");
         }
 
         ImGui.SameLine();
@@ -1471,7 +1471,7 @@ public sealed class ConfigurationWindow : Window
         if (Controls.Button("Import", enabled: true))
         {
             this.presetImportBuffer = string.Empty;
-            ImGui.OpenPopup("##import-preset");
+            ImGui.OpenPopup("Import preset###import-preset");
         }
 
         this.DrawForkPresetPopup(store);
@@ -1600,7 +1600,7 @@ public sealed class ConfigurationWindow : Window
             ImGui.TableSetupColumn("Speed", ImGuiTableColumnFlags.WidthFixed, 90f);
             ImGui.TableSetupColumn("Vol", ImGuiTableColumnFlags.WidthFixed, 80f);
             ImGui.TableSetupColumn("Bias", ImGuiTableColumnFlags.WidthFixed, 90f);
-            ImGui.TableSetupColumn("▶", ImGuiTableColumnFlags.WidthFixed, 36f);
+            ImGui.TableSetupColumn("Test", ImGuiTableColumnFlags.WidthFixed, 36f);
             ImGui.TableHeadersRow();
 
             for (var i = 0; i < slots.Count; i++)
@@ -1609,7 +1609,7 @@ public sealed class ConfigurationWindow : Window
                 ImGui.PushID(i);
                 ImGui.TableNextRow();
                 ImGui.TableNextColumn();
-                if (ImGui.SmallButton("🗑"))
+                if (Controls.IconButton(FontAwesomeIcon.Trash, "remove-slot", "Remove this voice from the set."))
                 {
                     removeAt = i;
                 }
@@ -1629,9 +1629,9 @@ public sealed class ConfigurationWindow : Window
 
                 ImGui.TableNextColumn();
                 var ready = this.Synth.IsReady && this.activeRequests == 0;
-                var test = ready
-                    ? ImGui.SmallButton("▶")
-                    : Controls.Button("▶", false, this.Synth.IsReady ? "Synthesizing…" : this.EngineReason());
+                var test = Controls.IconButton(
+                    FontAwesomeIcon.Play, "test", "Speak a test line with this voice.",
+                    ready, this.Synth.IsReady ? "Synthesizing…" : this.EngineReason());
                 if (test)
                 {
                     this.SpeakVoiceTest(new VoiceProfile(
@@ -1733,7 +1733,7 @@ public sealed class ConfigurationWindow : Window
             ImGui.PushID($"bind-{modelId}");
             ImGui.TextUnformatted($"{modelId}");
             ImGui.SameLine();
-            if (ImGui.SmallButton("🗑"))
+            if (Controls.IconButton(FontAwesomeIcon.Trash, "unbind", "Remove this model-id binding."))
             {
                 this.casting.UnbindModelId(tribe.Key, modelId);
             }
@@ -1787,7 +1787,7 @@ public sealed class ConfigurationWindow : Window
     private void DrawForkPresetPopup(ICastingPresetStore store)
     {
         var open = true;
-        if (!ImGui.BeginPopupModal("Fork preset", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.BeginPopupModal("Fork preset###fork-preset", ref open, ImGuiWindowFlags.AlwaysAutoResize))
         {
             return;
         }
@@ -1831,7 +1831,7 @@ public sealed class ConfigurationWindow : Window
     private void DrawNewPresetPopup(ICastingPresetStore store)
     {
         var open = true;
-        if (!ImGui.BeginPopupModal("New preset from scratch", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.BeginPopupModal("New preset from scratch###new-preset", ref open, ImGuiWindowFlags.AlwaysAutoResize))
         {
             return;
         }
@@ -1875,7 +1875,7 @@ public sealed class ConfigurationWindow : Window
     private void DrawImportPresetPopup(ICastingPresetStore store)
     {
         var open = true;
-        if (!ImGui.BeginPopupModal("Import preset", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.BeginPopupModal("Import preset###import-preset", ref open, ImGuiWindowFlags.AlwaysAutoResize))
         {
             return;
         }
@@ -1998,11 +1998,11 @@ public sealed class ConfigurationWindow : Window
         if (Controls.Button("Import", enabled: true))
         {
             this.assignmentImportBuffer = string.Empty;
-            ImGui.OpenPopup($"Import assignments###import{keyPrefix}");
+            ImGui.OpenPopup($"Import voice assignments###import-assignments{keyPrefix}");
         }
 
         var importOpen = true;
-        if (ImGui.BeginPopupModal("Import voice assignments", ref importOpen, ImGuiWindowFlags.AlwaysAutoResize))
+        if (ImGui.BeginPopupModal($"Import voice assignments###import-assignments{keyPrefix}", ref importOpen, ImGuiWindowFlags.AlwaysAutoResize))
         {
             ImGui.TextWrapped("Paste an assignment share string (copied with Export):");
             ImGui.InputTextMultiline("##import-assignments-text", ref this.assignmentImportBuffer, 64_000, new Vector2(460, 120));
@@ -2116,7 +2116,7 @@ public sealed class ConfigurationWindow : Window
                 ImGui.TableNextRow();
 
                 ImGui.TableNextColumn();
-                if (ImGui.SmallButton("🗑"))
+                if (Controls.IconButton(FontAwesomeIcon.Trash, "remove-speaker", "Forget this speaker's voice assignment."))
                 {
                     removeKey = profile.SpeakerKey;
                 }
@@ -2182,9 +2182,9 @@ public sealed class ConfigurationWindow : Window
 
                 ImGui.TableNextColumn();
                 var ready = this.Synth.IsReady && this.activeRequests == 0;
-                var test = ready
-                    ? ImGui.SmallButton("▶")
-                    : Controls.Button("▶", false, this.Synth.IsReady ? "Synthesizing…" : this.EngineReason());
+                var test = Controls.IconButton(
+                    FontAwesomeIcon.Play, "test", "Speak a test line with this voice.",
+                    ready, this.Synth.IsReady ? "Synthesizing…" : this.EngineReason());
                 if (test)
                 {
                     this.SpeakVoiceTest(profile with
