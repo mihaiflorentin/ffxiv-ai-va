@@ -172,6 +172,25 @@
       "sha256": "2a05f992e00af9b0bd3800a8d23e78d520dbd705284ed2eedb5f4bd29398fa3c"
     },
     {
+      "group": "turbo-base",
+      "name": "Turbo tokenizer",
+      "precision": "n/a",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "tokenizer.json",
+      "local": "turbo-tokenizer.json",
+      "sizeBytes": 3562272
+    },
+    {
+      "group": "turbo-base",
+      "name": "Turbo default reference voice",
+      "precision": "n/a",
+      "repo": "onnx-community/chatterbox-ONNX",
+      "remote": "default_voice.wav",
+      "local": "turbo-default-voice.wav",
+      "sizeBytes": 714320,
+      "sha256": "3ebc531cdaba358a327099c1c4f0448026719957bcf4d8e9868767f227e02f4e"
+    },
+    {
       "group": "turbo",
       "name": "Turbo speech encoder (fp32)",
       "precision": "fp32",
@@ -250,25 +269,6 @@
       "local": "conditional_decoder.onnx_data",
       "sizeBytes": 768593792,
       "sha256": "05f162a519f3e9abaf0b7337ae037f4af8b2b30c4455d39b2c61ed3a9b2b5476"
-    },
-    {
-      "group": "turbo",
-      "name": "Turbo tokenizer",
-      "precision": "n/a",
-      "repo": "ResembleAI/chatterbox-turbo-ONNX",
-      "remote": "tokenizer.json",
-      "local": "turbo-tokenizer.json",
-      "sizeBytes": 3562272
-    },
-    {
-      "group": "turbo",
-      "name": "Turbo default reference voice",
-      "precision": "n/a",
-      "repo": "onnx-community/chatterbox-ONNX",
-      "remote": "default_voice.wav",
-      "local": "turbo-default-voice.wav",
-      "sizeBytes": 714320,
-      "sha256": "3ebc531cdaba358a327099c1c4f0448026719957bcf4d8e9868767f227e02f4e"
     },
     {
       "group": "emotion",

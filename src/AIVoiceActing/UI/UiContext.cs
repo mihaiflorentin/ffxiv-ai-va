@@ -46,26 +46,39 @@ public sealed record UiContext
 
     public required Action InvalidateVoiceMap { get; init; }
 
-    public required Func<IReadOnlyList<VoiceCatalogEntry>> VoiceCatalog { get; init; }
-
     public required IEngineCatalog EngineCatalog { get; init; }
 
     /// <summary>Stock and pack voices (voice browser, pickers, missing-voice rows).</summary>
     public required IVoiceLibrary VoiceLibrary { get; init; }
 
+    /// <summary>Makes and re-makes per-character blended voices (Voices tab, Regenerate); null when unavailable.</summary>
+    public Func<IVoiceGenerator?> Generator { get; init; } = () => null;
+
     public UnboundModelLog? UnboundModels { get; init; }
 
     /// <summary>
-    /// What the setup flow knows about the graphics card. Reports "no GPU info" until the device
-    /// probe and setup advisor land (tickets #12/#13); the plugin root then assigns a real source
-    /// here and the recommendation follows, with no change to Home.
+    /// What the setup flow knows about the graphics card, built from the device probe. Cheap enough to
+    /// call per frame: the first call starts detection in the background and reports "no GPU info"
+    /// (so the recommendation is Fast) until it finishes.
     /// </summary>
     public Func<SetupDeviceInfo> DeviceInfo { get; init; } = () => SetupDeviceInfo.Unknown;
+
+    /// <summary>GPU capability probe: <c>LastReport</c> for the detected-hardware card, <c>Detect()</c> for a re-scan.</summary>
+    public IDeviceProbe? DeviceProbe { get; init; }
+
+    /// <summary>
+    /// The expressive engine (Turbo) when routing is active, else null. Its <c>Status</c> carries the
+    /// GPU / CPU state and fallback reason; the main engine's is on <see cref="Synth"/>.
+    /// </summary>
+    public Func<ISpeechSynthesizer?> ExpressiveSynthesizer { get; init; } = () => null;
 
     // ---- environment delegates ----
     public required Func<string> ModelsDir { get; init; }
 
     public required Func<string> VoicesDir { get; init; }
+
+    /// <summary>Folder where the player drops voice packs (created on demand by the plugin root).</summary>
+    public Func<string> PacksDir { get; init; } = () => string.Empty;
 
     public required Func<(string Name, ushort World)?> LocalPlayer { get; init; }
 
@@ -98,7 +111,19 @@ public sealed record UiContext
 
     public required WorldDirectory Worlds { get; init; }
 
+    /// <summary>Settings > "Run setup again" asks Home's setup card to start over; the card answers on its next frame.</summary>
+    public SetupRerunSignal SetupRerun { get; } = new();
+
     // ---- derived views ----
+
+    private ConfirmDialog? confirm;
+    private CastingDraft? casting;
+
+    /// <summary>The one confirmation dialog of the window (a second instance would replace its modal).</summary>
+    public ConfirmDialog Confirm => this.confirm ??= new ConfirmDialog(this.Modals);
+
+    /// <summary>The casting edits in progress, shared by the Voices page and the preset panel.</summary>
+    public CastingDraft Casting => this.casting ??= new CastingDraft(this.PresetStore, this.InvalidateVoiceMap);
 
     /// <summary>Live synthesizer for the selected engine (rebuilt when engine/EP changes).</summary>
     public ISpeechSynthesizer Synth => this.Synthesizer();
@@ -141,9 +166,36 @@ public sealed record UiContext
     /// <summary>True when a test line may start: the engine is ready and no render is in flight.</summary>
     public bool CanPreview => this.Synth.IsReady && !this.Preview.Busy;
 
+    /// <summary>
+    /// Why no voice can be auditioned yet (shown as visible text next to the preview buttons, with a
+    /// way to Home's setup); null once the engine is ready.
+    /// </summary>
+    public string? VoicesNotReadyReason => this.Synth.IsReady
+        ? null
+        : this.EngineSession.Warming ? "The voices are still loading." : "Set up your voices first to hear previews.";
+
     /// <summary>Disabled reason for preview buttons; null when <see cref="CanPreview"/>.</summary>
     public string? PreviewBlockedReason =>
         this.Preview.Busy ? "Synthesizing…" : this.Synth.IsReady ? null : this.EngineReason();
+
+    /// <summary>
+    /// Auditions <paramref name="voiceId"/> with its tuning through the direct synthesizer path,
+    /// as the one in-flight preview keyed by the voice id (so its row can show its own state).
+    /// </summary>
+    public void PreviewVoice(string voiceId, TuneValues? tune = null, string? line = null)
+    {
+        var knobs = tune ?? TuneValues.Neutral;
+        _ = this.Preview.StartDirect(
+            voiceId,
+            new SpeakerIdentity("preview:" + voiceId, voiceId, null, null, null, null),
+            TestBenchModel.BuildVoiceTestRequest(
+                voiceId,
+                Math.Clamp(this.Config.DefaultExaggeration + knobs.Expressiveness, 0f, 1f),
+                knobs.Pitch,
+                knobs.Speed,
+                knobs.Volume,
+                line));
+    }
 
     /// <summary>
     /// Per-profile test target (the voice tables): the courtesy line on the row's voice with the

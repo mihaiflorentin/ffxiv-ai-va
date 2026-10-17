@@ -47,12 +47,19 @@ dotnet build src/AIVoiceActing/AIVoiceActing.csproj -c Release -p:AllowMissingPr
 dotnet test tests/AIVoiceActing.Tests/AIVoiceActing.Tests.csproj -c Release -p:NetCoreTargetingPackRoot=$HOME/.cache/dotnet-official-packs/packs
 dotnet publish src/AIVoiceActing/AIVoiceActing.csproj -c Release -p:AllowMissingPrunePackageData=true   # produces latest.zip (DalamudPackager)
 
-# Engine smoke harness (no Dalamud needed). --engine kokoro is the default in-game
-# engine (needs --models pointing at a dir with kokoro-v1.0.onnx and --ref <voice name>
-# such as af_heart); omit --engine for the legacy Chatterbox path:
+# Engine smoke harness (no Dalamud needed). --engine kokoro is the default (needs --models
+# pointing at a dir with kokoro-v1.0.onnx and --ref <voice name> such as af_heart).
+# --engine turbo [--device cpu|gpu] [--precision auto|fp32|fp16|q4f16] [--bench] runs Chatterbox
+# Turbo from a models dir with the catalog's local file names; the GPU needs a Vulkan device
+# (it is hidden inside the Claude sandbox):
 dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMissingPrunePackageData=true -- \
   --engine kokoro --text "Life is but a dream." --ref af_heart \
   --models "$HOME/.cache/aiva-kokoro" --out /tmp/aiva-test.wav --rtf
+# Turbo on the GPU (outside the sandbox: it hides /dev/dri). --stream uses the chunked decode and
+# reports time to first audio; --bench repeats it five times (see docs/plans/2026-10-gpu-spike-results.md).
+dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMissingPrunePackageData=true -- \
+  --engine turbo --device gpu --precision q4f16 --stream --bench --models <dir with the turbo files> \
+  --text "..." --out /tmp/aiva-turbo.wav
 ```
 
 Voice packs (`voicepack.json`, schema 1; see `Domain/VoicePackManifest`) are authored and checked with
@@ -72,10 +79,14 @@ dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMis
 Pack data is CC-BY-SA-4.0 derived from `ylacombe/english_dialects`: keep the pack's LICENSE and NOTICE,
 and mark new voices `experimental` until someone has listened to them. Casting sets for pack voices live in
 `Domain/voices.json` (`RaceVoiceMap` drops slots whose pack is missing or disabled).
+# Turbo device plan: --engine turbo --device cpu|gpu [--api vulkan|d3d12] [--power high|low] [--bench]
+# prints the probe (platform, adapters), the plan and the engine status. The GPU runtime is the
+# WebGPU EP pinned to exactly 0.2.1 (0.3.0/0.4.0 abort the process on the Turbo graphs); GPU
+# integration tests run only with AIVA_GPU_TESTS=1 (they need a real GPU, so not in the sandbox).
 
 The tests project and the SmokeSynth tool must NOT reference Dalamud; the plugin project's
 csproj carries the runtime packages (OnnxRuntime, DirectML, NAudio, Tokenizers.DotNet,
-Standart.Hash.xxHash, KokoroSharp). NuGet packages are added in the csproj that owns
+Standart.Hash.xxHash, KokoroSharp, the WebGPU EP pinned to 0.2.1). NuGet packages are added in the csproj that owns
 their runtime use, never transitively "while convenient".
 
 # Dev install (no GitHub releases): unzip latest.zip into
@@ -86,6 +97,7 @@ their runtime use, never transitively "while convenient".
 
 - Port file anatomy (census style): sentinel exceptions → DTO records → interface last; one port per file.
 - Fakes live in `tests/AIVoiceActing.Tests/Mock/`, record their calls, and assert conformance via assignment (`ILogSink _ = new FakeLogSink();` style intent).
+- Turbo downloads are the base group (`turbo-base`: tokenizer, default voice) plus ONE precision set (`turbo` fp32 for the CPU, `turbo-fp16`, or `turbo-q4f16`, the 0.56 GB graphics card install); `Domain/TurboInstall` is the single rule for what counts as installed, and every catalog group has exactly one owning engine in `EngineCatalog`.
 - Plugin manifest fields `Name`, `Author`, `Description`, `Punchline` are mandatory (DalamudPackager hard-fails otherwise).
 - `obj/`, `bin/`, `.dalamud/`, `.omp/`, `.superpowers/`, `ConfigDirectory/`, `models/` are never committed.
 

@@ -1,70 +1,62 @@
 namespace AIVoiceActing.UI.Pages;
 
-using AIVoiceActing.UI.Components;
 using AIVoiceActing.UI.State;
 using Dalamud.Bindings.ImGui;
 
 /// <summary>
-/// Settings: the old Engine tab, Test tab, Keybinds and Experimental sections as collapsing
-/// sections. A nav anchor ("engine", "test", "keybinds", "experimental") opens its section.
-/// The Settings page ticket reshapes this into Quality / Processor / Downloads / Advanced.
+/// Settings, in the order a player needs it: Voice quality, Processor, Downloads, Keybinds, then a
+/// collapsed Advanced. Each part is its own small class. A nav anchor (<see cref="SettingsAnchors"/>)
+/// scrolls to its part, and opens Advanced when the part is inside it.
 /// </summary>
-public sealed class SettingsPage(UiContext ctx) : IPage
+public sealed class SettingsPage : IPage
 {
-    private readonly EnginePanel engine = new(ctx);
-    private readonly TestPanel test = new(ctx);
+    private readonly SettingsInputs inputs;
+    private readonly QualityCard quality;
+    private readonly ProcessorCard processor;
+    private readonly DownloadsCard downloads;
+    private readonly KeybindsCard keybinds;
+    private readonly AdvancedSection advanced;
+    private readonly UiContext ctx;
+
+    public SettingsPage(UiContext ctx)
+    {
+        this.ctx = ctx;
+        this.inputs = new SettingsInputs(ctx);
+        this.quality = new QualityCard(ctx, this.inputs);
+        this.processor = new ProcessorCard(ctx, new ProcessorActions(ctx));
+        this.downloads = new DownloadsCard(ctx, this.inputs);
+        this.keybinds = new KeybindsCard(ctx);
+        this.advanced = new AdvancedSection(ctx, this.inputs);
+    }
 
     public NavTab Tab => NavTab.Settings;
 
     public void Draw()
     {
-        var anchor = ctx.Nav.ConsumeAnchor(NavTab.Settings);
-        var c = ctx.Config;
-        var save = ctx.Save;
+        var anchor = this.ctx.Nav.ConsumeAnchor(NavTab.Settings);
+        this.inputs.Refresh();
 
-        if (Section("Engine", "engine", anchor, ImGuiTreeNodeFlags.DefaultOpen))
+        ScrollTo(anchor, SettingsAnchors.Quality);
+        this.quality.Draw();
+        ScrollTo(anchor, SettingsAnchors.Processor);
+        this.processor.Draw();
+        ScrollTo(anchor, SettingsAnchors.Downloads);
+        this.downloads.Draw();
+        ScrollTo(anchor, SettingsAnchors.Keybinds);
+        this.keybinds.Draw();
+        if (SettingsAnchors.InsideAdvanced(anchor))
         {
-            // The status strip moved here from Home: it is diagnostics, not a first-screen fact.
-            EngineParts.DrawStatusStrip(ctx);
-            ImGui.Separator();
-            this.engine.Draw();
+            ImGui.SetScrollHereY(0f);
         }
 
-        if (Section("Test", "test", anchor, ImGuiTreeNodeFlags.None))
-        {
-            this.test.Draw();
-        }
-
-        if (Section("Keybinds", "keybinds", anchor, ImGuiTreeNodeFlags.None))
-        {
-            Controls.Checkbox("Use keybind to toggle TTS", () => c.UseKeybind, v => { c.UseKeybind = v; save(); },
-                "Hold the keys below to mute or unmute all voice output at once.");
-            if (c.UseKeybind)
-            {
-                ImGui.Indent();
-                Controls.KeyCombo("Modifier", KeyOptions.Modifiers, () => c.ModifierKey, v => { c.ModifierKey = v; save(); }, "First key of the toggle combination.");
-                Controls.KeyCombo("Key", KeyOptions.MajorKeys, () => c.MajorKey, v => { c.MajorKey = v; save(); }, "Second key of the toggle combination.");
-                ImGui.Unindent();
-            }
-        }
-
-        if (Section("Experimental", "experimental", anchor, ImGuiTreeNodeFlags.None))
-        {
-            Controls.Checkbox(
-                "Remove stutter",
-                "Strips repeated leading characters from stammering lines before synthesis.",
-                () => c.RemoveStutter,
-                v => { c.RemoveStutter = v; save(); });
-        }
+        this.advanced.Draw(anchor);
     }
 
-    private static bool Section(string title, string anchorKey, string? anchor, ImGuiTreeNodeFlags flags)
+    private static void ScrollTo(string? anchor, string key)
     {
-        if (anchor == anchorKey)
+        if (anchor == key)
         {
-            ImGui.SetNextItemOpen(true);
+            ImGui.SetScrollHereY(0f);
         }
-
-        return ImGui.CollapsingHeader(title + "##settings-" + anchorKey, flags);
     }
 }

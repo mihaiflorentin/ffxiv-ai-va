@@ -1,7 +1,10 @@
 namespace AIVoiceActing.Domain;
 
-/// <summary>One canonical accent: a stable code, a UI label, and the G2P that suits it by default.</summary>
-public sealed record AccentInfo(string Code, string Label, string DefaultPhonemizer);
+/// <summary>
+/// One canonical accent: a stable code, a UI label, the G2P that suits it by default, and
+/// extra words the voice search should match (for example "japanese accent").
+/// </summary>
+public sealed record AccentInfo(string Code, string Label, string DefaultPhonemizer, IReadOnlyList<string>? SearchAliases = null);
 
 /// <summary>
 /// The canonical accent list voices are filed under. Codes are BCP-47-like and stable (they
@@ -33,6 +36,15 @@ public static class Accents
         new("hi-IN", "Hindi", Phonemizers.Hindi),
         new("ja-JP", "Japanese", Phonemizers.Japanese),
         new("zh-CN", "Mandarin Chinese", Phonemizers.Chinese),
+        new("en-x-ja", "English (Japanese accent)", Phonemizers.EnglishUs, ["japanese accent", "japanese", "accented"]),
+        new("en-x-zh", "English (Chinese accent)", Phonemizers.EnglishUs, ["chinese accent", "chinese", "accented"]),
+        new("en-x-fr", "English (French accent)", Phonemizers.EnglishUs, ["french accent", "french", "accented"]),
+        new("en-x-es", "English (Spanish accent)", Phonemizers.EnglishUs, ["spanish accent", "spanish", "accented"]),
+        new("en-x-it", "English (Italian accent)", Phonemizers.EnglishUs, ["italian accent", "italian", "accented"]),
+        new("en-x-pt", "English (Portuguese accent)", Phonemizers.EnglishUs, ["portuguese accent", "portuguese", "accented"]),
+        new("en-x-hi", "English (Hindi accent)", Phonemizers.EnglishUs, ["hindi accent", "hindi", "accented"]),
+        new("en-x-ru", "English (Russian accent)", Phonemizers.EnglishUs, ["russian accent", "russian", "accented"]),
+        new("en-x-de", "English (German accent)", Phonemizers.EnglishUs, ["german accent", "german", "accented"]),
     ];
 
     private static readonly Dictionary<string, AccentInfo> ByCode =
@@ -44,6 +56,23 @@ public static class Accents
     /// <summary>The accent for a code, or null.</summary>
     public static AccentInfo? Find(string? code) =>
         code is not null && ByCode.TryGetValue(code, out var accent) ? accent : null;
+
+    /// <summary>
+    /// True when a lowercase-insensitive search word hits the accent's code, label or search
+    /// aliases ("russian" finds "English (Russian accent)").
+    /// </summary>
+    public static bool MatchesSearch(string? code, string word)
+    {
+        var accent = Find(code);
+        if (accent is null)
+        {
+            return code?.Contains(word, StringComparison.OrdinalIgnoreCase) == true;
+        }
+
+        return accent.Code.Contains(word, StringComparison.OrdinalIgnoreCase)
+            || accent.Label.Contains(word, StringComparison.OrdinalIgnoreCase)
+            || (accent.SearchAliases?.Any(alias => alias.Contains(word, StringComparison.OrdinalIgnoreCase)) ?? false);
+    }
 
     /// <summary>UI label for a code; unknown codes show as themselves.</summary>
     public static string LabelFor(string? code) => Find(code)?.Label ?? code ?? string.Empty;
@@ -143,5 +172,7 @@ public static class Phonemizers
     /// stock bank name.
     /// </summary>
     public static string InternalName(string voiceId, string phonemizer, string sex) =>
-        $"{PrefixFor(phonemizer)}{(sex == "male" ? 'm' : 'f')}_pk_{voiceId}";
+        VoiceBlend.IsGeneratedId(voiceId)
+            ? voiceId // generated voices already carry the {lang}{sex}_gen_ shape Kokoro needs
+            : $"{PrefixFor(phonemizer)}{(sex == "male" ? 'm' : 'f')}_pk_{voiceId}";
 }

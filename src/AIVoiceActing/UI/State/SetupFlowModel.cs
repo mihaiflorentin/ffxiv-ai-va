@@ -1,5 +1,7 @@
 namespace AIVoiceActing.UI.State;
 
+using AIVoiceActing.Domain;
+
 /// <summary>The inline "Set up recommended" flow. The numeric values are what is persisted as <c>OnboardingStep</c>.</summary>
 public enum SetupStep
 {
@@ -18,18 +20,62 @@ public sealed record EngineDownload(string EngineId, string DisplayName, long To
 
 /// <summary>What the recommendation is computed from.</summary>
 /// <param name="CurrentTier">The tier the saved settings already describe; null for a custom setup.</param>
+/// <param name="PrecisionGroups">
+/// Status of the Turbo download groups (base files, full-size set, q4f16 set); a group listed here replaces what
+/// <paramref name="Engines"/> says about it. Null when the caller does not track them: the q4f16 and base groups
+/// then count as already present and free.
+/// </param>
 public sealed record SetupInputs(
     bool HasUsableGpu,
     long FreeDiskBytes,
     IReadOnlyList<EngineDownload> Engines,
-    QualityTier? CurrentTier = null);
+    QualityTier? CurrentTier = null,
+    IReadOnlyList<GroupStatus>? PrecisionGroups = null)
+{
+    private static readonly IReadOnlyDictionary<string, string> GroupOfEngine = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        [SetupAdvisor.KokoroEngine] = SetupAdvisor.KokoroGroup,
+        [SetupAdvisor.TurboEngine] = SetupAdvisor.TurboGroup,
+    };
+
+    /// <summary>The same facts in the advisor's terms: one group per engine, plus the precision groups.</summary>
+    public SetupAdvisorInput ToAdvisorInput()
+    {
+        var groups = new List<GroupStatus>();
+        foreach (var engine in this.Engines)
+        {
+            if (GroupOfEngine.TryGetValue(engine.EngineId, out var group))
+            {
+                groups.Add(new GroupStatus(group, engine.TotalBytes, engine.MissingBytes));
+            }
+        }
+
+        foreach (var status in this.PrecisionGroups ?? [])
+        {
+            groups.RemoveAll(g => g.Group == status.Group);
+            groups.Add(status);
+        }
+
+        foreach (var untracked in new[] { SetupAdvisor.TurboQ4F16Group, SetupAdvisor.TurboBaseGroup })
+        {
+            if (groups.All(g => g.Group != untracked))
+            {
+                groups.Add(new GroupStatus(untracked, 0, 0));
+            }
+        }
+
+        return new SetupAdvisorInput(this.HasUsableGpu, this.FreeDiskBytes, groups, this.CurrentTier);
+    }
+}
 
 /// <summary>A tier with the downloads it needs. <see cref="Blocked"/> is the plain reason it cannot start; null when it can.</summary>
+/// <param name="Recommendation">The advisor's full answer: engines, precision, download groups and bytes.</param>
 public sealed record SetupPlan(
     QualityTier Tier,
     IReadOnlyList<EngineDownload> ToDownload,
     long BytesToDownload,
-    string? Blocked);
+    string? Blocked,
+    SetupRecommendation? Recommendation = null);
 
 /// <summary>A step that failed. The flow stays on <see cref="Step"/> so Retry resumes from there.</summary>
 public sealed record SetupFailure(SetupStep Step, string Message);
@@ -57,7 +103,7 @@ public sealed record SetupObservation(
 public sealed class SetupFlowModel
 {
     /// <summary>Free space kept back on top of the download itself.</summary>
-    public const long DiskHeadroomBytes = 256L * 1024 * 1024;
+    public const long DiskHeadroomBytes = SetupAdvisor.DiskHeadroomBytes;
 
     /// <summary>The line the sample step speaks.</summary>
     public const string SampleLine = "Welcome to Eorzea. Your voices are ready.";
@@ -125,56 +171,33 @@ public sealed class SetupFlowModel
 
     // ---------------------------------------------------------------- recommendation
 
-    /// <summary>The plan for <paramref name="tier"/>: which engines still need downloading and whether it can start.</summary>
+    /// <summary>The plan for <paramref name="tier"/>: which engines still need downloading and whether it can start. Sizes and the disk check come from <see cref="SetupAdvisor"/>.</summary>
     public static SetupPlan PlanFor(QualityTier tier, SetupInputs inputs)
     {
+        var advice = SetupAdvisor.Plan(tier, inputs.ToAdvisorInput());
         var toDownload = new List<EngineDownload>();
         foreach (var id in QualityTierModel.EnginesFor(tier))
         {
             var engine = inputs.Engines.FirstOrDefault(e => string.Equals(e.EngineId, id, StringComparison.OrdinalIgnoreCase));
-            if (engine is { Installed: false })
+            // The advisor knows which Turbo set this machine should have (q4f16 with a graphics card), so an
+            // engine whose files are all there still needs a download when that set is not.
+            var advisorNeeds = id == SetupAdvisor.TurboEngine
+                && advice.ToDownload.Any(g => TurboInstall.AllGroups.Contains(g.Group));
+            if (engine is { } found && (!found.Installed || advisorNeeds))
             {
-                toDownload.Add(engine);
+                toDownload.Add(found);
             }
         }
 
-        var bytes = toDownload.Sum(e => e.MissingBytes);
-        var blocked = QualityTierModel.UnavailableReason(tier, inputs.HasUsableGpu);
-        if (blocked is null && bytes > 0 && inputs.FreeDiskBytes < bytes + DiskHeadroomBytes)
-        {
-            blocked = $"Needs {Labels.FileSize(bytes + DiskHeadroomBytes)} free on the drive that holds your voices; " +
-                      $"{Labels.FileSize(inputs.FreeDiskBytes)} is free.";
-        }
-
-        return new SetupPlan(tier, toDownload, bytes, blocked);
+        return new SetupPlan(tier, toDownload, advice.BytesToDownload, advice.Blocked, advice);
     }
 
     /// <summary>
-    /// The tier to suggest. A tier the player already runs and has fully downloaded stays; with a
-    /// usable graphics card and room on disk it is Balanced; everything else is Fast.
+    /// The tier to suggest. A tier the player already runs and has fully downloaded stays; with a usable
+    /// graphics card and room on disk it is Balanced; everything else is Fast.
     /// </summary>
-    public static SetupPlan Recommend(SetupInputs inputs)
-    {
-        if (inputs.CurrentTier is { } current)
-        {
-            var keep = PlanFor(current, inputs);
-            if (keep.Blocked is null && keep.BytesToDownload == 0)
-            {
-                return keep;
-            }
-        }
-
-        if (inputs.HasUsableGpu)
-        {
-            var balanced = PlanFor(QualityTier.Balanced, inputs);
-            if (balanced.Blocked is null)
-            {
-                return balanced;
-            }
-        }
-
-        return PlanFor(QualityTier.Fast, inputs);
-    }
+    public static SetupPlan Recommend(SetupInputs inputs) =>
+        PlanFor(SetupAdvisor.Recommend(inputs.ToAdvisorInput()).Tier, inputs);
 
     /// <summary>The tier the primary button will set up: the player's pick, else the recommendation.</summary>
     public QualityTier EffectiveTier(SetupPlan recommended) => this.Chosen ?? recommended.Tier;
@@ -248,6 +271,22 @@ public sealed class SetupFlowModel
     {
         this.AwaitingResume = false;
         this.Failure = null;
+        this.ResetWork();
+        this.Go(SetupStep.Recommend);
+    }
+
+    /// <summary>
+    /// "Run setup again" from Settings: show the choice as on a first run, even though the engine
+    /// already works. Whatever was running is dropped; files already downloaded stay on disk.
+    /// </summary>
+    public void Restart()
+    {
+        this.completed = false;
+        this.AwaitingResume = false;
+        this.Failure = null;
+        this.Notice = null;
+        this.Customizing = false;
+        this.Chosen = null;
         this.ResetWork();
         this.Go(SetupStep.Recommend);
     }

@@ -11,12 +11,17 @@ public static class Labels
     public const string ProcessorLabel = "Processor";
     public const string Expressiveness = "Expressiveness";
     public const string AnyGender = "Any gender";
+    public const string BackgroundLoadLabel = "Background load";
     public const string Duplicate = "Duplicate";
     public const string CreatureModels = "Creature models";
+    public const string Pitch = "Pitch";
+    public const string Speed = "Speed";
+    public const string Volume = "Volume";
 
     private static readonly Dictionary<string, string> Map = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Execution provider"] = ProcessorLabel,
+        ["CPU impact"] = BackgroundLoadLabel,
         ["Exaggeration"] = Expressiveness,
         ["Bias"] = Expressiveness,
         ["Pool (unknown gender)"] = AnyGender,
@@ -54,6 +59,27 @@ public static class Labels
 
         return false;
     }
+
+    /// <summary>Chip and filter wording for a voice's sex value (<c>female</c>, <c>male</c>, <c>neutral</c>).</summary>
+    public static string Sex(string? sex) => sex?.ToLowerInvariant() switch
+    {
+        "female" => "Female",
+        "male" => "Male",
+        "neutral" => "Neutral",
+        { Length: > 0 } other => char.ToUpperInvariant(other[0]) + other[1..],
+        _ => "Unknown",
+    };
+
+    /// <summary>Chip and filter wording for a voice's age band (<c>child</c>, <c>young</c>, <c>adult</c>, <c>senior</c>).</summary>
+    public static string Age(string? ageBand) => ageBand?.ToLowerInvariant() switch
+    {
+        "child" => "Child",
+        "young" => "Young",
+        "adult" => "Adult",
+        "senior" => "Senior",
+        { Length: > 0 } other => char.ToUpperInvariant(other[0]) + other[1..],
+        _ => "Unknown",
+    };
 
     /// <summary>Friendly name for an execution-provider setting value.</summary>
     public static string Processor(string? raw)

@@ -147,7 +147,8 @@ public class Configuration
     /// <summary>Children get a higher, quicker take on their voice; elders a lower, slower one.</summary>
     public bool AgeAwareCasting { get; set; } = true;
 
-    /// <summary>Long lines start playing after their first sentence instead of after the whole line.</summary>
+    /// <summary>Long lines start playing after their first sentence instead of after the whole line; engines that can
+    /// (Turbo with the language model on the GPU) also hand over audio piece by piece within a sentence.</summary>
     public bool StreamSentences { get; set; } = true;
 
     /// <summary>Shows the small now-speaking panel (speaker, voice, mood, Replay/Skip/Stop).</summary>

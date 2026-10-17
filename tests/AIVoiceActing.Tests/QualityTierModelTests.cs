@@ -2,6 +2,7 @@ namespace AIVoiceActing.Tests;
 
 using AIVoiceActing;
 using AIVoiceActing.Infrastructure.Engines;
+using AIVoiceActing.Domain;
 using AIVoiceActing.UI.State;
 using Xunit;
 

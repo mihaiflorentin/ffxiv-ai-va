@@ -4,7 +4,7 @@ using AIVoiceActing.Ports;
 
 /// <summary>
 /// Small in-memory LRU of rendered lines, keyed by everything that shapes the audio
-/// (engine, voice, text, intensity, pitch, pace, tags). Repeated lines (BattleTalk
+/// (engine id and variant, voice, text, intensity, pitch, pace, tags). Repeated lines (BattleTalk
 /// barks, re-read dialogue, the Test tab) play instantly instead of re-synthesizing.
 /// Bounded by total samples (about 40 MB of float audio); thread-safe.
 /// </summary>
@@ -16,6 +16,14 @@ public sealed class SynthesisCache
     private readonly LinkedList<(string Key, SynthesisResult Audio)> order = new();
     private readonly Dictionary<string, LinkedListNode<(string Key, SynthesisResult Audio)>> byKey = new(StringComparer.Ordinal);
     private long samples;
+
+    /// <summary>
+    /// The engine part of a key: the engine id plus the engine's <see cref="ISpeechSynthesizer.RenderVariant"/>
+    /// (model precision and device class, never the adapter), so a precision change or a CPU/GPU switch
+    /// can never serve audio another configuration rendered.
+    /// </summary>
+    public static string EngineKey(string engineId, string variant) =>
+        string.IsNullOrEmpty(variant) ? engineId : $"{engineId}:{variant}";
 
     public static string KeyFor(string engine, SynthesisRequest request) =>
         string.Join(

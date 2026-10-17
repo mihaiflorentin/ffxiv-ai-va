@@ -1,14 +1,7 @@
 namespace AIVoiceActing.UI.State;
 
+using AIVoiceActing.Domain;
 using AIVoiceActing.Ports;
-
-/// <summary>The three voice-quality choices a player makes instead of picking engines.</summary>
-public enum QualityTier
-{
-    Fast,
-    Balanced,
-    MostExpressive,
-}
 
 /// <summary>The engine settings a tier writes, captured so a cancelled setup can put them back.</summary>
 public sealed record EngineChoice(string Primary, bool ExpressiveEnabled, string ExpressiveEngineId);
@@ -48,12 +41,11 @@ public static class QualityTierModel
         _ => [ConfigMigrator.TurboId],
     };
 
-    public static bool IsAvailable(QualityTier tier, bool hasUsableGpu) =>
-        tier != QualityTier.MostExpressive || hasUsableGpu;
+    public static bool IsAvailable(QualityTier tier, bool hasUsableGpu) => SetupAdvisor.IsAvailable(tier, hasUsableGpu);
 
     /// <summary>Why a tier cannot be chosen; null when it can.</summary>
     public static string? UnavailableReason(QualityTier tier, bool hasUsableGpu) =>
-        IsAvailable(tier, hasUsableGpu) ? null : "No supported graphics card was found, so this option is unavailable.";
+        SetupAdvisor.UnavailableReason(tier, hasUsableGpu);
 
     /// <summary>The tier the settings describe, or null for a custom combination.</summary>
     public static QualityTier? FromConfig(EngineSettings engine, IEngineCatalog catalog)

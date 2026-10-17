@@ -38,7 +38,7 @@ public sealed class EngineCatalog : IEngineCatalog
             "chatterbox-turbo", "Chatterbox Turbo", "Expressive delivery with tags such as [laugh]; clones a reference clip.",
             EngineSpeed.Slower, EngineTier.Gpu, SupportsGpu: true, ComputeDevice.Gpu,
             [RealizationKind.ReferenceClip], "MIT", NonCommercial: false, Experimental: false, Retired: false,
-            [ModelCatalog.TurboGroup, ModelCatalog.TurboFp16Group, ModelCatalog.TurboQ4F16Group],
+            [ModelCatalog.TurboBaseGroup, ModelCatalog.TurboGroup, ModelCatalog.TurboFp16Group, ModelCatalog.TurboQ4F16Group],
             new Dictionary<string, long>
             {
                 ["fp32"] = 3300 * Mb,

@@ -118,6 +118,46 @@ public sealed class StreamingAndCacheTests
     }
 
     [Fact]
+    public void Cache_KeyIncludesTheEngineIdPrecisionAndDeviceClass()
+    {
+        var line = new SynthesisRequest("af_heart", "Hello", 0.5f, []);
+        var turboGpu = SynthesisCache.KeyFor(SynthesisCache.EngineKey("chatterbox-turbo", "q4f16/gpu"), line);
+
+        Assert.Equal(turboGpu, SynthesisCache.KeyFor(SynthesisCache.EngineKey("chatterbox-turbo", "q4f16/gpu"), line));
+        Assert.NotEqual(turboGpu, SynthesisCache.KeyFor(SynthesisCache.EngineKey("chatterbox-turbo", "q4f16/cpu"), line)); // device class
+        Assert.NotEqual(turboGpu, SynthesisCache.KeyFor(SynthesisCache.EngineKey("chatterbox-turbo", "fp16/gpu"), line)); // precision
+        Assert.NotEqual(turboGpu, SynthesisCache.KeyFor(SynthesisCache.EngineKey("kokoro", "q4f16/gpu"), line)); // engine id
+        Assert.Equal(SynthesisCache.KeyFor("kokoro", line), SynthesisCache.KeyFor(SynthesisCache.EngineKey("kokoro", string.Empty), line));
+    }
+
+    [Fact]
+    public async Task Handler_ADeviceSwitch_IsACacheMiss_AndTheAudioIsFiledUnderTheKeyThatRenderedIt()
+    {
+        var synth = new FakeSpeechSynthesizer();
+        var queue = new FakeSpeechQueue();
+        var cache = new SynthesisCache();
+        var variant = "q4f16/gpu";
+        var handler = new SpeechRequestHandler(
+            lexicon: new FakeLexicon(),
+            dialogueSessions: new DialogueSessionFactory(),
+            synthesizer: () => synth,
+            queue: queue,
+            profileLookup: _ => new VoiceProfile(Speaker.Key, "am_adam", 0f, DateTimeOffset.UnixEpoch, Custom: false),
+            directorFactory: () => null,
+            streamSentences: () => false,
+            cache: cache,
+            engineKey: () => SynthesisCache.EngineKey("chatterbox-turbo", variant));
+
+        await handler.SpeakAsync(null, Speaker, "For the Alliance!", CancellationToken.None);
+        variant = "q4f16/cpu"; // e.g. the GPU failed and the engine fell back
+        await handler.SpeakAsync(null, Speaker, "For the Alliance!", CancellationToken.None);
+        await handler.SpeakAsync(null, Speaker, "For the Alliance!", CancellationToken.None);
+
+        Assert.Equal(2, synth.Calls.Count); // the CPU render was a miss once, then a hit
+        Assert.Equal(2, cache.Count);
+    }
+
+    [Fact]
     public void Cache_EvictsLeastRecentlyUsed_WhenOverBudget()
     {
         var cache = new SynthesisCache();

@@ -28,4 +28,7 @@ public sealed class FakeSpeechQueue : ISpeechQueue
     public void Clear() => this.ClearCalls++;
 
     public int Depth => this.Enqueued.Count;
+
+    /// <summary>Whether this fake plays streamed items while they fill (tests flip it).</summary>
+    public bool SupportsStreaming { get; set; }
 }

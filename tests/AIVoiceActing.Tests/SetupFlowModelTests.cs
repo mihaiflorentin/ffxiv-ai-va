@@ -1,5 +1,6 @@
 namespace AIVoiceActing.Tests;
 
+using AIVoiceActing.Domain;
 using AIVoiceActing.UI.State;
 using Xunit;
 
@@ -17,13 +18,18 @@ public sealed class SetupFlowModelTests
     private static readonly EngineDownload TurboMissing = new("chatterbox-turbo", "Chatterbox Turbo", 3300 * Mb, 3300 * Mb);
     private static readonly EngineDownload TurboInstalled = new("chatterbox-turbo", "Chatterbox Turbo", 3300 * Mb, 0);
 
+    private static readonly GroupStatus Q4Missing = new("turbo-q4f16", 536 * Mb, 536 * Mb);
+    private static readonly GroupStatus Q4Installed = new("turbo-q4f16", 536 * Mb, 0);
+
+    // A graphics card plans the small q4f16 build (the full-size files are for the CPU), so the helper reports it missing unless told otherwise.
     private static SetupInputs Inputs(
         bool gpu = false,
         long free = 100 * Gb,
         EngineDownload? kokoro = null,
         EngineDownload? turbo = null,
-        QualityTier? current = null) =>
-        new(gpu, free, [kokoro ?? KokoroMissing, turbo ?? TurboMissing], current);
+        QualityTier? current = null,
+        GroupStatus? q4f16 = null) =>
+        new(gpu, free, [kokoro ?? KokoroMissing, turbo ?? TurboMissing], current, [q4f16 ?? Q4Missing]);
 
     private static SetupObservation Obs(
         bool downloading = false,
@@ -63,13 +69,13 @@ public sealed class SetupFlowModelTests
 
         Assert.Equal(QualityTier.Balanced, plan.Tier);
         Assert.Equal(["kokoro", "chatterbox-turbo"], plan.ToDownload.Select(e => e.EngineId));
-        Assert.Equal(3626 * Mb, plan.BytesToDownload);
+        Assert.Equal((326 + 536) * Mb, plan.BytesToDownload); // Kokoro plus the q4f16 build, not the 3.3 GB full-size files
     }
 
     [Fact]
     public void A_gpu_but_too_little_disk_for_turbo_falls_back_to_Fast()
     {
-        var plan = SetupFlowModel.Recommend(Inputs(gpu: true, free: 2 * Gb));
+        var plan = SetupFlowModel.Recommend(Inputs(gpu: true, free: 1 * Gb));
 
         Assert.Equal(QualityTier.Fast, plan.Tier);
         Assert.Null(plan.Blocked);
@@ -82,13 +88,14 @@ public sealed class SetupFlowModelTests
 
         Assert.Equal(QualityTier.Balanced, plan.Tier);
         Assert.Equal("chatterbox-turbo", Assert.Single(plan.ToDownload).EngineId);
-        Assert.Equal(3300 * Mb, plan.BytesToDownload);
+        Assert.Equal(536 * Mb, plan.BytesToDownload);
     }
 
     [Fact]
     public void Already_downloaded_turbo_needs_no_extra_disk_space()
     {
-        var plan = SetupFlowModel.Recommend(Inputs(gpu: true, free: 100 * Mb, kokoro: KokoroInstalled, turbo: TurboInstalled));
+        var plan = SetupFlowModel.Recommend(
+            Inputs(gpu: true, free: 100 * Mb, kokoro: KokoroInstalled, turbo: TurboInstalled, q4f16: Q4Installed));
 
         Assert.Equal(QualityTier.Balanced, plan.Tier);
         Assert.Empty(plan.ToDownload);

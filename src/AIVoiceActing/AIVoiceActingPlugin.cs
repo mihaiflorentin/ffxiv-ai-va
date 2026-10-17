@@ -166,6 +166,13 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             ageAwareCastingFactory: () => config.AgeAwareCasting,
             streamSentencesFactory: () => config.StreamSentences,
             expressiveEngineFactory: () => config.Engine.Expressive.Enabled,
+            expressiveEngineIdFactory: () => config.Engine.Expressive.EngineId,
+            enginePrecisionFactory: engineId => config.Engine.PerEngine.TryGetValue(engineId, out var options)
+                ? options.Precision
+                : "auto",
+            engineDeviceFactory: engineId => config.Engine.PerEngine.TryGetValue(engineId, out var options)
+                ? options.Device
+                : "inherit",
             modelsDirFactory: () => Path.Combine(configDir, "models"),
             voicesManifestFactory: () => ExtractVoicesManifest(configDir),
             // Re-read on first use and whenever the processor sees changed files; the
@@ -206,9 +213,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             kokoroVoicesDirFactory: () => Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
                 "voices"),
-            f5VoicesDirFactory: () => Path.Combine(
+            referenceClipsDirFactory: () => Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
-                "voices-f5"),
+                ReferenceClipBank.FolderName),
             // Voice packs: bundled next to the plugin, user packs in the config folder, then
             // any extra folders from the settings. Order decides who wins an id collision.
             voicePackRootsFactory: () =>
@@ -220,8 +227,35 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             disabledVoicePacksFactory: () => config.Voices.DisabledPacks,
             emotionClassifierEnabledFactory: () => config.DirectorEnabled,
             useRaceVoicePresetsFactory: () => config.UseRaceVoicePresets,
+            uniqueVoicePerCharacterFactory: () => config.Voices.UniquePerCharacter,
+            generatedVoicesDirFactory: () => Path.Combine(configDir, "voices-generated"),
             adHocStyleTagsFactory: () => config.AdHocStyleTagsEnabled,
-            styleTagRegexFactory: () => config.StyleRegex);
+            styleTagRegexFactory: () => config.StyleRegex,
+            devicePreferencesFactory: () => config.Device.ToPreferences(),
+            clearGpuCrashFlag: () =>
+            {
+                config.Device.GpuDisabledByCrashGuard = false;
+                this.SaveConfig();
+            },
+            pluginDirectoryFactory: () => PluginInterface.AssemblyLocation.Directory?.FullName,
+            isWineFactory: DetectWine,
+            gpuMarkerPathFactory: () => Path.Combine(configDir, "gpu-session.pending"));
+        // A marker left by a previous process means it died inside native GPU code: keep the GPU off
+        // until the user retries. Flag first, then clear the marker (see GpuCrashGuard.TripIfLeftover).
+        try
+        {
+            this.services.GpuCrashGuard.TripIfLeftover(detail =>
+            {
+                config.Device.GpuDisabledByCrashGuard = true;
+                this.SaveConfig();
+                PluginLog.Warning("[AIVoiceActing] GPU turned off after a crash: {Detail}", detail);
+            });
+        }
+        catch (Exception ex)
+        {
+            PluginLog.Warning($"[AIVoiceActing] GPU crash-guard startup check failed: {ex.Message}");
+        }
+
         this.npcSheets = new NpcSheetIndexLoader(DataManager, PluginLog);
         _ = this.npcSheets.StartAsync();
         this.hints = new ObjectTableHintProvider(ObjectTable, npcSheets: () => this.npcSheets.Index);
@@ -325,6 +359,12 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             Sessions = () => this.services.DialogueSessions,
             ModelsDir = () => this.services.ModelsDir,
             VoicesDir = () => Path.Combine(this.services.ModelsDir, "voices"),
+            PacksDir = () =>
+            {
+                var packs = Path.Combine(configDir, "voicepacks");
+                Directory.CreateDirectory(packs);
+                return packs;
+            },
             LocalPlayer = () => ObjectTable.LocalPlayer is { } player
                 ? (player.Name.TextValue, (ushort)player.HomeWorld.RowId)
                 : null,
@@ -334,12 +374,14 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             LogError = logError,
             PresetStore = () => this.services.CastingPresetStore,
             InvalidateVoiceMap = () => this.services.InvalidateVoiceMap(),
-            VoiceCatalog = () => VoiceCatalog.FromDirectory(Path.Combine(
-                PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
-                "voices")),
             UnboundModels = this.services.UnboundModels,
+            DeviceProbe = this.services.DeviceProbe,
+            DeviceInfo = () => SetupDeviceInfo.From(
+                this.services.DeviceReportOrStartProbe(), config.Device.GpuDisabledByCrashGuard),
+            ExpressiveSynthesizer = () => this.services.ExpressiveSynthesizer,
             EngineCatalog = this.services.EngineCatalog,
             VoiceLibrary = this.services.VoiceLibrary,
+            Generator = () => this.services.GeneratedVoices,
             Status = status,
             Modals = new ModalHost(),
             Toasts = this.Toasts,
@@ -432,18 +474,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     }
 
     /// <summary>Wine exports <c>wine_get_version</c> from ntdll; real Windows does not.</summary>
-    private static bool DetectWine()
-    {
-        try
-        {
-            return NativeLibrary.TryLoad("ntdll.dll", out var ntdll)
-                && NativeLibrary.TryGetExport(ntdll, "wine_get_version", out _);
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    private static bool DetectWine() => RuntimeHost.DetectWine();
 
     /// <summary>
     /// Upgrades a v1 config in place (writing the one-time .v1.bak first). Must never throw:

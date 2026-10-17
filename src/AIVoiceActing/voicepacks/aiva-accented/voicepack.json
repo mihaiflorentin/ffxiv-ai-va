@@ -1,0 +1,286 @@
+{
+  "schema": 1,
+  "id": "aiva-accented",
+  "version": "1.0.0",
+  "name": "Accented English",
+  "license": {
+    "spdx": "Apache-2.0",
+    "attribution": "Style tensors from hexgrad/Kokoro-82M (Apache-2.0), re-registered with an English phonemizer.",
+    "url": "https://huggingface.co/hexgrad/Kokoro-82M"
+  },
+  "voices": [
+    {
+      "id": "accented.es_f_dora",
+      "name": "Spanish-accented woman, Dora",
+      "accent": "en-x-es",
+      "sex": "female",
+      "age": "adult",
+      "tags": [
+        "accented",
+        "spanish"
+      ],
+      "description": "English with a Spanish accent: Kokoro's stock Spanish voice \"ef_dora\" speaking English through the American phonemizer.",
+      "quality": "experimental",
+      "previewFile": "preview/es_f_dora.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/es_f_dora.npy",
+          "phonemizer": "en-us"
+        }
+      ]
+    },
+    {
+      "id": "accented.es_m_alex",
+      "name": "Spanish-accented man, Alex",
+      "accent": "en-x-es",
+      "sex": "male",
+      "age": "adult",
+      "tags": [
+        "accented",
+        "spanish"
+      ],
+      "description": "English with a Spanish accent: Kokoro's stock Spanish voice \"em_alex\" speaking English through the British phonemizer.",
+      "quality": "experimental",
+      "previewFile": "preview/es_m_alex.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/es_m_alex.npy",
+          "phonemizer": "en-gb"
+        }
+      ]
+    },
+    {
+      "id": "accented.fr_f_siwis",
+      "name": "French-accented woman, Siwis",
+      "accent": "en-x-fr",
+      "sex": "female",
+      "age": "adult",
+      "tags": [
+        "accented",
+        "french"
+      ],
+      "description": "English with a French accent: Kokoro's stock French voice \"ff_siwis\" speaking English through the American phonemizer.",
+      "quality": "experimental",
+      "previewFile": "preview/fr_f_siwis.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/fr_f_siwis.npy",
+          "phonemizer": "en-us"
+        }
+      ]
+    },
+    {
+      "id": "accented.hi_f_alpha",
+      "name": "Hindi-accented woman, Alpha",
+      "accent": "en-x-hi",
+      "sex": "female",
+      "age": "adult",
+      "tags": [
+        "accented",
+        "hindi"
+      ],
+      "description": "English with a Hindi accent: Kokoro's stock Hindi voice \"hf_alpha\" speaking English through the American phonemizer.",
+      "quality": "experimental",
+      "previewFile": "preview/hi_f_alpha.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/hi_f_alpha.npy",
+          "phonemizer": "en-us"
+        }
+      ]
+    },
+    {
+      "id": "accented.hi_m_omega",
+      "name": "Hindi-accented man, Omega",
+      "accent": "en-x-hi",
+      "sex": "male",
+      "age": "adult",
+      "tags": [
+        "accented",
+        "hindi"
+      ],
+      "description": "English with a Hindi accent: Kokoro's stock Hindi voice \"hm_omega\" speaking English through the British phonemizer.",
+      "quality": "experimental",
+      "previewFile": "preview/hi_m_omega.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/hi_m_omega.npy",
+          "phonemizer": "en-gb"
+        }
+      ]
+    },
+    {
+      "id": "accented.it_f_sara",
+      "name": "Italian-accented woman, Sara",
+      "accent": "en-x-it",
+      "sex": "female",
+      "age": "adult",
+      "tags": [
+        "accented",
+        "italian"
+      ],
+      "description": "English with an Italian accent: Kokoro's stock Italian voice \"if_sara\" speaking English through the American phonemizer.",
+      "quality": "experimental",
+      "previewFile": "preview/it_f_sara.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/it_f_sara.npy",
+          "phonemizer": "en-us"
+        }
+      ]
+    },
+    {
+      "id": "accented.it_m_nicola",
+      "name": "Italian-accented man, Nicola",
+      "accent": "en-x-it",
+      "sex": "male",
+      "age": "adult",
+      "tags": [
+        "accented",
+        "italian"
+      ],
+      "description": "English with an Italian accent: Kokoro's stock Italian voice \"im_nicola\" speaking English through the American phonemizer.",
+      "quality": "experimental",
+      "previewFile": "preview/it_m_nicola.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/it_m_nicola.npy",
+          "phonemizer": "en-us"
+        }
+      ]
+    },
+    {
+      "id": "accented.ja_f_gongitsune",
+      "name": "Japanese-accented woman, Gongitsune",
+      "accent": "en-x-ja",
+      "sex": "female",
+      "age": "adult",
+      "tags": [
+        "accented",
+        "japanese"
+      ],
+      "description": "English with a Japanese accent: Kokoro's stock Japanese voice \"jf_gongitsune\" speaking English through the American phonemizer.",
+      "quality": "experimental",
+      "previewFile": "preview/ja_f_gongitsune.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/ja_f_gongitsune.npy",
+          "phonemizer": "en-us"
+        }
+      ]
+    },
+    {
+      "id": "accented.ja_m_kumo",
+      "name": "Japanese-accented man, Kumo",
+      "accent": "en-x-ja",
+      "sex": "male",
+      "age": "adult",
+      "tags": [
+        "accented",
+        "japanese"
+      ],
+      "description": "English with a Japanese accent: Kokoro's stock Japanese voice \"jm_kumo\" speaking English through the American phonemizer.",
+      "quality": "experimental",
+      "previewFile": "preview/ja_m_kumo.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/ja_m_kumo.npy",
+          "phonemizer": "en-us"
+        }
+      ]
+    },
+    {
+      "id": "accented.pt_f_dora",
+      "name": "Portuguese-accented woman, Dora",
+      "accent": "en-x-pt",
+      "sex": "female",
+      "age": "adult",
+      "tags": [
+        "accented",
+        "portuguese"
+      ],
+      "description": "English with a Portuguese accent: Kokoro's stock Portuguese voice \"pf_dora\" speaking English through the American phonemizer.",
+      "quality": "experimental",
+      "previewFile": "preview/pt_f_dora.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/pt_f_dora.npy",
+          "phonemizer": "en-us"
+        }
+      ]
+    },
+    {
+      "id": "accented.pt_m_alex",
+      "name": "Portuguese-accented man, Alex",
+      "accent": "en-x-pt",
+      "sex": "male",
+      "age": "adult",
+      "tags": [
+        "accented",
+        "portuguese"
+      ],
+      "description": "English with a Portuguese accent: Kokoro's stock Portuguese voice \"pm_alex\" speaking English through the American phonemizer.",
+      "quality": "experimental",
+      "previewFile": "preview/pt_m_alex.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/pt_m_alex.npy",
+          "phonemizer": "en-us"
+        }
+      ]
+    },
+    {
+      "id": "accented.zh_f_xiaoni",
+      "name": "Chinese-accented woman, Xiaoni",
+      "accent": "en-x-zh",
+      "sex": "female",
+      "age": "adult",
+      "tags": [
+        "accented",
+        "chinese"
+      ],
+      "description": "English with a Chinese accent: Kokoro's stock Chinese voice \"zf_xiaoni\" speaking English through the American phonemizer.",
+      "quality": "experimental",
+      "previewFile": "preview/zh_f_xiaoni.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/zh_f_xiaoni.npy",
+          "phonemizer": "en-us"
+        }
+      ]
+    },
+    {
+      "id": "accented.zh_m_yunjian",
+      "name": "Chinese-accented man, Yunjian",
+      "accent": "en-x-zh",
+      "sex": "male",
+      "age": "adult",
+      "tags": [
+        "accented",
+        "chinese"
+      ],
+      "description": "English with a Chinese accent: Kokoro's stock Chinese voice \"zm_yunjian\" speaking English through the British phonemizer.",
+      "quality": "experimental",
+      "previewFile": "preview/zh_m_yunjian.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/zh_m_yunjian.npy",
+          "phonemizer": "en-gb"
+        }
+      ]
+    }
+  ]
+}
