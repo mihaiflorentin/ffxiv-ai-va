@@ -92,6 +92,17 @@ public static class ModelCatalog
             or TurboLanguageModelDataFileName
             or TurboConditionalDecoderDataFileName;
     public const string TurboTokenizerJsonFileName = "turbo-tokenizer.json";
+
+    /// <summary>
+    /// Optional emotion classifier (SamLowe/roberta-base-go_emotions-onnx, MIT): 28-label
+    /// GoEmotions text classifier driving delivery. fp32 on purpose (the int8 export uses
+    /// the kernel class that crashed in-game). Size and sha256 from the HF API tree,
+    /// 2026-10-17.
+    /// </summary>
+    public const string EmotionGroup = "emotion";
+    public const string EmotionRepoBaseUrl = "https://huggingface.co/SamLowe/roberta-base-go_emotions-onnx/resolve/main/";
+    public const string EmotionModelFileName = "emotion-classifier.onnx";
+    public const string EmotionTokenizerFileName = "emotion-tokenizer.json";
     public const string TurboDefaultVoiceFileName = "turbo-default-voice.wav";
 
     /// <summary>One pinned catalog entry: the port asset plus integrity metadata.</summary>
@@ -211,6 +222,14 @@ public static class ModelCatalog
             new ModelAsset("Turbo default reference voice", TurboDefaultVoiceFileName, 714320),
             "3ebc531cdaba358a327099c1c4f0448026719957bcf4d8e9868767f227e02f4e",
             TurboGroup),
+        new(
+            new ModelAsset("Emotion classifier (fp32)", EmotionModelFileName, 498841248, Optional: true),
+            "3bf605adfa0e59ae36723f1136d37865acb0ec4ded7831f7f7f5231eb032d60a",
+            EmotionGroup),
+        new(
+            new ModelAsset("Emotion classifier tokenizer", EmotionTokenizerFileName, 2108884, Optional: true),
+            Sha256: null,
+            EmotionGroup),
     ];
 
     /// <summary>Required Chatterbox assets (the whole engine; optionals would be excluded).</summary>
@@ -241,6 +260,8 @@ public static class ModelCatalog
         TurboTokenizerJsonFileName => TurboRepoBaseUrl + "tokenizer.json",
         TurboDefaultVoiceFileName => RepoBaseUrl + "default_voice.wav", // same clip as legacy chatterbox ships
         KokoroModelFileName => KokoroRepoBaseUrl + KokoroRemoteFileName,
+        EmotionModelFileName => EmotionRepoBaseUrl + "onnx/model.onnx",
+        EmotionTokenizerFileName => EmotionRepoBaseUrl + "onnx/tokenizer.json",
         _ => RepoBaseUrl + asset.FileName,
     };
 

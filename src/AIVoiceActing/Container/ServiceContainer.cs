@@ -28,6 +28,7 @@ public sealed class ServiceContainer : IDisposable
     private readonly TimeSpan? profileSaveDelay;
     private readonly Func<bool>? keepTempoWhenPitchedFactory;
     private readonly Func<bool>? ageAwareCastingFactory;
+    private readonly Func<bool>? emotionClassifierEnabledFactory;
     private readonly Func<string>? castingPresetsPathFactory;
     private readonly Func<string>? modelsDirFactory;
     private readonly Func<string>? voicesManifestFactory;
@@ -141,8 +142,10 @@ public sealed class ServiceContainer : IDisposable
         Func<string>? styleTagRegexFactory = null,
         TimeSpan? profileSaveDelay = null,
         Func<bool>? keepTempoWhenPitchedFactory = null,
-        Func<bool>? ageAwareCastingFactory = null)
+        Func<bool>? ageAwareCastingFactory = null,
+        Func<bool>? emotionClassifierEnabledFactory = null)
     {
+        this.emotionClassifierEnabledFactory = emotionClassifierEnabledFactory;
         this.ageAwareCastingFactory = ageAwareCastingFactory;
         this.keepTempoWhenPitchedFactory = keepTempoWhenPitchedFactory;
         this.profileSaveDelay = profileSaveDelay;
@@ -357,8 +360,22 @@ public sealed class ServiceContainer : IDisposable
         {
             lock (this.gate)
             {
-                return this.emotionDirector ??= this.llmDirectorFactory?.Invoke()
-                    ?? RulesEmotionDirector.Instance;
+                if (this.llmDirectorFactory?.Invoke() is { } injected)
+                {
+                    return injected;
+                }
+
+                // Re-evaluated per line: the classifier takes over as soon as it is enabled
+                // and downloaded, and steps back the moment either changes.
+                if (this.emotionClassifierEnabledFactory?.Invoke() == true
+                    && this.modelsDirFactory is not null
+                    && Infrastructure.Onnx.EmotionClassifierDirector.IsInstalled(this.ModelsDir))
+                {
+                    return this.emotionDirector ??= this.RegisterDisposable(
+                        new Infrastructure.Onnx.EmotionClassifierDirector(() => this.ModelsDir, this.LogSinkUnlocked()));
+                }
+
+                return RulesEmotionDirector.Instance;
             }
         }
     }
@@ -711,6 +728,11 @@ public sealed class ServiceContainer : IDisposable
             }
         }
 
+        if (beastTribe is null && speaker.ModelCharaId is > 0 and var unboundModel)
+        {
+            this.UnboundModels.Record(unboundModel, speaker.DisplayName, DateTimeOffset.UtcNow);
+        }
+
         var slots = beastSlots
             ?? (racePresets ? map.SlotsFor(group, speaker.Race) : map.SlotsFor(VoiceGroup.Ungendered, null));
 
@@ -744,6 +766,9 @@ public sealed class ServiceContainer : IDisposable
             ? profile
             : AgeCasting.Apply(profile, speaker.BodyType);
     }
+
+    /// <summary>Non-human models heard this session that no tribe binding claims (casting UI inbox).</summary>
+    public UnboundModelLog UnboundModels { get; } = new();
 
     private IReadOnlyDictionary<int, string>? presetBeastBindings;
     private IReadOnlyDictionary<int, string>? defaultBeastBindings;

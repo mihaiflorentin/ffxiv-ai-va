@@ -168,6 +168,15 @@ public sealed class SpeechRequestHandler
         // skipped past meanwhile must not reach the speakers.
         cancellationToken.ThrowIfCancellationRequested();
 
+        // The plan's breath before the line (a sad beat) is rendered as leading silence.
+        if (plan.PauseBeforeMs > 0 && audio.SampleRate > 0)
+        {
+            var lead = (int)(audio.SampleRate * (plan.PauseBeforeMs / 1000.0));
+            var padded = new float[lead + audio.Samples.Length];
+            audio.Samples.CopyTo(padded, lead);
+            audio = audio with { Samples = padded };
+        }
+
         this.log?.Info(
             $"Queued line for \"{speaker.Key}\": {audio.Samples.Length} samples @ {audio.SampleRate} Hz " +
             $"(voice \"{request.ReferenceVoiceId}\").");

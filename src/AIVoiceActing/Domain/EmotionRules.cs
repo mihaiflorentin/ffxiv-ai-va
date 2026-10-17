@@ -7,7 +7,8 @@ using System.Text.RegularExpressions;
 /// <see cref="EmotionPlan"/>. FIXED priority — the first matching rule wins, strongest
 /// explicit signal first (documented order, do not reorder casually):
 /// <list type="number">
-/// <item><b>Angry</b> — any ALL-CAPS word of 2+ letters: shouting overrides every punctuation signal → 0.8</item>
+/// <item><b>Angry</b> — shouting: an ALL-CAPS word of 3+ letters, two or more ALL-CAPS words, or a
+/// capitalised "NO"; game acronyms (GC, FC, MSQ, HP…) and Roman numerals never count → 0.8</item>
 /// <item><b>Sad</b> — ellipsis ("..."/"…") or the keyword "sigh": trailing hesitation colors the whole line → 0.3 + 250 ms pause; a literal sigh also emits the [sigh] tag</item>
 /// <item><b>Amused</b> — laugh token (hahah…/hahaha…, hehe/hehehe, lol): a paralinguistic event beats punctuation → 0.6 + [laughs]</item>
 /// <item><b>Excited</b> — "!" → 0.75</item>
@@ -18,6 +19,15 @@ using System.Text.RegularExpressions;
 public static class EmotionRules
 {
     private static readonly Regex CapsWord = new(@"\b[A-Z]{2,}\b", RegexOptions.Compiled);
+    private static readonly Regex RomanNumeral = new(@"^[IVXLCDM]+$", RegexOptions.Compiled);
+
+    /// <summary>Capitalised tokens that are names of things, not shouting.</summary>
+    private static readonly HashSet<string> NotShouting = new(StringComparer.Ordinal)
+    {
+        "OK", "GC", "FC", "LS", "CWLS", "PC", "NPC", "MSQ", "HP", "MP", "TP", "GP", "CP", "EXP",
+        "XP", "DPS", "PVP", "PVE", "GIL", "MGP", "AOE", "AFK", "BRB", "GG", "TY", "DC", "ID",
+        "UI", "PS", "LB", "DF", "PF", "FATE", "ARR", "HW", "SB", "SHB", "EW", "DT", "GM",
+    };
     private static readonly Regex LaughToken = new(@"\b(?:(?:ha){2,}h?|he(?:he)+|lol)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex SighKeyword = new(@"\bsigh", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -30,7 +40,7 @@ public static class EmotionRules
         }
 
         // 1. Angry — ALL-CAPS shouting beats everything else.
-        if (CapsWord.IsMatch(text))
+        if (IsShouting(text))
         {
             return Simple("angry", 0.8f);
         }
@@ -62,6 +72,15 @@ public static class EmotionRules
 
         // 6. Neutral.
         return EmotionPlan.Neutral;
+    }
+
+    private static bool IsShouting(string text)
+    {
+        var shouted = CapsWord.Matches(text)
+            .Select(m => m.Value)
+            .Where(word => !NotShouting.Contains(word) && !RomanNumeral.IsMatch(word))
+            .ToList();
+        return shouted.Count >= 2 || shouted.Any(word => word.Length >= 3 || word == "NO");
     }
 
     private static bool ContainsEllipsis(string text) =>

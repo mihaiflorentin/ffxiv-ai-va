@@ -200,7 +200,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             f5VoicesDirFactory: () => Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
                 "voices-f5"),
-            llmDirectorFactory: () => config.DirectorEnabled ? this.TryGetLlmDirector() : null,
+            emotionClassifierEnabledFactory: () => config.DirectorEnabled,
             useRaceVoicePresetsFactory: () => config.UseRaceVoicePresets,
             adHocStyleTagsFactory: () => config.AdHocStyleTagsEnabled,
             styleTagRegexFactory: () => config.StyleRegex);
@@ -308,7 +308,8 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             invalidateVoiceMap: () => this.services.InvalidateVoiceMap(),
             voiceCatalog: () => VoiceCatalog.FromDirectory(Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
-                "voices")));
+                "voices")),
+            unboundModels: this.services.UnboundModels);
         this.stylesWindow = new StylesWindow(config, this.SaveConfig);
         this.windowSystem.AddWindow(this.configWindow);
         this.windowSystem.AddWindow(this.stylesWindow);
@@ -412,22 +413,6 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             this.services.Pipeline.InterruptDialogue();
         }
     }
-
-    private IEmotionDirector? TryGetLlmDirector()
-    {
-        // The LLM director asset (Qwen3-0.6B ONNX) has no verified export yet; the rules
-        // table always covers delivery until it lands. Log once so the option is auditable.
-        if (!this.llmDirectorUnavailableLogged)
-        {
-            this.llmDirectorUnavailableLogged = true;
-            this.services.LogSink.Info(
-                "DirectorEnabled is on but no LLM director asset is available; using the rules director.");
-        }
-
-        return null;
-    }
-
-    private bool llmDirectorUnavailableLogged;
 
     private bool prewarmChecked;
 

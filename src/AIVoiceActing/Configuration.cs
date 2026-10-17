@@ -94,7 +94,8 @@ public class Configuration
     /// <summary>Baseline delivery intensity (0..1) used when the emotion plan is neutral.</summary>
     public float DefaultExaggeration { get; set; } = 0.5f;
 
-    /// <summary>Gates the (future) LLM-backed emotion director; the rules table runs otherwise.</summary>
+    /// <summary>Plans delivery with the optional GoEmotions classifier once its files are
+    /// downloaded; the rules table runs otherwise (and whenever the classifier fails).</summary>
     public bool DirectorEnabled { get; set; }
 
     /// <summary>

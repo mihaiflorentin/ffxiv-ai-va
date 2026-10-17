@@ -128,6 +128,7 @@ public sealed class ConfigurationWindow : Window
 
     private volatile bool warmingEngine;
     private string? warmingEngineKey;
+    private readonly UnboundModelLog? unboundModels;
 
     public ConfigurationWindow(
         Configuration config,
@@ -151,9 +152,11 @@ public sealed class ConfigurationWindow : Window
         Action<string, Exception?> logError,
         Func<ICastingPresetStore> presetStore,
         Action invalidateVoiceMap,
-        Func<IReadOnlyList<VoiceCatalogEntry>> voiceCatalog)
+        Func<IReadOnlyList<VoiceCatalogEntry>> voiceCatalog,
+        UnboundModelLog? unboundModels = null)
         : base("AI Voice Acting Settings###AIVAConfig")
     {
+        this.unboundModels = unboundModels;
         this.config = config;
         this.save = save;
         this.speech = speech;
@@ -383,6 +386,8 @@ public sealed class ConfigurationWindow : Window
         {
             this.DrawEngineCard(key, title, blurb, assets, anyDownload);
         }
+
+        this.DrawEmotionCard(assets, anyDownload);
     }
 
     private void DrawEngineCard(string key, string title, string blurb, IReadOnlyList<(ModelAsset Asset, string Group)> assets, bool anyDownload)
@@ -448,7 +453,13 @@ public sealed class ConfigurationWindow : Window
             this.DrawActiveEngineKnobs();
         }
 
-        // Per-engine asset table: Download fetches EXACTLY that asset.
+        this.DrawAssetTable(key, sectionAssets, active, anyDownload);
+        ImGui.Spacing();
+    }
+
+    /// <summary>Per-card asset table: Download fetches EXACTLY that asset.</summary>
+    private void DrawAssetTable(string key, IReadOnlyList<(ModelAsset Asset, string Group)> sectionAssets, bool active, bool anyDownload)
+    {
         ImGui.Spacing();
         if (ImGui.BeginTable($"##engine-assets-{key}", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
         {
@@ -491,6 +502,52 @@ public sealed class ConfigurationWindow : Window
             ImGui.EndTable();
         }
 
+    }
+
+    /// <summary>
+    /// The optional emotion classifier: reads each line's meaning to pick its delivery
+    /// (and the expressive tags), on top of the punctuation rules.
+    /// </summary>
+    private const string EmotionAssetGroup = "emotion"; // ModelCatalog.EmotionGroup (UI stays port-only)
+
+    private void DrawEmotionCard(IReadOnlyList<(ModelAsset Asset, string Group)> assets, bool anyDownload)
+    {
+        var sectionAssets = assets.Where(a => a.Group == EmotionAssetGroup).ToList();
+        if (sectionAssets.Count == 0)
+        {
+            return;
+        }
+
+        var installed = sectionAssets.All(a => this.IsDownloadedCached(a.Asset));
+        var header = "Emotion detection" + (installed && this.config.DirectorEnabled ? " — ON" : string.Empty) + "##emotion-card";
+        if (!ImGui.CollapsingHeader(header))
+        {
+            return;
+        }
+
+        ImGui.TextWrapped(
+            "Optional text classifier (GoEmotions, ~480 MB) that reads what each line means: grief, fear, " +
+            "anger, joy and more. It shapes pace, pauses, loudness and the expressive tags. Runs on the " +
+            "speech thread in a few tens of milliseconds per line. Without it, mood comes from punctuation.");
+        Controls.Checkbox(
+            "Use the emotion classifier when downloaded",
+            () => this.config.DirectorEnabled,
+            v => { this.config.DirectorEnabled = v; this.save(); });
+        ImGui.TextDisabled(installed ? "State: downloaded" : "State: not downloaded");
+        var missing = sectionAssets.Where(a => !this.IsDownloadedCached(a.Asset)).Select(a => a.Asset).ToList();
+        if (missing.Count > 0)
+        {
+            ImGui.SameLine();
+            if (Controls.Button(
+                    ModelsTabModel.DownloadAllLabel(missing.Count) + "##dl-emotion",
+                    ModelsTabModel.CanDownloadAll(anyDownload, missing.Count),
+                    anyDownload ? "A download is already in progress." : null))
+            {
+                this.StartDownloads(missing);
+            }
+        }
+
+        this.DrawAssetTable("emotion", sectionAssets, active: true, anyDownload);
         ImGui.Spacing();
     }
 
@@ -1332,7 +1389,8 @@ public sealed class ConfigurationWindow : Window
         Controls.Section("Beast tribes");
         ImGui.TextWrapped(
             "Tribe voices serve every member; male/female lists override the pool once filled. "
-            + "Bind model ids harvested from the plugin log's \"Conversation:\" lines so tribe members find their row.");
+            + "Models you hear that no tribe claims collect just below; assign them in one click.");
+        this.DrawUnboundModels();
         foreach (var tribe in this.casting.EditBuffer.BeastTribes)
         {
             if (!ImGui.CollapsingHeader($"{tribe.Name}###tribe-{tribe.Key}"))
@@ -1474,6 +1532,71 @@ public sealed class ConfigurationWindow : Window
         }
 
         ImGui.PopID();
+    }
+
+    /// <summary>
+    /// Inbox of non-human models heard this session with no tribe binding: each row names
+    /// the last speaker so the model is recognisable, and Assign binds it to the chosen
+    /// tribe in the edit buffer (Save persists it, as with typed bindings).
+    /// </summary>
+    private void DrawUnboundModels()
+    {
+        var heard = this.unboundModels?.Entries ?? [];
+        if (heard.Count == 0)
+        {
+            ImGui.TextDisabled("No unassigned creature models heard yet this session.");
+            return;
+        }
+
+        ImGui.TextUnformatted($"Heard this session, not assigned to a tribe ({heard.Count}):");
+        var tribes = this.casting.EditBuffer.BeastTribes;
+        if (!ImGui.BeginTable("##unbound-models", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
+        {
+            return;
+        }
+
+        ImGui.TableSetupColumn("Model", ImGuiTableColumnFlags.WidthFixed, 60f);
+        ImGui.TableSetupColumn("Last speaker", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("Lines", ImGuiTableColumnFlags.WidthFixed, 45f);
+        ImGui.TableSetupColumn("##assign", ImGuiTableColumnFlags.WidthFixed, 230f);
+        ImGui.TableHeadersRow();
+        foreach (var model in heard)
+        {
+            ImGui.PushID($"unbound-{model.ModelId}");
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(model.ModelId.ToString(CultureInfo.InvariantCulture));
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(model.LastSpeaker);
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(model.Lines.ToString(CultureInfo.InvariantCulture));
+            ImGui.TableNextColumn();
+            ImGui.SetNextItemWidth(150f);
+            if (ImGui.BeginCombo("##tribe", "Assign to…"))
+            {
+                foreach (var tribe in tribes)
+                {
+                    if (ImGui.Selectable(tribe.Name))
+                    {
+                        this.casting.BindModelId(tribe.Key, model.ModelId);
+                        this.unboundModels!.Dismiss(model.ModelId);
+                        this.ReportStatus($"Model {model.ModelId} assigned to {tribe.Name}; Save the preset to keep it.", isError: false);
+                    }
+                }
+
+                ImGui.EndCombo();
+            }
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Ignore"))
+            {
+                this.unboundModels!.Dismiss(model.ModelId);
+            }
+
+            ImGui.PopID();
+        }
+
+        ImGui.EndTable();
     }
 
     /// <summary>Model-id binding row for one tribe: bound ids as trash chips plus the
