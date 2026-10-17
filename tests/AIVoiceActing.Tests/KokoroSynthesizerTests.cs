@@ -104,9 +104,11 @@ public sealed class KokoroSynthesizerTests
         using var synth = new KokoroSynthesizer(
             () => NewDir(), () => 4, log, voiceLibrary: new FileVoiceLibrary(() => [root]));
 
-        Assert.Equal("af_heart", synth.ResolveVoice("isles.ie_m_01").Name);
-        Assert.Equal("af_heart", synth.ResolveVoice("pack.that.was.removed").Name);
-        Assert.Equal(2, log.Snapshot().Count(e => e.Level == "Warn" && e.Message.Contains("falling back to af_heart")));
+        // A male pack voice falls back to the British man; anything unknown to the British woman.
+        Assert.Equal("bm_george", synth.ResolveVoice("isles.ie_m_01").Name);
+        Assert.Equal("bf_emma", synth.ResolveVoice("pack.that.was.removed").Name);
+        Assert.Equal(1, log.Snapshot().Count(e => e.Level == "Warn" && e.Message.Contains("falling back to bm_george")));
+        Assert.Equal(1, log.Snapshot().Count(e => e.Level == "Warn" && e.Message.Contains("falling back to bf_emma")));
     }
 
     [Fact]
@@ -124,9 +126,12 @@ public sealed class KokoroSynthesizerTests
     {
         lock (KokoroVoiceManager.Voices)
         {
-            if (!KokoroVoiceManager.Voices.Any(v => v.Name == "af_heart"))
+            foreach (var name in new[] { "af_heart", "bf_emma", "bm_george" })
             {
-                KokoroVoiceManager.Voices.Add(new KokoroVoice { Name = "af_heart", Features = new float[510, 1, 256] });
+                if (!KokoroVoiceManager.Voices.Any(v => v.Name == name))
+                {
+                    KokoroVoiceManager.Voices.Add(new KokoroVoice { Name = name, Features = new float[510, 1, 256] });
+                }
             }
         }
     }

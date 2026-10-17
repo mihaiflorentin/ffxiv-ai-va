@@ -19,7 +19,7 @@ using Microsoft.ML.OnnxRuntime;
 public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
 {
     private const int KokoroSampleRate = 24000;
-    private const string DefaultVoiceName = "af_heart";
+    private const string DefaultVoiceName = VoiceCatalog.FallbackFemale;
 
     private readonly Func<string> modelsDirFactory;
     private readonly Func<int> intraOpThreadsFactory;
@@ -488,8 +488,9 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
         }
         catch (Exception ex)
         {
-            this.log?.Warn($"Kokoro voice \"{name}\" unavailable ({ex.Message}); falling back to {DefaultVoiceName}.");
-            return KokoroVoiceManager.GetVoice(DefaultVoiceName);
+            var fallback = VoiceCatalog.FallbackFor(name, this.voiceLibrary?.Find(name)?.Sex);
+            this.log?.Warn($"Kokoro voice \"{name}\" unavailable ({ex.Message}); falling back to {fallback}.");
+            return KokoroVoiceManager.GetVoice(fallback);
         }
     }
 

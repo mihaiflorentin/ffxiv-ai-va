@@ -4,25 +4,12 @@ using System.Text.RegularExpressions;
 using Xunit;
 
 /// <summary>
-/// Source-text scan of src/AIVoiceActing/UI/**/*.cs. New UI code is sized in em (Ui.Em) and
-/// uses icon glyphs from the icon font, so pixel literals and emoji are banned outside the
-/// allowlist. Theme.cs and Ui.cs are the sanctioned homes of scale maths; the legacy files
-/// below predate the redesign. THE ALLOWLIST ONLY SHRINKS: delete a legacy entry when its
-/// page moves to the new components, never add one. The shell and all pages (#7) comply, and the
-/// Settings tab (#18) no longer needs any entry. Controls (still the config-bound checkbox/combo
-/// wrapper that Home, What's read and the test panel call) and NowSpeakingWindow remain until their
-/// pixel literals are converted.
+/// Source-text scan of every file under src/AIVoiceActing/UI. UI code is sized in em (Ui.Em) and
+/// uses icon glyphs from the icon font, so pixel literals and emoji are banned everywhere, with no
+/// allowlist. Scale maths goes through Ui.Em / Ui.Scaled / the ThemeTokens helpers.
 /// </summary>
 public sealed class UiHygieneTests
 {
-    private static readonly HashSet<string> Allowlist = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Theme.cs",
-        "Ui.cs",
-        "NowSpeakingWindow.cs",
-        "Controls.cs",
-    };
-
     private static readonly (string Rule, Regex Pattern)[] Rules =
     {
         ("SetNextItemWidth with a numeric literal", new Regex(@"SetNextItemWidth\(\s*-?\d", RegexOptions.Compiled)),
@@ -39,11 +26,6 @@ public sealed class UiHygieneTests
         var violations = new List<string>();
         foreach (var file in Directory.EnumerateFiles(uiDir, "*.cs", SearchOption.AllDirectories))
         {
-            if (Allowlist.Contains(Path.GetFileName(file)))
-            {
-                continue;
-            }
-
             Scan(file, File.ReadAllLines(file), violations);
         }
 
