@@ -22,6 +22,7 @@ public sealed class FileVoiceLibrary : IVoiceLibrary
     private readonly Func<IReadOnlyList<string>> packRoots;
     private readonly Func<IReadOnlyCollection<string>> disabledPacks;
     private readonly ILogSink? log;
+    private readonly IGeneratedVoiceStore? generated;
     private readonly (VoicePackInfo Pack, IReadOnlyList<VoiceInfo> Voices) core;
     private readonly object reloadGate = new();
     private volatile Snapshot snapshot = Snapshot.Empty;
@@ -30,8 +31,10 @@ public sealed class FileVoiceLibrary : IVoiceLibrary
         Func<IReadOnlyList<string>> packRoots,
         Func<IReadOnlyCollection<string>>? disabledPacks = null,
         ILogSink? log = null,
-        (VoicePackInfo Pack, IReadOnlyList<VoiceInfo> Voices)? coreManifest = null)
+        (VoicePackInfo Pack, IReadOnlyList<VoiceInfo> Voices)? coreManifest = null,
+        IGeneratedVoiceStore? generated = null)
     {
+        this.generated = generated;
         this.packRoots = packRoots ?? throw new ArgumentNullException(nameof(packRoots));
         this.disabledPacks = disabledPacks ?? (() => []);
         this.log = log;
@@ -43,8 +46,12 @@ public sealed class FileVoiceLibrary : IVoiceLibrary
 
     public IReadOnlyList<VoicePackInfo> Packs => this.snapshot.Packs;
 
+    /// <summary>Generated per-character voices resolve here but are never listed in
+    /// <see cref="Voices"/>: there can be thousands, and each belongs to one character.</summary>
     public VoiceInfo? Find(string? id) =>
-        id is not null && this.snapshot.ById.TryGetValue(id, out var voice) ? voice : null;
+        id is not null && this.snapshot.ById.TryGetValue(id, out var voice)
+            ? voice
+            : this.generated?.FindVoice(id);
 
     public bool Has(string? id) => this.Find(id)?.Available == true;
 

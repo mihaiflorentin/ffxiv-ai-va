@@ -57,6 +57,11 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<IReadOnlyList<string>>? voicePackRootsFactory;
     private readonly Func<IReadOnlyCollection<string>>? disabledVoicePacksFactory;
     private readonly Func<IVoiceLibrary>? voiceLibraryFactory;
+    private readonly Func<bool>? uniqueVoicePerCharacterFactory;
+    private readonly Func<string>? generatedVoicesDirFactory;
+    private IGeneratedVoiceStore? generatedVoiceStore;
+    private IVoiceGenerator? voiceGenerator;
+    private bool generatedVoicesPruned;
     private readonly Func<DevicePreferences>? devicePreferencesFactory;
     private readonly Action? clearGpuCrashFlag;
     private readonly Func<string?>? pluginDirectoryFactory;
@@ -177,8 +182,12 @@ public sealed class ServiceContainer : IDisposable
         Func<string?>? pluginDirectoryFactory = null,
         Func<bool>? isWineFactory = null,
         Func<string>? gpuMarkerPathFactory = null,
-        Func<IWebGpuRuntime>? webGpuRuntimeFactory = null)
+        Func<IWebGpuRuntime>? webGpuRuntimeFactory = null,
+        Func<bool>? uniqueVoicePerCharacterFactory = null,
+        Func<string>? generatedVoicesDirFactory = null)
     {
+        this.uniqueVoicePerCharacterFactory = uniqueVoicePerCharacterFactory;
+        this.generatedVoicesDirFactory = generatedVoicesDirFactory;
         this.devicePreferencesFactory = devicePreferencesFactory;
         this.clearGpuCrashFlag = clearGpuCrashFlag;
         this.pluginDirectoryFactory = pluginDirectoryFactory;
@@ -261,7 +270,34 @@ public sealed class ServiceContainer : IDisposable
             ?? new FileVoiceLibrary(
                 this.voicePackRootsFactory ?? (() => []),
                 this.disabledVoicePacksFactory,
-                this.LogSinkUnlocked());
+                this.LogSinkUnlocked(),
+                generated: this.GeneratedVoiceStoreUnlocked());
+
+    private IGeneratedVoiceStore? GeneratedVoiceStoreUnlocked() =>
+        this.generatedVoiceStore ??= this.generatedVoicesDirFactory is { } dir
+            ? new GeneratedVoiceStore(dir, this.LogSinkUnlocked())
+            : null;
+
+    /// <summary>Makes the per-character blended voices; null when no generated-voices folder is configured.</summary>
+    public IVoiceGenerator? GeneratedVoices
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.VoiceGeneratorUnlocked();
+            }
+        }
+    }
+
+    private IVoiceGenerator? VoiceGeneratorUnlocked() =>
+        this.voiceGenerator ??= this.GeneratedVoiceStoreUnlocked() is { } generatedStore
+            ? new VoiceGenerator(
+                this.VoiceLibraryUnlocked(),
+                generatedStore,
+                () => this.kokoroVoicesDirFactory?.Invoke(),
+                this.LogSinkUnlocked())
+            : null;
 
     /// <summary>Slots only lose their place when the library knows the voice and has demoted it;
     /// ids it has never heard of (legacy bare ids) stay castable.</summary>
@@ -1098,9 +1134,59 @@ public sealed class ServiceContainer : IDisposable
             profile = store.GetOrCreate(speaker.Key, () => slots, speaker.Race, speaker.Tribe, speaker.Sex)!;
         }
 
+        profile = this.ApplyUniqueVoiceUnlocked(speaker, profile, slots, group);
+
         return this.ageAwareCastingFactory?.Invoke() == false
             ? profile
             : AgeCasting.Apply(profile, speaker.BodyType);
+    }
+
+    /// <summary>
+    /// Unique voice per character: an automatic (not hand-picked) profile whose voice is still a
+    /// plain cast pick is moved onto a voice blended for this speaker from the same cast set. The
+    /// slot's bias/pitch/speed/volume stay, so only the timbre changes; the store keeps the new id,
+    /// so the voice is reused across lines and sessions. No-op when the setting is off, the voice
+    /// is already generated, or no blend is possible (the ordinary pick stands).
+    /// </summary>
+    private VoiceProfile ApplyUniqueVoiceUnlocked(
+        SpeakerIdentity speaker, VoiceProfile profile, VoiceSlot[] slots, VoiceGroup group)
+    {
+        if (this.uniqueVoicePerCharacterFactory?.Invoke() != true
+            || profile.Custom
+            || VoiceBlend.IsGeneratedId(profile.ReferenceVoiceId)
+            || this.VoiceGeneratorUnlocked() is not { } generator)
+        {
+            return profile;
+        }
+
+        var store = this.ProfileStoreUnlocked();
+        this.PruneGeneratedVoicesOnceUnlocked(store);
+        var preferredSex = group switch
+        {
+            VoiceGroup.Male => "male",
+            VoiceGroup.Female => "female",
+            _ => null,
+        };
+
+        var made = generator.Ensure(speaker.Key, speaker.DisplayName, [.. slots.Select(slot => slot.Id)], preferredSex);
+        return made is null ? profile : store.SetVoice(speaker.Key, made.Id, custom: false) ?? profile;
+    }
+
+    /// <summary>Once per session: generated voices no profile points at any more (players evicted from the
+    /// capped store, removed characters) are deleted so the folder cannot grow without bound.</summary>
+    private void PruneGeneratedVoicesOnceUnlocked(IProfileStore profiles)
+    {
+        if (this.generatedVoicesPruned || this.GeneratedVoiceStoreUnlocked() is not { } generatedStore)
+        {
+            return;
+        }
+
+        this.generatedVoicesPruned = true;
+        var removed = generatedStore.Prune(profiles.Entries.Select(e => e.ReferenceVoiceId).ToHashSet(StringComparer.Ordinal));
+        if (removed > 0)
+        {
+            this.LogSinkUnlocked().Info($"Removed {removed} unused generated voice(s).");
+        }
     }
 
     /// <summary>Non-human models heard this session that no tribe binding claims (casting UI inbox).</summary>

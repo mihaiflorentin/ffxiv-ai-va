@@ -151,6 +151,10 @@ public sealed class VoiceSettings
     public List<string> DisabledPacks { get; set; } = [];
 
     public List<string> ExtraPackDirs { get; set; } = [];
+
+    /// <summary>Every character gets a voice of their own, blended from the casting set the first
+    /// time they speak and reused from then on. Off: characters pick one of the cast voices.</summary>
+    public bool UniquePerCharacter { get; set; } = true;
 }
 
 /// <summary>

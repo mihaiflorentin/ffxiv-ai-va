@@ -92,6 +92,62 @@ public static class NpyHeader
             : $"expected shape {StyleRows}x1x{StyleColumns} but found {string.Join("x", info.Shape)}";
     }
 
+    /// <summary>
+    /// Reads a validated Kokoro style tensor (510x1x256 little-endian float32) into a flat array,
+    /// or null when the bytes are not one or the data is truncated.
+    /// </summary>
+    public static float[]? ReadStyleTensor(ReadOnlySpan<byte> bytes)
+    {
+        if (ValidateStyleTensor(bytes) is not null || Parse(bytes) is not { } info)
+        {
+            return null;
+        }
+
+        var count = StyleRows * StyleColumns;
+        if (bytes.Length < info.DataOffset + ((long)count * sizeof(float)))
+        {
+            return null;
+        }
+
+        var values = new float[count];
+        for (var i = 0; i < count; i++)
+        {
+            values[i] = System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(
+                bytes.Slice(info.DataOffset + (i * sizeof(float)), sizeof(float)));
+        }
+
+        return values;
+    }
+
+    /// <summary>Serializes a flat 510x256 style tensor as an npy v1 file (float32, C order, 64-byte aligned header).</summary>
+    public static byte[] WriteStyleTensor(ReadOnlySpan<float> values)
+    {
+        if (values.Length != StyleRows * StyleColumns)
+        {
+            throw new ArgumentException($"A style tensor holds {StyleRows * StyleColumns} values.", nameof(values));
+        }
+
+        var header = $"{{'descr': '<f4', 'fortran_order': False, 'shape': ({StyleRows}, 1, {StyleColumns}), }}";
+        var total = 10 + header.Length + 1;
+        var padded = header.PadRight(header.Length + ((64 - (total % 64)) % 64)) + "\n";
+        var result = new byte[10 + padded.Length + (values.Length * sizeof(float))];
+        result[0] = 0x93;
+        "NUMPY"u8.CopyTo(result.AsSpan(1));
+        result[6] = 1;
+        result[7] = 0;
+        result[8] = (byte)(padded.Length & 0xFF);
+        result[9] = (byte)(padded.Length >> 8);
+        Encoding.Latin1.GetBytes(padded, result.AsSpan(10));
+        var offset = 10 + padded.Length;
+        for (var i = 0; i < values.Length; i++)
+        {
+            System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(
+                result.AsSpan(offset + (i * sizeof(float))), values[i]);
+        }
+
+        return result;
+    }
+
     private static string? ValueOf(string header, string key)
     {
         var at = header.IndexOf(key, StringComparison.Ordinal);

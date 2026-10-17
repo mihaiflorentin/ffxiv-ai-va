@@ -56,11 +56,12 @@ public sealed class ConfigMigratorTests
         Assert.False(config.Engine.Expressive.Enabled);
         Assert.Equal(DeviceSettings.ModeAuto, config.Device.Mode);
         Assert.Equal("medium", config.Device.CpuImpact);
-        var change = Assert.Single(result.Changes);
+        var change = Assert.Single(result.Changes, c => c.Area != "Voices");
         Assert.Equal("Device", change.Area);
         Assert.Equal("coreml", change.Before);
         Assert.Contains("CoreML", change.Message);
         Assert.Equal(result.Changes, config.Migration.Changes);
+        Assert.Contains(result.Changes, c => c.Area == "Voices");
         Assert.Equal(1, config.Migration.FromVersion);
         Assert.Equal(2, config.Migration.ToVersion);
 
@@ -98,7 +99,7 @@ public sealed class ConfigMigratorTests
     {
         var result = ConfigMigrator.Migrate(V1(engine: "f5"), Native);
 
-        var line = Assert.Single(result.Changes);
+        var line = Assert.Single(result.Changes, c => c.Area != "Voices");
         Assert.Contains("F5 was retired", line.Message);
     }
 
@@ -127,7 +128,7 @@ public sealed class ConfigMigratorTests
         var kokoro = ConfigMigrator.Migrate(V1(engine: "kokoro", fp32: true), Native);
 
         Assert.Contains(chatterbox.Changes, c => c.Message.Contains("full-precision"));
-        Assert.Empty(kokoro.Changes);
+        Assert.Empty(kokoro.Changes.Where(c => c.Area != "Voices"));
     }
 
     // ---- EP mapping ----
@@ -214,6 +215,27 @@ public sealed class ConfigMigratorTests
     }
 
     [Fact]
+    public void Unique_voice_per_character_defaults_on_for_new_and_old_files_and_old_files_get_a_report_line()
+    {
+        Assert.True(new Configuration().Voices.UniquePerCharacter);
+
+        var old = System.Text.Json.JsonSerializer.Deserialize<Configuration>("""{"Version":1,"Enabled":true}""")!;
+        old.Voices.UniquePerCharacter = false; // whatever the file said, v1 had no such setting
+        var result = ConfigMigrator.Migrate(old, Native);
+
+        Assert.True(old.Voices.UniquePerCharacter);
+        var line = Assert.Single(result.Changes, c => c.Area == "Voices");
+        Assert.Contains("unique voice", line.After);
+
+        // A current-version file that never mentioned the setting also reads as on, and a saved "off" survives.
+        var current = System.Text.Json.JsonSerializer.Deserialize<Configuration>("""{"Version":2,"Voices":{"DisabledPacks":[]}}""")!;
+        Assert.True(current.Voices.UniquePerCharacter);
+        var off = System.Text.Json.JsonSerializer.Deserialize<Configuration>("""{"Version":2,"Voices":{"UniquePerCharacter":false}}""")!;
+        Assert.False(ConfigMigrator.Migrate(off, Native).Changed);
+        Assert.False(off.Voices.UniquePerCharacter);
+    }
+
+    [Fact]
     public void Fresh_install_is_current_with_no_changes()
     {
         var config = new Configuration();
@@ -265,7 +287,7 @@ public sealed class ConfigMigratorTests
         var restored = System.Text.Json.JsonSerializer.Deserialize<Configuration>(
             System.Text.Json.JsonSerializer.Serialize(config))!;
 
-        var change = Assert.Single(restored.Migration.Changes);
+        var change = Assert.Single(restored.Migration.Changes, c => c.Area != "Voices");
         Assert.Equal("coreml", change.Before);
         Assert.Equal(1, restored.Migration.FromVersion);
     }
@@ -410,7 +432,7 @@ public sealed class ConfigMigratorTests
         var json = JsonConvert.SerializeObject(config, NewtonsoftSettings());
         var restored = (Configuration)JsonConvert.DeserializeObject(json, NewtonsoftSettings())!;
 
-        var change = Assert.Single(restored.Migration.Changes);
+        var change = Assert.Single(restored.Migration.Changes, c => c.Area != "Voices");
         Assert.Equal("coreml", change.Before);
     }
 }
