@@ -1,5 +1,6 @@
 namespace AIVoiceActing.UI.State;
 
+using AIVoiceActing.Domain;
 using AIVoiceActing.Ports;
 
 public enum CharacterColumn
@@ -39,6 +40,7 @@ public sealed class CharacterTableModel
     private readonly Func<uint?, string> worldLabel;
     private readonly Func<string, string> voiceName;
     private readonly Func<DateTimeOffset> clock;
+    private readonly Func<IVoiceGenerator?> generator;
     private readonly Dictionary<string, CharacterEdit> pending = new(StringComparer.Ordinal);
 
     private VoiceProfile[] loaded = [];
@@ -56,8 +58,10 @@ public sealed class CharacterTableModel
         StatusCenter status,
         Func<uint?, string> worldLabel,
         Func<string, string> voiceName,
-        Func<DateTimeOffset>? clock = null)
+        Func<DateTimeOffset>? clock = null,
+        Func<IVoiceGenerator?>? generator = null)
     {
+        this.generator = generator ?? (() => null);
         this.player = player;
         this.keyPrefix = player ? "pc:" : "npc:";
         this.store = store;
@@ -207,6 +211,51 @@ public sealed class CharacterTableModel
     {
         this.pending.Remove(speakerKey);
         this.Write(speakerKey, edit);
+    }
+
+    // ---- generated voices ----
+
+    /// <summary>True when the character's voice was blended for them (shown as "Generated for ...").</summary>
+    public bool IsGenerated(VoiceProfile profile) => VoiceBlend.IsGeneratedId(this.Effective(profile).VoiceId);
+
+    /// <summary>True while the voice is generated and still automatic, so "Keep as is" has something to do.</summary>
+    public bool CanKeep(VoiceProfile profile) => this.IsGenerated(profile) && !profile.Custom;
+
+    /// <summary>Whether Regenerate can run (a generator exists and the voice is a generated one).</summary>
+    public bool CanRegenerate(VoiceProfile profile) => this.IsGenerated(profile) && this.generator() is not null;
+
+    /// <summary>
+    /// Replaces the character's generated voice with a new blend (next salt), keeping their
+    /// tuning and whether the voice was set by hand. False when nothing could be made.
+    /// </summary>
+    public bool Regenerate(string speakerKey)
+    {
+        this.pending.Remove(speakerKey);
+        var profile = this.store.Entries.FirstOrDefault(p => p.SpeakerKey == speakerKey);
+        if (profile is null
+            || !VoiceBlend.IsGeneratedId(profile.ReferenceVoiceId)
+            || this.generator()?.Regenerate(profile.ReferenceVoiceId) is not { } made
+            || this.store.SetVoice(speakerKey, made.Id, profile.Custom) is null)
+        {
+            return false;
+        }
+
+        this.reload = true;
+        return true;
+    }
+
+    /// <summary>Pins the character's generated voice as a hand-set one. False when there is nothing to pin.</summary>
+    public bool Keep(string speakerKey)
+    {
+        var profile = this.store.Entries.FirstOrDefault(p => p.SpeakerKey == speakerKey);
+        if (profile is null || !VoiceBlend.IsGeneratedId(profile.ReferenceVoiceId)
+            || this.store.SetVoice(speakerKey, profile.ReferenceVoiceId, custom: true) is null)
+        {
+            return false;
+        }
+
+        this.reload = true;
+        return true;
     }
 
     // ---- delete and undo ----

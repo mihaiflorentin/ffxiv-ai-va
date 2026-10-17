@@ -47,6 +47,11 @@ public static class ConfigMigrator
         MigrateEngine(config, changes);
         MigrateExecutionProvider(config, context, changes);
 
+        config.Voices.UniquePerCharacter = true;
+        changes.Add(new MigrationChange(
+            "Voices", "shared voices", "unique voice per character",
+            "Every character now gets a voice of their own, blended from the cast on first speech. Turn it off in Settings."));
+
         config.Device.CpuImpact = config.CpuImpact is "low" or "medium" or "high" ? config.CpuImpact : "medium";
 
         config.SelectedEngine = null;

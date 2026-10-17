@@ -130,6 +130,31 @@ public sealed class JsonProfileStore : IProfileStore, IDisposable
         }
     }
 
+    public VoiceProfile? SetVoice(string speakerKey, string referenceVoiceId, bool custom)
+    {
+        lock (this.gate)
+        {
+            this.EnsureLoadedUnlocked();
+            if (!this.entries.TryGetValue(speakerKey, out var existing))
+            {
+                return null;
+            }
+
+            var updated = existing with { ReferenceVoiceId = referenceVoiceId, Custom = custom };
+            this.entries[speakerKey] = updated;
+            if (custom || this.firstSightSaveDelay is null)
+            {
+                this.SaveUnlocked();
+            }
+            else
+            {
+                this.ScheduleSaveUnlocked(this.firstSightSaveDelay.Value);
+            }
+
+            return updated;
+        }
+    }
+
     public void Clear()
     {
         lock (this.gate)

@@ -45,6 +45,16 @@ public sealed class FakeProfileStore : IProfileStore
         this.Writes.Add(profile);
     }
 
+    public VoiceProfile? SetVoice(string speakerKey, string referenceVoiceId, bool custom)
+    {
+        if (!this.entries.TryGetValue(speakerKey, out var existing))
+        {
+            return null;
+        }
+
+        return this.entries[speakerKey] = existing with { ReferenceVoiceId = referenceVoiceId, Custom = custom };
+    }
+
     public void Clear() => this.entries.Clear();
 
     public bool Remove(string speakerKey)

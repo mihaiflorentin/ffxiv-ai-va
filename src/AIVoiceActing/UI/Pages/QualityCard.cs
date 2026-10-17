@@ -219,6 +219,13 @@ internal sealed class QualityCard(UiContext ctx, SettingsInputs inputs)
             emotionReady);
 
         SettingsParts.Toggle(
+            "Give every character a unique voice",
+            "The first time someone speaks, they get a voice made just for them by mixing voices from their group, and keep it from then on. "
+            + "Voices you pick by hand never change. Turning this off only affects characters who have not spoken yet.",
+            () => c.Voices.UniquePerCharacter,
+            v => { c.Voices.UniquePerCharacter = v; ctx.Save(); });
+
+        SettingsParts.Toggle(
             "Even out loudness",
             "Brings every line to the same loudness before each voice's own volume is applied.",
             () => c.LevelVoiceLoudness,

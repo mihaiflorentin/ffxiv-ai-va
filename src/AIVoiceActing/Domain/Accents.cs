@@ -143,5 +143,7 @@ public static class Phonemizers
     /// stock bank name.
     /// </summary>
     public static string InternalName(string voiceId, string phonemizer, string sex) =>
-        $"{PrefixFor(phonemizer)}{(sex == "male" ? 'm' : 'f')}_pk_{voiceId}";
+        VoiceBlend.IsGeneratedId(voiceId)
+            ? voiceId // generated voices already carry the {lang}{sex}_gen_ shape Kokoro needs
+            : $"{PrefixFor(phonemizer)}{(sex == "male" ? 'm' : 'f')}_pk_{voiceId}";
 }

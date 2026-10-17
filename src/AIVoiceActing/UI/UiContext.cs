@@ -51,6 +51,9 @@ public sealed record UiContext
     /// <summary>Stock and pack voices (voice browser, pickers, missing-voice rows).</summary>
     public required IVoiceLibrary VoiceLibrary { get; init; }
 
+    /// <summary>Makes and re-makes per-character blended voices (Voices tab, Regenerate); null when unavailable.</summary>
+    public Func<IVoiceGenerator?> Generator { get; init; } = () => null;
+
     public UnboundModelLog? UnboundModels { get; init; }
 
     /// <summary>

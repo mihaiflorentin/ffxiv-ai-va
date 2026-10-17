@@ -22,7 +22,7 @@ internal sealed class CharactersSection
     private const float WorldWeight = 2f;
     private const float VoiceWeight = 3f;
     private const float TuneWeight = 3f;
-    private const float ActionsColumnEm = 5f;
+    private const float ActionsColumnEm = 8f;
     private const float VoiceButtonEm = 9f;
 
     private static readonly string[] Kinds = ["NPCs", "Players"];
@@ -86,7 +86,8 @@ internal sealed class CharactersSection
         this.ctx.Profiles,
         this.ctx.Status,
         world => this.ctx.Worlds.Label(world),
-        voiceId => VoiceNames.Display(this.ctx.VoiceLibrary, voiceId));
+        voiceId => VoiceNames.Display(this.ctx.VoiceLibrary, voiceId),
+        generator: this.ctx.Generator);
 
     private void DrawToolbar(CharacterTableModel model)
     {
@@ -237,10 +238,48 @@ internal sealed class CharactersSection
             this.ctx.VoicesNotReadyReason,
             () => this.ctx.PreviewVoice(edit.VoiceId, TuneValues.From(edit)));
         ImGui.SameLine();
+        this.DrawGeneratedActions(model, row);
         var remove = IconButton.Draw("##delete", FontAwesomeIcon.Trash, "Remove this character's voice. You can undo it for a few seconds.");
 
         ImGui.PopID();
         return remove;
+    }
+
+    /// <summary>Regenerate and Keep as is, shown only for voices made for the character.</summary>
+    private void DrawGeneratedActions(CharacterTableModel model, CharacterRow row)
+    {
+        var profile = row.Profile;
+        if (!model.IsGenerated(profile))
+        {
+            return;
+        }
+
+        if (IconButton.Draw(
+                "##regenerate",
+                FontAwesomeIcon.Random,
+                "Make a different voice for this character.",
+                model.CanRegenerate(profile),
+                "A new voice cannot be made right now."))
+        {
+            this.ctx.Report(
+                model.Regenerate(profile.SpeakerKey)
+                    ? $"Made a new voice for {row.Key.Name}."
+                    : $"Could not make a new voice for {row.Key.Name}.",
+                isError: false);
+        }
+
+        ImGui.SameLine();
+        if (IconButton.Draw(
+                "##keep",
+                FontAwesomeIcon.Thumbtack,
+                "Keep this voice as it is. You can still pick another voice for this character.",
+                model.CanKeep(profile),
+                "This voice is already kept."))
+        {
+            model.Keep(profile.SpeakerKey);
+        }
+
+        ImGui.SameLine();
     }
 
     private void DrawVoiceCell(CharacterTableModel model, CharacterRow row, CharacterEdit edit)
