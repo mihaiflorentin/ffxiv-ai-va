@@ -2,6 +2,7 @@ namespace SmokeSynth;
 
 using System.Diagnostics;
 
+using AIVoiceActing.Domain;
 using AIVoiceActing.Infrastructure.F5;
 using AIVoiceActing.Infrastructure.Kokoro;
 using AIVoiceActing.Infrastructure.Onnx;
@@ -28,6 +29,10 @@ internal static class Program
         double pitch = 1.0;
         double speed = 1.0;
         bool printRealTimeFactor = false;
+        string? device = null;
+        string api = "auto";
+        string power = "high";
+        bool bench = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -88,6 +93,36 @@ internal static class Program
                 case "--rtf":
                     printRealTimeFactor = true;
                     break;
+                case "--device" when i + 1 < args.Length:
+                    device = args[++i].ToLowerInvariant();
+                    if (device is not ("cpu" or "gpu"))
+                    {
+                        Console.Error.WriteLine("--device must be cpu or gpu.");
+                        return 1;
+                    }
+
+                    break;
+                case "--api" when i + 1 < args.Length:
+                    api = args[++i].ToLowerInvariant();
+                    if (api is not ("vulkan" or "d3d12"))
+                    {
+                        Console.Error.WriteLine("--api must be vulkan or d3d12.");
+                        return 1;
+                    }
+
+                    break;
+                case "--power" when i + 1 < args.Length:
+                    power = args[++i].ToLowerInvariant();
+                    if (power is not ("high" or "low"))
+                    {
+                        Console.Error.WriteLine("--power must be high or low.");
+                        return 1;
+                    }
+
+                    break;
+                case "--bench":
+                    bench = true;
+                    break;
                 default:
                     Console.Error.WriteLine($"Unknown or malformed argument: {args[i]}");
                     PrintUsage();
@@ -142,10 +177,17 @@ internal static class Program
                     modelsDir: modelsDir,
                     voicePathResolver: _ => reference,
                     executionProvider: executionProvider ?? "cpu",
-                    log: log);
+                    log: log,
+                    devices: device is null ? null : BuildDeviceServices(modelsDir, device, api, power, log));
             }
             else if (engine == "kokoro")
             {
+                if (device == "gpu")
+                {
+                    Console.WriteLine(DeviceModePolicy.Plan(new DevicePolicyInput(
+                        DeviceMode.Gpu, "kokoro", DeviceReport.Unknown, false, false)).Reason);
+                }
+
                 synthesizer = new KokoroSynthesizer(
                     () => modelsDir!,
                     () => 4,
@@ -198,6 +240,30 @@ internal static class Program
                 Console.WriteLine($"RTF:         {synthSeconds / durationSeconds:0.000}");
             }
 
+            if (bench)
+            {
+                // The first line above paid session creation; time the steady state.
+                var runs = new List<double>();
+                for (var run = 0; run < 5; run++)
+                {
+                    var timer = Stopwatch.StartNew();
+                    var again = synthesizer.SynthesizeAsync(request, CancellationToken.None).GetAwaiter().GetResult();
+                    timer.Stop();
+                    runs.Add(timer.Elapsed.TotalSeconds / (again.Samples.Length / (double)again.SampleRate));
+                    Console.WriteLine($"bench {run + 1}/5:   {timer.Elapsed.TotalSeconds:0.00} s, RTF {runs[^1]:0.000}");
+                }
+
+                runs.Sort();
+                Console.WriteLine($"bench RTF:   min {runs[0]:0.000}, median {runs[runs.Count / 2]:0.000}, max {runs[^1]:0.000}");
+            }
+
+            var status = synthesizer.Status;
+            Console.WriteLine($"status:      {status.State}, requested {status.RequestedDevice}, active {status.ActiveDevice.Ep}{(status.ActiveDevice.Adapter.Length > 0 ? $" on {status.ActiveDevice.Adapter}" : string.Empty)}");
+            if (status.Reason.Length > 0)
+            {
+                Console.WriteLine($"reason:      {status.Reason}");
+            }
+
             return 0;
         }
         catch (Exception ex)
@@ -205,6 +271,58 @@ internal static class Program
             Console.Error.WriteLine($"Synthesis failed: {ex.Message}");
             return 2;
         }
+    }
+
+    /// <summary>
+    /// Device plumbing for the Turbo path: probe the GPU, honour a leftover crash marker (this tool
+    /// runs outside Dalamud, so it just forces the CPU for this run), and build the planner.
+    /// </summary>
+    private static TurboDeviceServices BuildDeviceServices(string modelsDir, string device, string api, string power, ILogSink log)
+    {
+        var runtime = new WebGpuRuntime(
+            pluginDirectory: null,
+            RuntimeHost.DetectWine(),
+            log,
+            libraryPathOverride: FindWebGpuLibrary());
+        var probe = new DeviceProbe(runtime, log: log);
+        var report = probe.Detect();
+        Console.WriteLine($"platform:    {report.Platform}");
+        Console.WriteLine($"webgpu:      {(report.WebGpuAvailable ? "available" : $"unavailable ({report.Reason})")}");
+        foreach (var adapter in report.Adapters)
+        {
+            Console.WriteLine($"adapter:     {adapter.Name} ({adapter.Backend})");
+        }
+
+        Directory.CreateDirectory(modelsDir);
+        var guard = new GpuCrashGuard(Path.Combine(modelsDir, "gpu-session.pending"), log);
+        var crashed = guard.TripIfLeftover(detail => Console.WriteLine($"crash guard: a previous run died on the GPU ({detail}); using the CPU this time."));
+        var prefs = new DevicePreferences(
+            device == "gpu" ? DeviceMode.Gpu : DeviceMode.Cpu,
+            power == "low" ? GpuPreference.LowPower : GpuPreference.Performance,
+            api switch
+            {
+                "vulkan" => GpuApi.Vulkan,
+                "d3d12" => GpuApi.D3D12,
+                _ => GpuApi.Auto,
+            },
+            DeviceBackend.Auto,
+            crashed);
+        return new TurboDeviceServices(
+            new DevicePlanner(() => prefs, probe),
+            new OnnxSessionFactory(runtime, guard, log));
+    }
+
+    private static string? FindWebGpuLibrary()
+    {
+        var rid = OperatingSystem.IsWindows() ? "win-x64"
+            : OperatingSystem.IsMacOS() ? "osx-arm64"
+            : "linux-x64";
+        var candidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native", WebGpuRuntime.LibraryFileName),
+            Path.Combine(AppContext.BaseDirectory, WebGpuRuntime.LibraryFileName),
+        };
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     private static void PrintUsage()
@@ -223,6 +341,11 @@ internal static class Program
               --ep <name>            Execution provider (auto|coreml|cpu|directml; default auto).
               --models <dir>         Model directory (default ./models).
               --rtf                  Print the real-time factor after synthesis.
+              --device <cpu|gpu>     Turbo only: where the language model may run. Prints the probe, plan and status.
+                                     Kokoro never uses the GPU. The GPU also needs a verified model (fp16/q4f16).
+              --api <vulkan|d3d12>   WebGPU graphics API (default: vulkan off Windows, d3d12 on Windows).
+              --power <high|low>     Adapter class: discrete (high) or integrated (low).
+              --bench                Time 5 more runs after the first and print min/median/max RTF.
               --help                 Show this help.
             """);
     }

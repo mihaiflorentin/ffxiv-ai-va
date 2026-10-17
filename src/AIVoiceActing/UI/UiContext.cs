@@ -54,11 +54,20 @@ public sealed record UiContext
     public UnboundModelLog? UnboundModels { get; init; }
 
     /// <summary>
-    /// What the setup flow knows about the graphics card. Reports "no GPU info" until the device
-    /// probe and setup advisor land (tickets #12/#13); the plugin root then assigns a real source
-    /// here and the recommendation follows, with no change to Home.
+    /// What the setup flow knows about the graphics card, built from the device probe. Cheap enough to
+    /// call per frame: the first call starts detection in the background and reports "no GPU info"
+    /// (so the recommendation is Fast) until it finishes.
     /// </summary>
     public Func<SetupDeviceInfo> DeviceInfo { get; init; } = () => SetupDeviceInfo.Unknown;
+
+    /// <summary>GPU capability probe: <c>LastReport</c> for the detected-hardware card, <c>Detect()</c> for a re-scan.</summary>
+    public IDeviceProbe? DeviceProbe { get; init; }
+
+    /// <summary>
+    /// The expressive engine (Turbo) when routing is active, else null. Its <c>Status</c> carries the
+    /// GPU / CPU state and fallback reason; the main engine's is on <see cref="Synth"/>.
+    /// </summary>
+    public Func<ISpeechSynthesizer?> ExpressiveSynthesizer { get; init; } = () => null;
 
     // ---- environment delegates ----
     public required Func<string> ModelsDir { get; init; }

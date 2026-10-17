@@ -15,6 +15,8 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageReference Include="Standart.Hash.xxHash" Version="4.0.5" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.24.4" /><!-- same ORT as the plugin ships -->
+    <!-- Natives only, for the AIVA_GPU_TESTS=1 integration tests; same pin as the plugin. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.EP.WebGpu" Version="[0.2.1]" ExcludeAssets="compile;runtime" />
     <PackageReference Include="KokoroSharp" Version="0.8.4" />
     <PackageReference Include="Horus.F5Tts.Onnx" Version="0.3.1" />
     <PackageReference Include="Tokenizers.DotNet" Version="1.4.1" />

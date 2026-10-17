@@ -34,6 +34,12 @@
           "Microsoft.ML.OnnxRuntime.Managed": "1.24.4"
         }
       },
+      "Microsoft.ML.OnnxRuntime.EP.WebGpu": {
+        "type": "Direct",
+        "requested": "[0.2.1, 0.2.1]",
+        "resolved": "0.2.1",
+        "contentHash": "NNlkhD8uBvsZBuabN4Oes/uQr5ULOhyYaivpTmKlU85s6vddLlB0dRcJ/nm5IOe4zb7vfvuTvl69unQd/k3WOw=="
+      },
       "Microsoft.NET.Test.Sdk": {
         "type": "Direct",
         "requested": "[18.10.0, )",

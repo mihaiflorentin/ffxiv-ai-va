@@ -114,6 +114,52 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
     public string NotReadyReason => this.FindNotReadyReason() ?? string.Empty;
 
     /// <summary>
+    /// Kokoro has no GPU path (its LSTM nodes abort the WebGPU runtime), so it asks for and runs on
+    /// the CPU always: ready, loading, failed, or not installed. Polled per frame; no disk work
+    /// beyond the cached asset check.
+    /// </summary>
+    public EngineStatus Status
+    {
+        get
+        {
+            bool loaded;
+            bool loading;
+            string? error;
+            lock (this.gate)
+            {
+                loaded = this.engine is not null;
+                loading = this.initializing;
+                error = this.initError;
+            }
+
+            if (loaded)
+            {
+                return Cpu(EngineState.Ready, DeviceModePolicy.Plan(KokoroInput).Reason);
+            }
+
+            if (loading)
+            {
+                return Cpu(EngineState.Loading, "Loading Kokoro model…");
+            }
+
+            if (error is not null)
+            {
+                return Cpu(EngineState.Failed, error);
+            }
+
+            return this.FindNotReadyReason() is { } missing
+                ? Cpu(EngineState.NotInstalled, missing)
+                : Cpu(EngineState.Ready, DeviceModePolicy.Plan(KokoroInput).Reason);
+        }
+    }
+
+    private static readonly DevicePolicyInput KokoroInput =
+        new(DeviceMode.Cpu, "kokoro", DeviceReport.Unknown, CrashGuardTripped: false, AllowlistMatch: false);
+
+    private static EngineStatus Cpu(EngineState state, string reason) =>
+        new(state, DeviceMode.Cpu, ActiveDevice.Cpu, reason, false);
+
+    /// <summary>
     /// Readiness means "all assets present; a line would synthesize" — NOT "the ONNX
     /// session is already built". The session builds lazily on first use (or the login
     /// pre-warm), so gating the Test tab on construction would deadlock: the buttons
