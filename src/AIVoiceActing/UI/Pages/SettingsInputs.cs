@@ -1,5 +1,6 @@
 namespace AIVoiceActing.UI.Pages;
 
+using AIVoiceActing.Domain;
 using AIVoiceActing.Ports;
 using AIVoiceActing.UI.State;
 using Dalamud.Bindings.ImGui;

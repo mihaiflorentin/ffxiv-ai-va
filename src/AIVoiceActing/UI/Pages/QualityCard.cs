@@ -1,5 +1,6 @@
 namespace AIVoiceActing.UI.Pages;
 
+using AIVoiceActing.Domain;
 using AIVoiceActing.Ports;
 using AIVoiceActing.UI.Components;
 using AIVoiceActing.UI.State;

@@ -1,5 +1,7 @@
 namespace AIVoiceActing.UI.State;
 
+using AIVoiceActing.Domain;
+
 public enum ChoiceOutcome
 {
     /// <summary>Everything the tier needs is on disk: write the settings now.</summary>
