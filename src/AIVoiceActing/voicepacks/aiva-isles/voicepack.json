@@ -1,0 +1,317 @@
+{
+  "schema": 1,
+  "id": "aiva-isles",
+  "version": "1.0.0",
+  "name": "British Isles accents",
+  "license": {
+    "spdx": "CC-BY-SA-4.0",
+    "attribution": "Derived from the ylacombe/english_dialects dataset (Google crowdsourced high-quality UK and Ireland English dialect speech, CC-BY-SA-4.0). Style tensors and reference clips are adaptations of those recordings; they are shared under the same license.",
+    "url": "https://creativecommons.org/licenses/by-sa/4.0/"
+  },
+  "voices": [
+    {
+      "id": "isles.ie_m_01",
+      "name": "Irish man, warm",
+      "accent": "en-IE",
+      "sex": "male",
+      "age": "adult",
+      "tags": [
+        "warm",
+        "irish"
+      ],
+      "description": "Irish English male, relaxed and friendly.",
+      "quality": "experimental",
+      "previewFile": "preview/ie_m_01.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/ie_m_01.npy",
+          "phonemizer": "en-us"
+        },
+        {
+          "kind": "ReferenceClip",
+          "file": "clips/ie_m_01.wav",
+          "transcript": "clips/ie_m_01.txt"
+        }
+      ]
+    },
+    {
+      "id": "isles.ie_m_02",
+      "name": "Irish man, measured",
+      "accent": "en-IE",
+      "sex": "male",
+      "age": "adult",
+      "tags": [
+        "measured",
+        "irish"
+      ],
+      "description": "Irish English male, a second, steadier voice.",
+      "quality": "experimental",
+      "previewFile": "preview/ie_m_02.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/ie_m_02.npy",
+          "phonemizer": "en-us"
+        },
+        {
+          "kind": "ReferenceClip",
+          "file": "clips/ie_m_02.wav",
+          "transcript": "clips/ie_m_02.txt"
+        }
+      ]
+    },
+    {
+      "id": "isles.sc_m_01",
+      "name": "Scottish man",
+      "accent": "en-GB-SCT",
+      "sex": "male",
+      "age": "adult",
+      "tags": [
+        "scottish"
+      ],
+      "description": "Scottish English male.",
+      "quality": "experimental",
+      "previewFile": "preview/sc_m_01.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/sc_m_01.npy",
+          "phonemizer": "en-us"
+        },
+        {
+          "kind": "ReferenceClip",
+          "file": "clips/sc_m_01.wav",
+          "transcript": "clips/sc_m_01.txt"
+        }
+      ]
+    },
+    {
+      "id": "isles.sc_f_01",
+      "name": "Scottish woman",
+      "accent": "en-GB-SCT",
+      "sex": "female",
+      "age": "adult",
+      "tags": [
+        "scottish"
+      ],
+      "description": "Scottish English female.",
+      "quality": "experimental",
+      "previewFile": "preview/sc_f_01.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/sc_f_01.npy",
+          "phonemizer": "en-us"
+        },
+        {
+          "kind": "ReferenceClip",
+          "file": "clips/sc_f_01.wav",
+          "transcript": "clips/sc_f_01.txt"
+        }
+      ]
+    },
+    {
+      "id": "isles.wl_m_01",
+      "name": "Welsh man",
+      "accent": "en-GB-WLS",
+      "sex": "male",
+      "age": "adult",
+      "tags": [
+        "welsh"
+      ],
+      "description": "Welsh English male.",
+      "quality": "experimental",
+      "previewFile": "preview/wl_m_01.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/wl_m_01.npy",
+          "phonemizer": "en-us"
+        },
+        {
+          "kind": "ReferenceClip",
+          "file": "clips/wl_m_01.wav",
+          "transcript": "clips/wl_m_01.txt"
+        }
+      ]
+    },
+    {
+      "id": "isles.wl_f_01",
+      "name": "Welsh woman",
+      "accent": "en-GB-WLS",
+      "sex": "female",
+      "age": "adult",
+      "tags": [
+        "welsh"
+      ],
+      "description": "Welsh English female.",
+      "quality": "experimental",
+      "previewFile": "preview/wl_f_01.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/wl_f_01.npy",
+          "phonemizer": "en-us"
+        },
+        {
+          "kind": "ReferenceClip",
+          "file": "clips/wl_f_01.wav",
+          "transcript": "clips/wl_f_01.txt"
+        }
+      ]
+    },
+    {
+      "id": "isles.nth_m_01",
+      "name": "Northern English man",
+      "accent": "en-GB-NTH",
+      "sex": "male",
+      "age": "adult",
+      "tags": [
+        "northern",
+        "plain-spoken"
+      ],
+      "description": "Northern English male.",
+      "quality": "experimental",
+      "previewFile": "preview/nth_m_01.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/nth_m_01.npy",
+          "phonemizer": "en-us"
+        },
+        {
+          "kind": "ReferenceClip",
+          "file": "clips/nth_m_01.wav",
+          "transcript": "clips/nth_m_01.txt"
+        }
+      ]
+    },
+    {
+      "id": "isles.nth_f_01",
+      "name": "Northern English woman",
+      "accent": "en-GB-NTH",
+      "sex": "female",
+      "age": "adult",
+      "tags": [
+        "northern",
+        "plain-spoken"
+      ],
+      "description": "Northern English female.",
+      "quality": "experimental",
+      "previewFile": "preview/nth_f_01.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/nth_f_01.npy",
+          "phonemizer": "en-us"
+        },
+        {
+          "kind": "ReferenceClip",
+          "file": "clips/nth_f_01.wav",
+          "transcript": "clips/nth_f_01.txt"
+        }
+      ]
+    },
+    {
+      "id": "isles.mid_m_01",
+      "name": "Midlands man",
+      "accent": "en-GB-MID",
+      "sex": "male",
+      "age": "adult",
+      "tags": [
+        "midlands"
+      ],
+      "description": "Midlands English male.",
+      "quality": "experimental",
+      "previewFile": "preview/mid_m_01.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/mid_m_01.npy",
+          "phonemizer": "en-us"
+        },
+        {
+          "kind": "ReferenceClip",
+          "file": "clips/mid_m_01.wav",
+          "transcript": "clips/mid_m_01.txt"
+        }
+      ]
+    },
+    {
+      "id": "isles.mid_f_01",
+      "name": "Midlands woman",
+      "accent": "en-GB-MID",
+      "sex": "female",
+      "age": "adult",
+      "tags": [
+        "midlands"
+      ],
+      "description": "Midlands English female.",
+      "quality": "experimental",
+      "previewFile": "preview/mid_f_01.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/mid_f_01.npy",
+          "phonemizer": "en-us"
+        },
+        {
+          "kind": "ReferenceClip",
+          "file": "clips/mid_f_01.wav",
+          "transcript": "clips/mid_f_01.txt"
+        }
+      ]
+    },
+    {
+      "id": "isles.sth_m_01",
+      "name": "Southern English man",
+      "accent": "en-GB-STH",
+      "sex": "male",
+      "age": "adult",
+      "tags": [
+        "southern"
+      ],
+      "description": "Southern English male.",
+      "quality": "experimental",
+      "previewFile": "preview/sth_m_01.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/sth_m_01.npy",
+          "phonemizer": "en-us"
+        },
+        {
+          "kind": "ReferenceClip",
+          "file": "clips/sth_m_01.wav",
+          "transcript": "clips/sth_m_01.txt"
+        }
+      ]
+    },
+    {
+      "id": "isles.sth_f_01",
+      "name": "Southern English woman",
+      "accent": "en-GB-STH",
+      "sex": "female",
+      "age": "adult",
+      "tags": [
+        "southern"
+      ],
+      "description": "Southern English female.",
+      "quality": "experimental",
+      "previewFile": "preview/sth_f_01.wav",
+      "realizations": [
+        {
+          "kind": "StyleTensor",
+          "file": "style/sth_f_01.npy",
+          "phonemizer": "en-us"
+        },
+        {
+          "kind": "ReferenceClip",
+          "file": "clips/sth_f_01.wav",
+          "transcript": "clips/sth_f_01.txt"
+        }
+      ]
+    }
+  ]
+}

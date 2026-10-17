@@ -28,6 +28,9 @@ internal static class Program
         double pitch = 1.0;
         double speed = 1.0;
         bool printRealTimeFactor = false;
+        string? validatePack = null;
+        string? auditionPack = null;
+        string? only = null;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -85,6 +88,15 @@ internal static class Program
                 case "--out" when i + 1 < args.Length:
                     output = args[++i];
                     break;
+                case "--validate-pack" when i + 1 < args.Length:
+                    validatePack = args[++i];
+                    break;
+                case "--audition" when i + 1 < args.Length:
+                    auditionPack = args[++i];
+                    break;
+                case "--only" when i + 1 < args.Length:
+                    only = args[++i];
+                    break;
                 case "--rtf":
                     printRealTimeFactor = true;
                     break;
@@ -93,6 +105,16 @@ internal static class Program
                     PrintUsage();
                     return 1;
             }
+        }
+
+        if (validatePack is not null)
+        {
+            return PackModes.Validate(validatePack);
+        }
+
+        if (auditionPack is not null)
+        {
+            return PackModes.Audition(auditionPack, output, modelsDir ?? "models", text, only);
         }
 
         if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(output))
@@ -215,6 +237,13 @@ internal static class Program
             Required:
               --text <line>        Dialogue line to perform.
               --out <file.wav>     Output WAV path.
+
+            Voice pack modes (no --text needed):
+              --validate-pack <dir>  Validate a voice pack folder with the plugin's own manifest and
+                                     library code; prints problems, exits 1 when the pack is invalid.
+              --audition <dir>       Render each pack voice's preview line with Kokoro into --out <dir>
+                                     (one <previewFile name>.wav per voice). Needs --models <dir>.
+                                     --only <voice id> limits it to one voice; --text overrides the line.
 
             Options:
               --ref <voice.wav>      Reference voice clip (default: bundled voices/default_voice.wav).

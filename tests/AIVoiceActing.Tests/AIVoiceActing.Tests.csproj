@@ -68,6 +68,7 @@
     <EmbeddedResource Include="..\..\src\AIVoiceActing\Infrastructure\Onnx\models-catalog.json" LogicalName="models-catalog.json" />
     <EmbeddedResource Include="..\..\src\AIVoiceActing\Domain\voices-core.json" LogicalName="voices-core.json" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\FileVoiceLibrary.cs" Link="AIVoiceActing\Infrastructure\Storage\FileVoiceLibrary.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\VoicePackValidator.cs" Link="AIVoiceActing\Infrastructure\Storage\VoicePackValidator.cs" />
   </ItemGroup>
 
 </Project>

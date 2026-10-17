@@ -16,7 +16,9 @@ src/AIVoiceActing/            Dalamud plugin (Dalamud.NET.Sdk/15.0.0, net10.0-wi
   Container/                  ServiceContainer: sole composition root, lazy lock-guarded port accessors
   UI/                         ImGui windows (driving adapter) — later steps; calls ports only
 tests/AIVoiceActing.Tests/    xunit; fakes in Mock/ (census fake pattern)
-tools/SmokeSynth/             Plain console harness for the synthesis engine (no Dalamud)
+tools/SmokeSynth/             Plain console harness for the synthesis engine (no Dalamud); also the voice pack validator/auditioner
+tools/voicepack/              Voice pack generator (dataset -> KVoiceWalk -> style tensor, clip, preview, manifest); see its README
+src/AIVoiceActing/voicepacks/ Bundled voice packs (aiva-isles); copied next to the plugin dll by the csproj
 ```
 
 ## Dependency rules (enforced by `ArchitectureScanTests`)
@@ -52,6 +54,24 @@ dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMis
   --engine kokoro --text "Life is but a dream." --ref af_heart \
   --models "$HOME/.cache/aiva-kokoro" --out /tmp/aiva-test.wav --rtf
 ```
+
+Voice packs (`voicepack.json`, schema 1; see `Domain/VoicePackManifest`) are authored and checked with
+`tools/voicepack` and SmokeSynth. Everything heavy (datasets, KVoiceWalk venv, walk output) lives in
+`models/kvoicewalk-work` (gitignored); `tools/voicepack/README.md` has the setup and the one-command
+regeneration of a single voice (`python3 tools/voicepack/build_voice.py isles.sc_m_01`):
+
+```bash
+# Check a pack with the plugin's own manifest parser + library scan (exit 1 when invalid):
+dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMissingPrunePackageData=true -- \
+  --validate-pack src/AIVoiceActing/voicepacks/aiva-isles
+# Render every voice's preview line with Kokoro (--only <voice id> for one; --text to change the line):
+dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMissingPrunePackageData=true -- \
+  --audition src/AIVoiceActing/voicepacks/aiva-isles --out /some/dir --models "$HOME/.cache/aiva-kokoro"
+```
+
+Pack data is CC-BY-SA-4.0 derived from `ylacombe/english_dialects`: keep the pack's LICENSE and NOTICE,
+and mark new voices `experimental` until someone has listened to them. Casting sets for pack voices live in
+`Domain/voices.json` (`RaceVoiceMap` drops slots whose pack is missing or disabled).
 
 The tests project and the SmokeSynth tool must NOT reference Dalamud; the plugin project's
 csproj carries the runtime packages (OnnxRuntime, DirectML, NAudio, Tokenizers.DotNet,

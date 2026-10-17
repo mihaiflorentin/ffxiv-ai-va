@@ -31,6 +31,10 @@
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\F5\**\*.cs" Link="AIVoiceActing\Infrastructure\F5\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Net\HuggingFaceProvisioner.cs" Link="AIVoiceActing\Infrastructure\Net\HuggingFaceProvisioner.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\FileModelStore.cs" Link="AIVoiceActing\Infrastructure\Storage\FileModelStore.cs" />
+    <!-- Voice pack modes (validate-pack, audition) run the own library scan of the plugin. -->
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\FileVoiceLibrary.cs" Link="AIVoiceActing\Infrastructure\Storage\FileVoiceLibrary.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\VoicePackValidator.cs" Link="AIVoiceActing\Infrastructure\Storage\VoicePackValidator.cs" />
+    <EmbeddedResource Include="..\..\src\AIVoiceActing\Domain\voices-core.json" LogicalName="voices-core.json" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,86 @@
+{
+  "isles.ie_m_01": {
+    "step": 92,
+    "score": 89.5,
+    "similarity": 0.85,
+    "dataset": "irish_male",
+    "speaker": 2484
+  },
+  "isles.ie_m_02": {
+    "step": 736,
+    "score": 86.47,
+    "similarity": 0.8,
+    "dataset": "irish_male",
+    "speaker": 3397
+  },
+  "isles.mid_f_01": {
+    "step": 395,
+    "score": 91.75,
+    "similarity": 0.89,
+    "dataset": "midlands_female",
+    "speaker": 2484
+  },
+  "isles.mid_m_01": {
+    "step": 460,
+    "score": 88.75,
+    "similarity": 0.86,
+    "dataset": "midlands_male",
+    "speaker": 2484
+  },
+  "isles.nth_f_01": {
+    "step": 390,
+    "score": 85.12,
+    "similarity": 0.81,
+    "dataset": "northern_female",
+    "speaker": 2484
+  },
+  "isles.nth_m_01": {
+    "step": 698,
+    "score": 88.21,
+    "similarity": 0.85,
+    "dataset": "northern_male",
+    "speaker": 2484
+  },
+  "isles.sc_f_01": {
+    "step": 334,
+    "score": 93.44,
+    "similarity": 0.93,
+    "dataset": "scottish_female",
+    "speaker": 2484
+  },
+  "isles.sc_m_01": {
+    "step": 524,
+    "score": 88.3,
+    "similarity": 0.85,
+    "dataset": "scottish_male",
+    "speaker": 2484
+  },
+  "isles.sth_f_01": {
+    "step": 633,
+    "score": 88.36,
+    "similarity": 0.84,
+    "dataset": "southern_female",
+    "speaker": 2484
+  },
+  "isles.sth_m_01": {
+    "step": 698,
+    "score": 85.73,
+    "similarity": 0.8,
+    "dataset": "southern_male",
+    "speaker": 2484
+  },
+  "isles.wl_f_01": {
+    "step": 786,
+    "score": 87.76,
+    "similarity": 0.83,
+    "dataset": "welsh_female",
+    "speaker": 2484
+  },
+  "isles.wl_m_01": {
+    "step": 795,
+    "score": 82.46,
+    "similarity": 0.74,
+    "dataset": "welsh_male",
+    "speaker": 2484
+  }
+}
