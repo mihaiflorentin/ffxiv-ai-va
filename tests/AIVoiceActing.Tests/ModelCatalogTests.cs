@@ -50,7 +50,7 @@ public sealed class ModelCatalogTests
     public void RequiredGroup_HoldsExactlyTheTenChatterboxAssets_AndKokoroAndF5AreSeparate()
     {
         Assert.Equal(10, ModelCatalog.ChatterboxRequiredAssets.Count);
-        Assert.Equal(29, ModelCatalog.Assets.Count);
+        Assert.Equal(29 + 16, ModelCatalog.Assets.Count);
 
         var emotion = ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.EmotionGroup).ToArray();
         Assert.Equal(2, emotion.Length);
@@ -96,6 +96,93 @@ public sealed class ModelCatalogTests
         Assert.Equal("https://huggingface.co/onnx-community/chatterbox-ONNX/resolve/main/" + asset.FileName,
             ModelCatalog.UrlFor(asset));
     }
+
+    // Local paths of the pre-catalog constants: existing installs must stay "downloaded".
+    private static readonly (string Group, string Local)[] LegacyPaths =
+    [
+        ("chatterbox-required", "onnx/speech_encoder.onnx"),
+        ("chatterbox-required", "onnx/speech_encoder.onnx_data"),
+        ("chatterbox-required", "onnx/embed_tokens.onnx"),
+        ("chatterbox-required", "onnx/embed_tokens.onnx_data"),
+        ("chatterbox-required", "onnx/conditional_decoder.onnx"),
+        ("chatterbox-required", "onnx/conditional_decoder.onnx_data"),
+        ("chatterbox-required", "onnx/language_model_q4.onnx"),
+        ("chatterbox-required", "onnx/language_model_q4.onnx_data"),
+        ("chatterbox-required", "tokenizer.json"),
+        ("chatterbox-required", "default_voice.wav"),
+        ("chatterbox-fp32-lm", "onnx/language_model.onnx"),
+        ("chatterbox-fp32-lm", "onnx/language_model.onnx_data"),
+        ("kokoro", "kokoro-v1.0.onnx"),
+        ("f5", "f5-preprocess.onnx"),
+        ("f5", "f5-transformer.onnx"),
+        ("f5", "f5-decode.onnx"),
+        ("f5", "f5-vocab.txt"),
+        ("turbo", "turbo-speech-encoder.onnx"),
+        ("turbo", "speech_encoder.onnx_data"),
+        ("turbo", "turbo-embed-tokens.onnx"),
+        ("turbo", "embed_tokens.onnx_data"),
+        ("turbo", "turbo-language-model.onnx"),
+        ("turbo", "language_model.onnx_data"),
+        ("turbo", "turbo-conditional-decoder.onnx"),
+        ("turbo", "conditional_decoder.onnx_data"),
+        ("turbo", "turbo-tokenizer.json"),
+        ("turbo", "turbo-default-voice.wav"),
+        ("emotion", "emotion-classifier.onnx"),
+        ("emotion", "emotion-tokenizer.json"),
+    ];
+
+    [Fact]
+    public void ExistingLocalPaths_AreUnchanged_AndInTheSameGroup()
+    {
+        foreach (var (group, local) in LegacyPaths)
+        {
+            Assert.Contains(ModelCatalog.Assets, a => a.Asset.FileName == local && a.Group == group);
+        }
+
+        Assert.Equal(LegacyPaths.Select(p => p.Local), ModelCatalog.Assets.Take(LegacyPaths.Length).Select(a => a.Asset.FileName));
+    }
+
+    [Fact]
+    public void LocalPaths_AreUnique()
+    {
+        var duplicates = ModelCatalog.Assets.GroupBy(a => a.Asset.FileName).Where(g => g.Count() > 1).Select(g => g.Key);
+        Assert.Empty(duplicates);
+    }
+
+    [Fact]
+    public void EveryAsset_HasSizeAndPrecision_AndLfsFilesHaveSha()
+    {
+        Assert.All(ModelCatalog.Assets, a =>
+        {
+            Assert.True(a.Asset.SizeBytes > 0, a.Asset.FileName);
+            Assert.False(string.IsNullOrEmpty(a.Asset.Precision), a.Asset.FileName);
+        });
+
+        // Only the plain-git tokenizers lack an LFS oid; every other file is sha-pinned.
+        var unpinned = ModelCatalog.Assets.Where(a => a.Sha256 is null).Select(a => a.Asset.FileName).Order();
+        Assert.Equal(["emotion-tokenizer.json", "tokenizer.json", "turbo-tokenizer.json"], unpinned);
+        Assert.All(ModelCatalog.Assets.Where(a => a.Sha256 is not null), a => Assert.Matches("^[0-9a-f]{64}$", a.Sha256));
+    }
+
+    [Fact]
+    public void TurboPrecisionGroups_ArePresent_WithPinnedTotals()
+    {
+        Assert.Equal(3_323_391_436, Total(ModelCatalog.TurboGroup));
+        Assert.Equal(1_661_100_256, Total(ModelCatalog.TurboFp16Group));
+        Assert.Equal(561_806_478, Total(ModelCatalog.TurboQ4F16Group));
+
+        foreach (var (group, precision) in new[] { (ModelCatalog.TurboFp16Group, "fp16"), (ModelCatalog.TurboQ4F16Group, "q4f16") })
+        {
+            var assets = ModelCatalog.Assets.Where(a => a.Group == group).ToArray();
+            Assert.Equal(8, assets.Length);
+            Assert.All(assets, a => Assert.Equal(precision, a.Asset.Precision));
+            Assert.All(assets, a => Assert.StartsWith("https://huggingface.co/ResembleAI/chatterbox-turbo-ONNX/resolve/main/onnx/", a.Url));
+            Assert.All(assets, a => Assert.True(ModelCatalog.IsTurboAsset(a.Asset.FileName)));
+        }
+    }
+
+    private static long Total(string group) =>
+        ModelCatalog.Assets.Where(a => a.Group == group).Sum(a => a.Asset.SizeBytes ?? 0);
 
     private static long Size(string fileName) =>
         ModelCatalog.Assets.First(a => a.Asset.FileName == fileName).Asset.SizeBytes

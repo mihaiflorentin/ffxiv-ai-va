@@ -1,0 +1,471 @@
+{
+  "assets": [
+    {
+      "group": "chatterbox-required",
+      "name": "Speech encoder",
+      "precision": "fp32",
+      "repo": "onnx-community/chatterbox-ONNX",
+      "remote": "onnx/speech_encoder.onnx",
+      "local": "onnx/speech_encoder.onnx",
+      "sizeBytes": 1184608,
+      "sha256": "8f1c8a0f89b77bf9cd5dd8f2e034eb2c79dc00fe70d41196b28c257643b00ccb"
+    },
+    {
+      "group": "chatterbox-required",
+      "name": "Speech encoder weights",
+      "precision": "fp32",
+      "repo": "onnx-community/chatterbox-ONNX",
+      "remote": "onnx/speech_encoder.onnx_data",
+      "local": "onnx/speech_encoder.onnx_data",
+      "sizeBytes": 591274880,
+      "sha256": "04431dcef6325c54b02de2219845888b464bcd1f1ac2f8839c2fecd1ed2ef294"
+    },
+    {
+      "group": "chatterbox-required",
+      "name": "Text embedding",
+      "precision": "fp32",
+      "repo": "onnx-community/chatterbox-ONNX",
+      "remote": "onnx/embed_tokens.onnx",
+      "local": "onnx/embed_tokens.onnx",
+      "sizeBytes": 13286,
+      "sha256": "160722ec14789f616abdb1e31916cbbf9223c03fde0ab546d64ca74fb72e430b"
+    },
+    {
+      "group": "chatterbox-required",
+      "name": "Text embedding weights",
+      "precision": "fp32",
+      "repo": "onnx-community/chatterbox-ONNX",
+      "remote": "onnx/embed_tokens.onnx_data",
+      "local": "onnx/embed_tokens.onnx_data",
+      "sizeBytes": 61640704,
+      "sha256": "898c563c3a5ca1b9ea10ce89b0cdcf252b0bb5ab460dfc4eadea003b56e5d2ee"
+    },
+    {
+      "group": "chatterbox-required",
+      "name": "Conditional decoder",
+      "precision": "fp32",
+      "repo": "onnx-community/chatterbox-ONNX",
+      "remote": "onnx/conditional_decoder.onnx",
+      "local": "onnx/conditional_decoder.onnx",
+      "sizeBytes": 6350448,
+      "sha256": "1656d0d31332bae1854839959a3139300ebb67c178651dfa3f8c5fbfa5351351"
+    },
+    {
+      "group": "chatterbox-required",
+      "name": "Conditional decoder weights",
+      "precision": "fp32",
+      "repo": "onnx-community/chatterbox-ONNX",
+      "remote": "onnx/conditional_decoder.onnx_data",
+      "local": "onnx/conditional_decoder.onnx_data",
+      "sizeBytes": 533970816,
+      "sha256": "51d58345a272747665ec9d5bb61e01835258a940e321a288582ac4c18cf01b5a"
+    },
+    {
+      "group": "chatterbox-required",
+      "name": "Language model (q4)",
+      "precision": "q4",
+      "repo": "onnx-community/chatterbox-ONNX",
+      "remote": "onnx/language_model_q4.onnx",
+      "local": "onnx/language_model_q4.onnx",
+      "sizeBytes": 227911,
+      "sha256": "7f8cdca83b2493536cbf3acf421199808a3d68736f55f4eabd20ef8a99da4313"
+    },
+    {
+      "group": "chatterbox-required",
+      "name": "Language model weights (q4)",
+      "precision": "q4",
+      "repo": "onnx-community/chatterbox-ONNX",
+      "remote": "onnx/language_model_q4.onnx_data",
+      "local": "onnx/language_model_q4.onnx_data",
+      "sizeBytes": 353621248,
+      "sha256": "5203d1e83c159316f9923c5c83759f6a34f87be1322ce4ad0facd9fc4aef4790"
+    },
+    {
+      "group": "chatterbox-required",
+      "name": "Tokenizer",
+      "precision": "n/a",
+      "repo": "onnx-community/chatterbox-ONNX",
+      "remote": "tokenizer.json",
+      "local": "tokenizer.json",
+      "sizeBytes": 28543
+    },
+    {
+      "group": "chatterbox-required",
+      "name": "Default reference voice",
+      "precision": "n/a",
+      "repo": "onnx-community/chatterbox-ONNX",
+      "remote": "default_voice.wav",
+      "local": "default_voice.wav",
+      "sizeBytes": 714320,
+      "sha256": "3ebc531cdaba358a327099c1c4f0448026719957bcf4d8e9868767f227e02f4e"
+    },
+    {
+      "group": "chatterbox-fp32-lm",
+      "name": "Language model (fp32)",
+      "precision": "fp32",
+      "repo": "onnx-community/chatterbox-ONNX",
+      "remote": "onnx/language_model.onnx",
+      "local": "onnx/language_model.onnx",
+      "sizeBytes": 171387,
+      "optional": true,
+      "sha256": "861a34585605e8ad671051788afc495dcbeaee833a41523a1b33aded9c3babc7"
+    },
+    {
+      "group": "chatterbox-fp32-lm",
+      "name": "Language model weights (fp32)",
+      "precision": "fp32",
+      "repo": "onnx-community/chatterbox-ONNX",
+      "remote": "onnx/language_model.onnx_data",
+      "local": "onnx/language_model.onnx_data",
+      "sizeBytes": 2080632832,
+      "optional": true,
+      "sha256": "efe9a1173c40d50bc651cb96ebff9f23d6f20d5b3a11b0685510e3a3facdbcf1"
+    },
+    {
+      "group": "kokoro",
+      "name": "Kokoro model (fp32)",
+      "precision": "fp32",
+      "baseUrl": "https://github.com/Lyrcaxis/KokoroSharpBinaries/releases/download/v2.0.0/",
+      "remote": "kokoro.onnx",
+      "local": "kokoro-v1.0.onnx",
+      "sizeBytes": 325508342,
+      "sha256": "0cfd5e79aab70a3d8c1a57dc639835110ddb32c9f5ff4fdd1f4db202ea43bb05"
+    },
+    {
+      "group": "f5",
+      "name": "F5 preprocess",
+      "precision": "fp32",
+      "repo": "nibor1896/F5-TTS-English-ONNX",
+      "remote": "F5_Preprocess.onnx",
+      "local": "f5-preprocess.onnx",
+      "sizeBytes": 68549853,
+      "sha256": "e71d3ed14e90ba3fc1e83560512e86a771e25b6f0be7789b2cf53a5c9ba5617d"
+    },
+    {
+      "group": "f5",
+      "name": "F5 transformer",
+      "precision": "fp32",
+      "repo": "nibor1896/F5-TTS-English-ONNX",
+      "remote": "F5_Transformer.onnx",
+      "local": "f5-transformer.onnx",
+      "sizeBytes": 1321718282,
+      "sha256": "c63aeb96953ccae551df6717d892f73a8408e59f1a6fe8edc2aed8063bd195b8"
+    },
+    {
+      "group": "f5",
+      "name": "F5 decode",
+      "precision": "fp32",
+      "repo": "nibor1896/F5-TTS-English-ONNX",
+      "remote": "F5_Decode.onnx",
+      "local": "f5-decode.onnx",
+      "sizeBytes": 62550703,
+      "sha256": "a16fea891beb4889b47e5987b80c841bb996beaccc1d1fe27a1f9323a089a6da"
+    },
+    {
+      "group": "f5",
+      "name": "F5 vocab",
+      "precision": "n/a",
+      "repo": "nibor1896/F5-TTS-English-ONNX",
+      "remote": "vocab.txt",
+      "local": "f5-vocab.txt",
+      "sizeBytes": 13800,
+      "sha256": "2a05f992e00af9b0bd3800a8d23e78d520dbd705284ed2eedb5f4bd29398fa3c"
+    },
+    {
+      "group": "turbo",
+      "name": "Turbo speech encoder (fp32)",
+      "precision": "fp32",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/speech_encoder.onnx",
+      "local": "turbo-speech-encoder.onnx",
+      "sizeBytes": 1172072,
+      "sha256": "4d66128037517dd51d370edc9b89ce36d42c75dcbd96e7216c7fb45dfae36045"
+    },
+    {
+      "group": "turbo",
+      "name": "Turbo speech encoder weights (fp32)",
+      "precision": "fp32",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/speech_encoder.onnx_data",
+      "local": "speech_encoder.onnx_data",
+      "sizeBytes": 1044712832,
+      "sha256": "c9915ff6c529e7bb80983b525255e6744d6c39c7e35b12720925ba99ed0d0a2f"
+    },
+    {
+      "group": "turbo",
+      "name": "Turbo text embedding (fp32)",
+      "precision": "fp32",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/embed_tokens.onnx",
+      "local": "turbo-embed-tokens.onnx",
+      "sizeBytes": 2058,
+      "sha256": "27796e8252f36b463b0421cafdcc35b5f1e670ab0d96c9182f37ac6571c2f4bc"
+    },
+    {
+      "group": "turbo",
+      "name": "Turbo text embedding weights (fp32)",
+      "precision": "fp32",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/embed_tokens.onnx_data",
+      "local": "embed_tokens.onnx_data",
+      "sizeBytes": 232812544,
+      "sha256": "a1c37edc6ec6adb655351f02e958da297221b50211c2c01b69312cb6f008a293"
+    },
+    {
+      "group": "turbo",
+      "name": "Turbo language model (fp32)",
+      "precision": "fp32",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/language_model.onnx",
+      "local": "turbo-language-model.onnx",
+      "sizeBytes": 207266,
+      "sha256": "c12e31df78c74f9589b165c8d51e65171f5028b77b7fedb41900f55f7f410dc8"
+    },
+    {
+      "group": "turbo",
+      "name": "Turbo language model weights (fp32)",
+      "precision": "fp32",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/language_model.onnx_data",
+      "local": "language_model.onnx_data",
+      "sizeBytes": 1269724812,
+      "sha256": "67db106868f5354b2e425651f1791aef36ae3e6f00ac5e1d91e32c985cad6b39"
+    },
+    {
+      "group": "turbo",
+      "name": "Turbo conditional decoder (fp32)",
+      "precision": "fp32",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/conditional_decoder.onnx",
+      "local": "turbo-conditional-decoder.onnx",
+      "sizeBytes": 1889468,
+      "sha256": "8c43f3a1d0ddb1a86e226a244d7cda5396c67f5c6412789c23900c646e3ffc50"
+    },
+    {
+      "group": "turbo",
+      "name": "Turbo conditional decoder weights (fp32)",
+      "precision": "fp32",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/conditional_decoder.onnx_data",
+      "local": "conditional_decoder.onnx_data",
+      "sizeBytes": 768593792,
+      "sha256": "05f162a519f3e9abaf0b7337ae037f4af8b2b30c4455d39b2c61ed3a9b2b5476"
+    },
+    {
+      "group": "turbo",
+      "name": "Turbo tokenizer",
+      "precision": "n/a",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "tokenizer.json",
+      "local": "turbo-tokenizer.json",
+      "sizeBytes": 3562272
+    },
+    {
+      "group": "turbo",
+      "name": "Turbo default reference voice",
+      "precision": "n/a",
+      "repo": "onnx-community/chatterbox-ONNX",
+      "remote": "default_voice.wav",
+      "local": "turbo-default-voice.wav",
+      "sizeBytes": 714320,
+      "sha256": "3ebc531cdaba358a327099c1c4f0448026719957bcf4d8e9868767f227e02f4e"
+    },
+    {
+      "group": "emotion",
+      "name": "Emotion classifier (fp32)",
+      "precision": "fp32",
+      "repo": "SamLowe/roberta-base-go_emotions-onnx",
+      "remote": "onnx/model.onnx",
+      "local": "emotion-classifier.onnx",
+      "sizeBytes": 498841248,
+      "optional": true,
+      "sha256": "3bf605adfa0e59ae36723f1136d37865acb0ec4ded7831f7f7f5231eb032d60a"
+    },
+    {
+      "group": "emotion",
+      "name": "Emotion classifier tokenizer",
+      "precision": "n/a",
+      "repo": "SamLowe/roberta-base-go_emotions-onnx",
+      "remote": "onnx/tokenizer.json",
+      "local": "emotion-tokenizer.json",
+      "sizeBytes": 2108884,
+      "optional": true
+    },
+    {
+      "group": "turbo-fp16",
+      "name": "Turbo speech encoder (fp16)",
+      "precision": "fp16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/speech_encoder_fp16.onnx",
+      "local": "turbo-speech-encoder-fp16.onnx",
+      "sizeBytes": 1189888,
+      "optional": true,
+      "sha256": "5544f87c3e1615a31f5dc3ccdf9ba52a9f5fb8f6018e72796235fc1cfd5ebc9f"
+    },
+    {
+      "group": "turbo-fp16",
+      "name": "Turbo speech encoder weights (fp16)",
+      "precision": "fp16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/speech_encoder_fp16.onnx_data",
+      "local": "speech_encoder_fp16.onnx_data",
+      "sizeBytes": 522307136,
+      "optional": true,
+      "sha256": "d24b817ff61489373ab13033cbdc28a5ba8347341248a00f9a63f10888e81d73"
+    },
+    {
+      "group": "turbo-fp16",
+      "name": "Turbo text embedding (fp16)",
+      "precision": "fp16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/embed_tokens_fp16.onnx",
+      "local": "turbo-embed-tokens-fp16.onnx",
+      "sizeBytes": 1754,
+      "optional": true,
+      "sha256": "f7a7a83e91337e10add2fad054544421f9080e27b72af1aef27f339a1a66776c"
+    },
+    {
+      "group": "turbo-fp16",
+      "name": "Turbo text embedding weights (fp16)",
+      "precision": "fp16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/embed_tokens_fp16.onnx_data",
+      "local": "embed_tokens_fp16.onnx_data",
+      "sizeBytes": 116406272,
+      "optional": true,
+      "sha256": "cdda886a9e58ad39059fe8f6cf5a3a628994a1a2dfc1a8b58502c252fec70327"
+    },
+    {
+      "group": "turbo-fp16",
+      "name": "Turbo language model (fp16)",
+      "precision": "fp16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/language_model_fp16.onnx",
+      "local": "turbo-language-model-fp16.onnx",
+      "sizeBytes": 209456,
+      "optional": true,
+      "sha256": "396b35570dd1dbc5f537ffc932c3e69130ab8a09bf1390469d92338c8eae7da4"
+    },
+    {
+      "group": "turbo-fp16",
+      "name": "Turbo language model weights (fp16)",
+      "precision": "fp16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/language_model_fp16.onnx_data",
+      "local": "language_model_fp16.onnx_data",
+      "sizeBytes": 634862406,
+      "optional": true,
+      "sha256": "d730d6437126d3e232747b26e2a7adece68844f22133277ca5012298ffe36f93"
+    },
+    {
+      "group": "turbo-fp16",
+      "name": "Turbo conditional decoder (fp16)",
+      "precision": "fp16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/conditional_decoder_fp16.onnx",
+      "local": "turbo-conditional-decoder-fp16.onnx",
+      "sizeBytes": 2104016,
+      "optional": true,
+      "sha256": "cbdc0281548eb90a02fa2430647237df63fa0cb695e42b91c10b860b9b6d2230"
+    },
+    {
+      "group": "turbo-fp16",
+      "name": "Turbo conditional decoder weights (fp16)",
+      "precision": "fp16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/conditional_decoder_fp16.onnx_data",
+      "local": "conditional_decoder_fp16.onnx_data",
+      "sizeBytes": 384019328,
+      "optional": true,
+      "sha256": "c6c3e79e6ff86bc41f77381a3d67b8edaa16b13e43a2700ca8159d0894bd594a"
+    },
+    {
+      "group": "turbo-q4f16",
+      "name": "Turbo speech encoder (q4f16)",
+      "precision": "q4f16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/speech_encoder_q4f16.onnx",
+      "local": "turbo-speech-encoder-q4f16.onnx",
+      "sizeBytes": 1217655,
+      "optional": true,
+      "sha256": "004407d26127c1d8e974bd213ecff8dbe67611527ca7a1930e656b80d9c51125"
+    },
+    {
+      "group": "turbo-q4f16",
+      "name": "Turbo speech encoder weights (q4f16)",
+      "precision": "q4f16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/speech_encoder_q4f16.onnx_data",
+      "local": "speech_encoder_q4f16.onnx_data",
+      "sizeBytes": 177289008,
+      "optional": true,
+      "sha256": "c017ab57887418e0609afdef52b0cbc17f43cb304e78af44300c0292cd2b2fa9"
+    },
+    {
+      "group": "turbo-q4f16",
+      "name": "Turbo text embedding (q4f16)",
+      "precision": "q4f16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/embed_tokens_q4f16.onnx",
+      "local": "turbo-embed-tokens-q4f16.onnx",
+      "sizeBytes": 2548,
+      "optional": true,
+      "sha256": "e5c9507c89e770e35d68bdd669e4ae44b34272232e84f010f2c97959feae79b3"
+    },
+    {
+      "group": "turbo-q4f16",
+      "name": "Turbo text embedding weights (q4f16)",
+      "precision": "q4f16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/embed_tokens_q4f16.onnx_data",
+      "local": "embed_tokens_q4f16.onnx_data",
+      "sizeBytes": 33648688,
+      "optional": true,
+      "sha256": "37e96447b5f3ef46f46fb35cc599cfcb95b277e5528cc0c89bab78169da620ef"
+    },
+    {
+      "group": "turbo-q4f16",
+      "name": "Turbo language model (q4f16)",
+      "precision": "q4f16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/language_model_q4f16.onnx",
+      "local": "turbo-language-model-q4f16.onnx",
+      "sizeBytes": 276803,
+      "optional": true,
+      "sha256": "4c5d83674c52bb71683a1ea1f60e2608b80cda48aafce67e8f8c03162c474ad5"
+    },
+    {
+      "group": "turbo-q4f16",
+      "name": "Turbo language model weights (q4f16)",
+      "precision": "q4f16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/language_model_q4f16.onnx_data",
+      "local": "language_model_q4f16.onnx_data",
+      "sizeBytes": 183981430,
+      "optional": true,
+      "sha256": "f084f21f977e365e76e622d2958c309ff894537f7b7133ac7fc5ce8fc055d6f9"
+    },
+    {
+      "group": "turbo-q4f16",
+      "name": "Turbo conditional decoder (q4f16)",
+      "precision": "q4f16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/conditional_decoder_q4f16.onnx",
+      "local": "turbo-conditional-decoder-q4f16.onnx",
+      "sizeBytes": 2394210,
+      "optional": true,
+      "sha256": "17c9f7caef818605df2dc197c2f41682c0bda7fe437b8652dae8366de8b68b7e"
+    },
+    {
+      "group": "turbo-q4f16",
+      "name": "Turbo conditional decoder weights (q4f16)",
+      "precision": "q4f16",
+      "repo": "ResembleAI/chatterbox-turbo-ONNX",
+      "remote": "onnx/conditional_decoder_q4f16.onnx_data",
+      "local": "conditional_decoder_q4f16.onnx_data",
+      "sizeBytes": 162996136,
+      "optional": true,
+      "sha256": "3e53cc7cc05e72957797c620e1bf0c6d6b909df937de4756c6e534d50854ca3e"
+    }
+  ]
+}

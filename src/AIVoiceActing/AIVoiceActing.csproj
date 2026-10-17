@@ -49,6 +49,7 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Domain\voices.json" />
+    <EmbeddedResource Include="Infrastructure\Onnx\models-catalog.json" LogicalName="models-catalog.json" />
     <EmbeddedResource Include="Infrastructure\Dalamud\overridenModelIds.txt" />
   </ItemGroup>
   <ItemGroup>

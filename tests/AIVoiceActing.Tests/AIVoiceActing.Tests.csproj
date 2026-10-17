@@ -65,6 +65,7 @@
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Audio\PlaybackSpeechQueue.cs" Link="AIVoiceActing\PlaybackSpeechQueue.cs" />
     <Content Include="..\..\src\AIVoiceActing\Infrastructure\Dalamud\overridenModelIds.txt" Link="overridenModelIds.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\AIVoiceActing\Domain\voices.json" Link="voices.json" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="..\..\src\AIVoiceActing\Infrastructure\Onnx\models-catalog.json" LogicalName="models-catalog.json" />
   </ItemGroup>
 
 </Project>
