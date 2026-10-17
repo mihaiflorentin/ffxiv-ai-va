@@ -52,6 +52,13 @@ public sealed record UiContext
 
     public UnboundModelLog? UnboundModels { get; init; }
 
+    /// <summary>
+    /// What the setup flow knows about the graphics card. Reports "no GPU info" until the device
+    /// probe and setup advisor land (tickets #12/#13); the plugin root then assigns a real source
+    /// here and the recommendation follows, with no change to Home.
+    /// </summary>
+    public Func<SetupDeviceInfo> DeviceInfo { get; init; } = () => SetupDeviceInfo.Unknown;
+
     // ---- environment delegates ----
     public required Func<string> ModelsDir { get; init; }
 
