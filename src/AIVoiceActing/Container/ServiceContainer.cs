@@ -49,10 +49,12 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<bool>? nameWithSayEnabledFactory;
     private readonly Func<float>? defaultExaggerationFactory;
     private readonly Func<string>? selectedEpFactory;
-    private readonly Func<bool>? useFp32LanguageModelFactory;
     private readonly Func<string>? selectedEngineFactory;
     private readonly Func<bool>? streamSentencesFactory;
     private readonly Func<bool>? expressiveEngineFactory;
+    private readonly Func<IEngineCatalog>? engineCatalogFactory;
+    private readonly Func<IReadOnlyDictionary<string, string>>? remoteExtraFactory;
+    private IEngineCatalog? engineCatalog;
     private ISpeechSynthesizer? expressiveSynthesizer;
     private ExpressiveRouter? expressiveRouter;
     private readonly Func<int>? cpuThreadsFactory;
@@ -133,7 +135,6 @@ public sealed class ServiceContainer : IDisposable
         Func<FirstOrLastName>? onlySayFirstOrLastNameFactory = null,
         Func<float>? defaultExaggerationFactory = null,
         Func<string>? selectedEpFactory = null,
-        Func<bool>? useFp32LanguageModelFactory = null,
         Func<string>? selectedEngineFactory = null,
         Func<int>? cpuThreadsFactory = null,
         Func<string?>? kokoroVoicesDirFactory = null,
@@ -149,8 +150,12 @@ public sealed class ServiceContainer : IDisposable
         Func<bool>? ageAwareCastingFactory = null,
         Func<bool>? emotionClassifierEnabledFactory = null,
         Func<bool>? streamSentencesFactory = null,
-        Func<bool>? expressiveEngineFactory = null)
+        Func<bool>? expressiveEngineFactory = null,
+        Func<IEngineCatalog>? engineCatalogFactory = null,
+        Func<IReadOnlyDictionary<string, string>>? remoteExtraFactory = null)
     {
+        this.remoteExtraFactory = remoteExtraFactory;
+        this.engineCatalogFactory = engineCatalogFactory;
         this.expressiveEngineFactory = expressiveEngineFactory;
         this.streamSentencesFactory = streamSentencesFactory;
         this.emotionClassifierEnabledFactory = emotionClassifierEnabledFactory;
@@ -185,7 +190,6 @@ public sealed class ServiceContainer : IDisposable
         this.defaultExaggerationFactory = defaultExaggerationFactory;
         this.cutsceneActiveFactory = cutsceneActiveFactory;
         this.selectedEpFactory = selectedEpFactory;
-        this.useFp32LanguageModelFactory = useFp32LanguageModelFactory;
         this.selectedEngineFactory = selectedEngineFactory;
         this.cpuThreadsFactory = cpuThreadsFactory;
         this.kokoroVoicesDirFactory = kokoroVoicesDirFactory;
@@ -200,6 +204,10 @@ public sealed class ServiceContainer : IDisposable
     /// <summary>Recently rendered lines; cleared whenever the engine is rebuilt (a new
     /// engine, EP or voice set can change what the same request sounds like).</summary>
     public SynthesisCache SynthesisCache { get; } = new();
+
+    /// <summary>Engine descriptors, alias resolution and download-group ownership.</summary>
+    public IEngineCatalog EngineCatalog => this.engineCatalog ??= this.engineCatalogFactory?.Invoke()
+        ?? Infrastructure.Engines.EngineCatalog.Instance;
 
     /// <summary>Downloaded-model directory (modelsDirFactory or a hard error, like the profile store).</summary>
     public string ModelsDir => this.modelsDirFactory?.Invoke()
@@ -289,7 +297,7 @@ public sealed class ServiceContainer : IDisposable
                 }
 
                 var threads = this.cpuThreadsFactory?.Invoke();
-                var engine = this.selectedEngineFactory?.Invoke() ?? "kokoro";
+                var engine = this.EngineCatalog.Resolve(this.selectedEngineFactory?.Invoke());
                 ISpeechSynthesizer created = engine switch
                 {
                     "chatterbox" => new ChatterboxSynthesizer(
@@ -300,14 +308,9 @@ public sealed class ServiceContainer : IDisposable
                         // ModelsDir/voices/{id}.wav.
                         voicePathResolver: this.ClippingResolver("default_voice.wav"),
                         executionProvider: this.selectedEpFactory?.Invoke() ?? "auto",
-                        // fp32 override replaces the q4 LM session entirely (int4 kernels
-                        // and their Zen5/AVX-512 native crashes go with it).
-                        languageModelOverride: this.useFp32LanguageModelFactory?.Invoke() == true
-                            ? Infrastructure.Onnx.ModelCatalog.LanguageModelFp32FileName
-                            : null,
                         intraOpThreads: threads,
                         log: this.LogSinkUnlocked()),
-                    "turbo" => Infrastructure.Onnx.ChatterboxSynthesizer.CreateTurbo(
+                    "chatterbox-turbo" => Infrastructure.Onnx.ChatterboxSynthesizer.CreateTurbo(
                         this.ModelsDir,
                         voicePathResolver: this.ClippingResolver("turbo-default-voice.wav"),
                         executionProvider: this.selectedEpFactory?.Invoke() ?? "cpu",
@@ -319,6 +322,9 @@ public sealed class ServiceContainer : IDisposable
                         this.LogSinkUnlocked(),
                         voicesDirFactory: this.f5VoicesDirFactory,
                         executionProviderFactory: this.selectedEpFactory),
+                    "remote" => new Infrastructure.Net.RemoteSynthesizer(
+                        this.remoteExtraFactory ?? (() => new Dictionary<string, string>()),
+                        this.LogSinkUnlocked()),
                     // A stale or unknown value (old configs) must never silently pick a
                     // 1.4 GB parked engine.
                     _ => new Infrastructure.Kokoro.KokoroSynthesizer(
@@ -357,7 +363,7 @@ public sealed class ServiceContainer : IDisposable
     /// <summary>Expressive routing applies: switched on, installed, and Kokoro is the main engine.</summary>
     public bool ExpressiveRoutingActive =>
         this.expressiveEngineFactory?.Invoke() == true
-        && (this.selectedEngineFactory?.Invoke() ?? "kokoro") == "kokoro"
+        && this.EngineCatalog.Resolve(this.selectedEngineFactory?.Invoke()) == "kokoro"
         && this.ExpressiveEngineInstalled;
 
     /// <summary>
@@ -664,7 +670,7 @@ public sealed class ServiceContainer : IDisposable
                     log: this.LogSinkUnlocked(),
                     streamSentences: this.streamSentencesFactory,
                     cache: this.SynthesisCache,
-                    engineKey: () => (this.selectedEngineFactory?.Invoke() ?? "kokoro")
+                    engineKey: () => this.EngineCatalog.Resolve(this.selectedEngineFactory?.Invoke())
                         + (this.ExpressiveRoutingActive ? "+turbo" : string.Empty));
             }
         }

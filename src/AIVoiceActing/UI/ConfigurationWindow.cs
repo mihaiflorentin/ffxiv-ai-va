@@ -6,10 +6,12 @@ using System.Numerics;
 using AIVoiceActing.Domain;
 using AIVoiceActing.Domain.Handlers;
 using AIVoiceActing.Domain.Pipeline;
+using AIVoiceActing.Infrastructure.Engines;
 using AIVoiceActing.Ports;
 using AIVoiceActing.UI.Components;
 using AIVoiceActing.UI.State;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
 using Dalamud.Interface.Windowing;
 
 /// <summary>
@@ -268,7 +270,6 @@ public sealed class ConfigurationWindow : Window
         }
 
         ImGui.EndTabBar();
-        this.DrawStatusLine();
     }
 
     /// <summary>In-window status line: one pinned line, red on error, fading after ~10 s.</summary>
@@ -316,6 +317,13 @@ public sealed class ConfigurationWindow : Window
     private static readonly string[] ChatterboxSectionGroups =
         [Infrastructure.Onnx.ModelCatalog.ChatterboxRequiredGroup, Infrastructure.Onnx.ModelCatalog.ChatterboxFp32LmGroup];
 
+    /// <summary>The selected engine in this window's own keys (the catalog's "chatterbox-turbo" is "turbo" here).</summary>
+    private string PrimaryKey => EngineCatalog.Instance.Resolve(this.config.Engine.Primary) switch
+    {
+        "chatterbox-turbo" => "turbo",
+        var id => id,
+    };
+
     private void DrawEngineTab()
     {
         var provisioner = this.provisioner();
@@ -332,7 +340,7 @@ public sealed class ConfigurationWindow : Window
 
         // Status strip: cached fields only, never per-frame probes.
         ImGui.TextUnformatted(
-            $"Engine: {this.config.SelectedEngine} — " +
+            $"Engine: {this.config.Engine.Primary} — " +
             (this.warmingEngine ? "loading…"
                 : ready ? "ready"
                 : $"NOT ready — {this.EngineReason()}"));
@@ -354,7 +362,7 @@ public sealed class ConfigurationWindow : Window
                     : missingRequiredForSelected > 0 ? this.EngineReason()
                     : null))
         {
-            this.StartWarmUp(this.config.SelectedEngine);
+            this.StartWarmUp(this.PrimaryKey);
         }
 
         ImGui.SameLine();
@@ -415,7 +423,7 @@ public sealed class ConfigurationWindow : Window
         // a ONE-LINE change to visibleEngines below; NEVER delete the renderer, the
         // EngineSections entries, or the synthesizer adapters — the voice map's F5 clip
         // aliases and existing configs depend on them. Power users can still switch
-        // engines via Configuration.json ("SelectedEngine").
+        // engines via Configuration.json ("Engine.Primary").
         var visibleEngines = new[] { "kokoro" };
         foreach (var (key, title, blurb) in EngineSections.Where(section => visibleEngines.Contains(section.Key)))
         {
@@ -432,7 +440,7 @@ public sealed class ConfigurationWindow : Window
         var sectionAssets = assets.Where(a => groupKeys.Contains(a.Group)).ToList();
         var downloadedCount = sectionAssets.Count(a => this.IsDownloadedCached(a.Asset));
         var missingCount = sectionAssets.Count - downloadedCount;
-        var active = this.config.SelectedEngine == key;
+        var active = this.PrimaryKey == key;
 
         var header = $"{title} ({downloadedCount}/{sectionAssets.Count})"
             + (active ? " — ACTIVE" : string.Empty)
@@ -466,7 +474,7 @@ public sealed class ConfigurationWindow : Window
 
         if (Controls.Button($"Set active##set-{key}", !active, active ? "Already the active engine." : null))
         {
-            this.config.SelectedEngine = key;
+            this.config.Engine.Primary = EngineCatalog.Instance.Resolve(key);
             this.save();
             this.invalidateSynthesizer();
             this.StartWarmUp(key);
@@ -557,7 +565,7 @@ public sealed class ConfigurationWindow : Window
         }
 
         var installed = sectionAssets.Where(a => !a.Asset.Optional).All(a => this.IsDownloadedCached(a.Asset));
-        var on = installed && this.config.ExpressiveEngine && this.config.SelectedEngine == "kokoro";
+        var on = installed && this.config.Engine.Expressive.Enabled && this.PrimaryKey == "kokoro";
         if (!ImGui.CollapsingHeader("Expressive voices (experimental)" + (on ? " — ON" : string.Empty) + "##expressive-card"))
         {
             return;
@@ -571,11 +579,11 @@ public sealed class ConfigurationWindow : Window
             "if it fails, the line falls back to Kokoro.");
         Controls.Checkbox(
             "Use expressive voices for emotional lines when downloaded",
-            () => this.config.ExpressiveEngine,
-            v => { this.config.ExpressiveEngine = v; this.save(); });
+            () => this.config.Engine.Expressive.Enabled,
+            v => { this.config.Engine.Expressive.Enabled = v; this.save(); });
         ImGui.TextDisabled(
             !installed ? "State: not downloaded"
-                : this.config.SelectedEngine != "kokoro" ? "State: downloaded (only used with Kokoro as the main engine)"
+                : this.PrimaryKey != "kokoro" ? "State: downloaded (only used with Kokoro as the main engine)"
                 : "State: downloaded");
         var missing = sectionAssets.Where(a => !this.IsDownloadedCached(a.Asset)).Select(a => a.Asset).ToList();
         if (missing.Count > 0)
@@ -645,18 +653,18 @@ public sealed class ConfigurationWindow : Window
         // Per-engine device options: an engine only lists providers its adapter can
         // actually wire. kokoro is CPU-only; f5 and chatterbox can try DirectML and
         // fall back to CPU when the EP fails to initialize (e.g. under Wine).
-        if (c.SelectedEngine is "f5" or "chatterbox" or "turbo")
+        if (this.PrimaryKey is "f5" or "chatterbox" or "turbo")
         {
-            var providers = c.SelectedEngine == "f5"
+            var providers = this.PrimaryKey == "f5"
                 ? ["cpu", "directml"]
                 : ExecutionProviders;
             Controls.Combo(
                 "Execution provider",
                 providers,
-                () => c.SelectedEp,
+                () => c.Device.ToExecutionProvider(),
                 v =>
                 {
-                    c.SelectedEp = v;
+                    c.Device.ApplyExecutionProvider(v);
                     save();
                     this.invalidateSynthesizer();
                 },
@@ -666,8 +674,8 @@ public sealed class ConfigurationWindow : Window
         Controls.Combo(
             "CPU impact",
             ["low", "medium", "high"],
-            () => c.CpuImpact,
-            v => { c.CpuImpact = v; save(); },
+            () => c.Device.CpuImpact,
+            v => { c.Device.CpuImpact = v; save(); },
             "How many CPU threads synthesis may use: low = 2 (gentlest on frame rate), medium = 4, high = 8. More threads mean faster lines but a bigger FPS hit.");
         ImGui.SameLine();
         Controls.HelpMarker(
@@ -797,9 +805,9 @@ public sealed class ConfigurationWindow : Window
     /// button downloads exactly what the engine needs, then two short pointers.</summary>
     private void DrawGetStarted(bool anyDownload)
     {
-        var groups = this.config.SelectedEngine == "chatterbox"
+        var groups = this.PrimaryKey == "chatterbox"
             ? ChatterboxSectionGroups
-            : [this.config.SelectedEngine];
+            : [this.PrimaryKey];
         var missing = this.modelAssets()
             .Where(a => groups.Contains(a.Group) && !a.Asset.Optional && !this.IsDownloadedCached(a.Asset))
             .Select(a => a.Asset)
@@ -825,9 +833,9 @@ public sealed class ConfigurationWindow : Window
 
     private int RequiredForSelectedMissing()
     {
-        var groups = this.config.SelectedEngine == "chatterbox"
+        var groups = this.PrimaryKey == "chatterbox"
             ? ChatterboxSectionGroups
-            : [this.config.SelectedEngine];
+            : [this.PrimaryKey];
         return this.modelAssets()
             .Count(a => groups.Contains(a.Group)
                 && !a.Asset.Optional
@@ -1425,14 +1433,14 @@ public sealed class ConfigurationWindow : Window
         if (Controls.Button("Fork…", enabled: true))
         {
             this.forkNameBuffer = isDefault ? "My casting" : $"{this.casting.SelectedName} copy";
-            ImGui.OpenPopup("##fork-preset");
+            ImGui.OpenPopup("Fork preset###fork-preset");
         }
 
         ImGui.SameLine();
         if (Controls.Button("New", enabled: true))
         {
             this.scratchNameBuffer = "New casting";
-            ImGui.OpenPopup("##new-preset");
+            ImGui.OpenPopup("New preset from scratch###new-preset");
         }
 
         ImGui.SameLine();
@@ -1471,7 +1479,7 @@ public sealed class ConfigurationWindow : Window
         if (Controls.Button("Import", enabled: true))
         {
             this.presetImportBuffer = string.Empty;
-            ImGui.OpenPopup("##import-preset");
+            ImGui.OpenPopup("Import preset###import-preset");
         }
 
         this.DrawForkPresetPopup(store);
@@ -1600,7 +1608,7 @@ public sealed class ConfigurationWindow : Window
             ImGui.TableSetupColumn("Speed", ImGuiTableColumnFlags.WidthFixed, 90f);
             ImGui.TableSetupColumn("Vol", ImGuiTableColumnFlags.WidthFixed, 80f);
             ImGui.TableSetupColumn("Bias", ImGuiTableColumnFlags.WidthFixed, 90f);
-            ImGui.TableSetupColumn("▶", ImGuiTableColumnFlags.WidthFixed, 36f);
+            ImGui.TableSetupColumn("Test", ImGuiTableColumnFlags.WidthFixed, 36f);
             ImGui.TableHeadersRow();
 
             for (var i = 0; i < slots.Count; i++)
@@ -1609,7 +1617,7 @@ public sealed class ConfigurationWindow : Window
                 ImGui.PushID(i);
                 ImGui.TableNextRow();
                 ImGui.TableNextColumn();
-                if (ImGui.SmallButton("🗑"))
+                if (Controls.IconButton(FontAwesomeIcon.Trash, "remove-slot", "Remove this voice from the set."))
                 {
                     removeAt = i;
                 }
@@ -1629,9 +1637,9 @@ public sealed class ConfigurationWindow : Window
 
                 ImGui.TableNextColumn();
                 var ready = this.Synth.IsReady && this.activeRequests == 0;
-                var test = ready
-                    ? ImGui.SmallButton("▶")
-                    : Controls.Button("▶", false, this.Synth.IsReady ? "Synthesizing…" : this.EngineReason());
+                var test = Controls.IconButton(
+                    FontAwesomeIcon.Play, "test", "Speak a test line with this voice.",
+                    ready, this.Synth.IsReady ? "Synthesizing…" : this.EngineReason());
                 if (test)
                 {
                     this.SpeakVoiceTest(new VoiceProfile(
@@ -1733,7 +1741,7 @@ public sealed class ConfigurationWindow : Window
             ImGui.PushID($"bind-{modelId}");
             ImGui.TextUnformatted($"{modelId}");
             ImGui.SameLine();
-            if (ImGui.SmallButton("🗑"))
+            if (Controls.IconButton(FontAwesomeIcon.Trash, "unbind", "Remove this model-id binding."))
             {
                 this.casting.UnbindModelId(tribe.Key, modelId);
             }
@@ -1787,7 +1795,7 @@ public sealed class ConfigurationWindow : Window
     private void DrawForkPresetPopup(ICastingPresetStore store)
     {
         var open = true;
-        if (!ImGui.BeginPopupModal("Fork preset", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.BeginPopupModal("Fork preset###fork-preset", ref open, ImGuiWindowFlags.AlwaysAutoResize))
         {
             return;
         }
@@ -1831,7 +1839,7 @@ public sealed class ConfigurationWindow : Window
     private void DrawNewPresetPopup(ICastingPresetStore store)
     {
         var open = true;
-        if (!ImGui.BeginPopupModal("New preset from scratch", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.BeginPopupModal("New preset from scratch###new-preset", ref open, ImGuiWindowFlags.AlwaysAutoResize))
         {
             return;
         }
@@ -1875,7 +1883,7 @@ public sealed class ConfigurationWindow : Window
     private void DrawImportPresetPopup(ICastingPresetStore store)
     {
         var open = true;
-        if (!ImGui.BeginPopupModal("Import preset", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.BeginPopupModal("Import preset###import-preset", ref open, ImGuiWindowFlags.AlwaysAutoResize))
         {
             return;
         }
@@ -1998,11 +2006,11 @@ public sealed class ConfigurationWindow : Window
         if (Controls.Button("Import", enabled: true))
         {
             this.assignmentImportBuffer = string.Empty;
-            ImGui.OpenPopup($"Import assignments###import{keyPrefix}");
+            ImGui.OpenPopup($"Import voice assignments###import-assignments{keyPrefix}");
         }
 
         var importOpen = true;
-        if (ImGui.BeginPopupModal("Import voice assignments", ref importOpen, ImGuiWindowFlags.AlwaysAutoResize))
+        if (ImGui.BeginPopupModal($"Import voice assignments###import-assignments{keyPrefix}", ref importOpen, ImGuiWindowFlags.AlwaysAutoResize))
         {
             ImGui.TextWrapped("Paste an assignment share string (copied with Export):");
             ImGui.InputTextMultiline("##import-assignments-text", ref this.assignmentImportBuffer, 64_000, new Vector2(460, 120));
@@ -2116,7 +2124,7 @@ public sealed class ConfigurationWindow : Window
                 ImGui.TableNextRow();
 
                 ImGui.TableNextColumn();
-                if (ImGui.SmallButton("🗑"))
+                if (Controls.IconButton(FontAwesomeIcon.Trash, "remove-speaker", "Forget this speaker's voice assignment."))
                 {
                     removeKey = profile.SpeakerKey;
                 }
@@ -2182,9 +2190,9 @@ public sealed class ConfigurationWindow : Window
 
                 ImGui.TableNextColumn();
                 var ready = this.Synth.IsReady && this.activeRequests == 0;
-                var test = ready
-                    ? ImGui.SmallButton("▶")
-                    : Controls.Button("▶", false, this.Synth.IsReady ? "Synthesizing…" : this.EngineReason());
+                var test = Controls.IconButton(
+                    FontAwesomeIcon.Play, "test", "Speak a test line with this voice.",
+                    ready, this.Synth.IsReady ? "Synthesizing…" : this.EngineReason());
                 if (test)
                 {
                     this.SpeakVoiceTest(profile with
