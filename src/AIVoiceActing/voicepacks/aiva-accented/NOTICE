@@ -1,0 +1,12 @@
+aiva-accented (AI Voice Acting voice pack)
+
+The style tensors in style/ are unmodified copies of voice embeddings published with
+Kokoro-82M by hexgrad (https://huggingface.co/hexgrad/Kokoro-82M), licensed under the
+Apache License 2.0 (see LICENSE). Nothing was retrained or edited: the voices are the stock
+Japanese, Mandarin Chinese, French, Spanish, Italian, Brazilian Portuguese and Hindi voices,
+registered here with an English grapheme-to-phoneme setting so they speak English.
+
+The French voice (ff_siwis) was trained on data from the SIWIS French Speech Synthesis
+Database (CC BY 4.0, https://datashare.ed.ac.uk/handle/10283/2353).
+
+The preview clips in preview/ were synthesized with these voices.

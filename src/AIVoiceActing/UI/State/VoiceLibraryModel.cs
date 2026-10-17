@@ -200,7 +200,7 @@ public sealed class VoiceLibraryModel
         return words.All(word =>
             voice.DisplayName.Contains(word, StringComparison.OrdinalIgnoreCase)
             || accent.Contains(word, StringComparison.OrdinalIgnoreCase)
-            || voice.Accent.Contains(word, StringComparison.OrdinalIgnoreCase)
+            || Accents.MatchesSearch(voice.Accent, word)
             || voice.Description.Contains(word, StringComparison.OrdinalIgnoreCase)
             || voice.Id.Contains(word, StringComparison.OrdinalIgnoreCase));
     }
