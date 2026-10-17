@@ -44,7 +44,11 @@ public sealed class ConfigurationTests
             AdHocStyleTagsEnabled = true,
             StyleTag = "!!",
             CurrentPresetId = 7,
-            SelectedEp = "coreml",
+            Device = { Mode = "gpu", Backend = "directml", CpuImpact = "high" },
+            Engine = { Primary = "chatterbox-turbo", Expressive = { Enabled = true } },
+            Voices = { DisabledPacks = { "aiva-isles" } },
+            ShowAdvanced = true,
+            LastPage = "engine",
             DefaultExaggeration = 0.7f,
             DirectorEnabled = true,
             Lexicons = { "/tmp/words.pls", "/tmp/more.xml" },
@@ -73,7 +77,8 @@ public sealed class ConfigurationTests
     {
         var config = new Configuration();
 
-        Assert.Equal(1, config.Version);
+        Assert.Equal(Configuration.CurrentVersion, config.Version);
+        Assert.Equal(2, Configuration.CurrentVersion);
         Assert.True(config.Enabled);
         Assert.Equal(1.0f, config.GlobalVolume);
         Assert.Equal(0, config.SelectedAudioDeviceIndex);
@@ -110,7 +115,22 @@ public sealed class ConfigurationTests
         Assert.Equal("|", config.StyleTag);
 
         Assert.False(config.DirectorEnabled);
-        Assert.Equal("auto", config.SelectedEp);
+        Assert.Equal("auto", config.Device.Mode);
+        Assert.Equal("kokoro", config.Engine.Primary);
+        Assert.False(config.Engine.Expressive.Enabled);
+        Assert.Equal("chatterbox-turbo", config.Engine.Expressive.EngineId);
+        Assert.Equal("medium", config.Device.CpuImpact);
+        Assert.Equal("balanced", config.Device.GpuImpact);
+        Assert.True(config.Device.FallbackToCpu);
+        Assert.False(config.Device.GpuDisabledByCrashGuard);
+        Assert.Empty(config.Voices.DisabledPacks);
+        Assert.Empty(config.Voices.ExtraPackDirs);
+        Assert.Empty(config.Migration.Changes);
+        Assert.False(config.ShowAdvanced);
+        Assert.False(config.ReduceMotion);
+        Assert.Equal("", config.LastPage);
+        Assert.Equal(0, config.OnboardingCompletedVersion);
+        Assert.Equal(0, config.MigrationNoticeAckedVersion);
         Assert.Equal(0.5f, config.DefaultExaggeration);
 
         Assert.Empty(config.Triggers);
@@ -186,7 +206,14 @@ public sealed class ConfigurationTests
         Assert.Equal("!!", restored.StyleTag);
         Assert.Equal(@"!!(.*?)!!", restored.StyleRegex);
         Assert.Equal(7, restored.CurrentPresetId);
-        Assert.Equal("coreml", restored.SelectedEp);
+        Assert.Equal("gpu", restored.Device.Mode);
+        Assert.Equal("directml", restored.Device.Backend);
+        Assert.Equal("high", restored.Device.CpuImpact);
+        Assert.Equal("chatterbox-turbo", restored.Engine.Primary);
+        Assert.True(restored.Engine.Expressive.Enabled);
+        Assert.Equal(["aiva-isles"], restored.Voices.DisabledPacks);
+        Assert.True(restored.ShowAdvanced);
+        Assert.Equal("engine", restored.LastPage);
         Assert.Equal(0.7f, restored.DefaultExaggeration);
         Assert.True(restored.DirectorEnabled);
         Assert.Equal([new TriggerSpec("gift", false)], restored.Triggers);
@@ -212,7 +239,8 @@ public sealed class ConfigurationTests
 
         var restored = JsonSerializer.Deserialize<Configuration>(json)!;
 
-        Assert.Equal("auto", restored.SelectedEp);
+        Assert.Equal("auto", restored.Device.Mode);
+        Assert.Equal("kokoro", restored.Engine.Primary);
         Assert.Equal(0.5f, restored.DefaultExaggeration);
         Assert.False(restored.DirectorEnabled);
         Assert.Equal(VirtualKeys.Control, restored.ModifierKey);
