@@ -39,6 +39,24 @@ public sealed class FileModelStore : IModelStore
         return expected is not { } size || SizeWithinTolerance(new FileInfo(path).Length, size);
     }
 
+    public long FreeBytes(string dir)
+    {
+        try
+        {
+            var probe = Path.GetFullPath(dir);
+            while (!Directory.Exists(probe) && Path.GetDirectoryName(probe) is { } parent)
+            {
+                probe = parent;
+            }
+
+            return new DriveInfo(probe).AvailableFreeSpace;
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            return long.MaxValue;
+        }
+    }
+
     public IReadOnlyList<ModelAsset> Missing() =>
         this.catalog.Where(a => !a.Optional && !this.IsDownloaded(a.FileName)).ToArray();
 
