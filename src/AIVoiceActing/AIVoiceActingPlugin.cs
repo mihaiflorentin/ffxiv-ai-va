@@ -90,6 +90,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     private readonly WindowSystem windowSystem = new("AIVoiceActing");
     private readonly ConfigurationWindow configWindow;
     private readonly StylesWindow stylesWindow;
+    private readonly NowSpeakingWindow nowSpeakingWindow;
     private readonly Action openConfigUiHook;
 
     public AIVoiceActingPlugin()
@@ -310,10 +311,16 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             voiceCatalog: () => VoiceCatalog.FromDirectory(Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
                 "voices")),
-            unboundModels: this.services.UnboundModels);
+            unboundModels: this.services.UnboundModels,
+            worlds: () => [.. DataManager.GetExcelSheet<Lumina.Excel.Sheets.World>()
+                .Where(w => w.IsPublic)
+                .Select(w => (w.RowId, w.Name.ExtractText()))
+                .Where(w => w.Item2.Length > 0)]);
         this.stylesWindow = new StylesWindow(config, this.SaveConfig);
         this.windowSystem.AddWindow(this.configWindow);
         this.windowSystem.AddWindow(this.stylesWindow);
+        this.nowSpeakingWindow = new NowSpeakingWindow(config, this.SaveConfig, this.services.SpeechQueue);
+        this.windowSystem.AddWindow(this.nowSpeakingWindow);
 
         // /aivaconfig + /aivastyles route through the container hooks (headless-safe);
         // the game's own OpenConfigUi (system menu) opens our configuration window.

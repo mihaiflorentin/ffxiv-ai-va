@@ -130,6 +130,34 @@ public sealed class ConfigurationWindow : Window
     private string? warmingEngineKey;
     private readonly UnboundModelLog? unboundModels;
 
+    /// <summary>Public worlds by id and name (from the game data), for the world picker and
+    /// world-name columns. Null in tests: raw ids are shown instead.</summary>
+    private readonly Func<IReadOnlyList<(uint Id, string Name)>>? worlds;
+    private Dictionary<uint, string>? worldNames;
+    private IReadOnlyList<(uint Id, string Name)>? sortedWorlds;
+
+    private string WorldLabel(uint? world)
+    {
+        if (world is not { } id)
+        {
+            return "—";
+        }
+
+        if (this.worldNames is null && this.worlds is not null)
+        {
+            try
+            {
+                this.worldNames = this.worlds().ToDictionary(w => w.Id, w => w.Name);
+            }
+            catch (Exception)
+            {
+                this.worldNames = [];
+            }
+        }
+
+        return this.worldNames is not null && this.worldNames.TryGetValue(id, out var name) ? name : id.ToString();
+    }
+
     public ConfigurationWindow(
         Configuration config,
         Action save,
@@ -153,9 +181,11 @@ public sealed class ConfigurationWindow : Window
         Func<ICastingPresetStore> presetStore,
         Action invalidateVoiceMap,
         Func<IReadOnlyList<VoiceCatalogEntry>> voiceCatalog,
-        UnboundModelLog? unboundModels = null)
+        UnboundModelLog? unboundModels = null,
+        Func<IReadOnlyList<(uint Id, string Name)>>? worlds = null)
         : base("AI Voice Acting Settings###AIVAConfig")
     {
+        this.worlds = worlds;
         this.unboundModels = unboundModels;
         this.config = config;
         this.save = save;
@@ -311,6 +341,11 @@ public sealed class ConfigurationWindow : Window
             $"Process memory: {this.processWorkingSet / (1024.0 * 1024.0):0} MB");
 
         var missingRequiredForSelected = this.RequiredForSelectedMissing();
+        if (missingRequiredForSelected > 0)
+        {
+            this.DrawGetStarted(anyDownload);
+        }
+
         if (Controls.Button(
                 "Load engine now",
                 !this.warmingEngine && !ready,
@@ -612,6 +647,11 @@ public sealed class ConfigurationWindow : Window
             "Long lines are rendered sentence by sentence, so the first sentence plays while the rest is still being made.",
             () => c.StreamSentences,
             v => { c.StreamSentences = v; save(); });
+        Controls.Checkbox(
+            "Show the now-speaking panel",
+            "A small panel with who is talking, their voice and mood, and Replay, Skip and Stop buttons.",
+            () => c.ShowNowSpeaking,
+            v => { c.ShowNowSpeaking = v; save(); });
     }
 
     /// <summary>Background warm-up for an engine: resolves the synthesizer once, reports
@@ -704,6 +744,36 @@ public sealed class ConfigurationWindow : Window
     }
 
     /// <summary>Missing REQUIRED assets for the SELECTED engine (read from the cache).</summary>
+    /// <summary>First-run guide, shown while the active engine is not installed: one
+    /// button downloads exactly what the engine needs, then two short pointers.</summary>
+    private void DrawGetStarted(bool anyDownload)
+    {
+        var groups = this.config.SelectedEngine == "chatterbox"
+            ? ChatterboxSectionGroups
+            : [this.config.SelectedEngine];
+        var missing = this.modelAssets()
+            .Where(a => groups.Contains(a.Group) && !a.Asset.Optional && !this.IsDownloadedCached(a.Asset))
+            .Select(a => a.Asset)
+            .ToList();
+        var megabytes = missing.Sum(a => a.SizeBytes ?? 0) / (1024.0 * 1024.0);
+
+        ImGui.Separator();
+        ImGui.TextColored(new Vector4(0.98f, 0.82f, 0.25f, 1f), "Get started");
+        ImGui.TextWrapped($"1. Download the voice engine (about {megabytes:0} MB, once).");
+        ImGui.SameLine();
+        if (Controls.Button(
+                "Download##get-started",
+                !anyDownload && missing.Count > 0,
+                anyDownload ? "A download is already in progress." : null))
+        {
+            this.StartDownloads(missing);
+        }
+
+        ImGui.TextWrapped("2. Talk to any NPC: each character gets a voice that fits their race, gender and age, and keeps it.");
+        ImGui.TextWrapped("3. Optional: download the emotion reader below for moodier delivery, and fine-tune voices in the voices tabs.");
+        ImGui.Separator();
+    }
+
     private int RequiredForSelectedMissing()
     {
         var groups = this.config.SelectedEngine == "chatterbox"
@@ -1968,15 +2038,18 @@ public sealed class ConfigurationWindow : Window
 
             var view = SpeakerKeyView.Parse(profile.SpeakerKey);
             return view.Name.Contains(query, StringComparison.InvariantCultureIgnoreCase)
-                || (view.World?.ToString().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false);
+                || (view.World is not null
+                    && this.WorldLabel(view.World).Contains(query, StringComparison.InvariantCultureIgnoreCase));
         }
 
+        var totalRows = rows.Count;
         if (voiceQuery is { Length: > 0 })
         {
+            rows = [.. rows.Where(profile => VoiceOrNameMatches(profile, voiceQuery))];
             ImGui.SameLine();
             ImGui.TextColored(
                 new Vector4(1f, 0.9f, 0.45f, 1f),
-                $"{rows.Count(profile => VoiceOrNameMatches(profile, voiceQuery))} row(s) highlighted");
+                $"{rows.Count} of {totalRows} shown");
         }
 
         this.DrawCharacterAddForm(player, entries, ids);
@@ -1992,11 +2065,6 @@ public sealed class ConfigurationWindow : Window
                 var key = SpeakerKeyView.Parse(profile.SpeakerKey);
                 ImGui.PushID(profile.SpeakerKey);
                 ImGui.TableNextRow();
-                if (voiceQuery is { Length: > 0 } vq && VoiceOrNameMatches(profile, vq))
-                {
-                    ImGui.TableSetBgColor(
-                        ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(new Vector4(0.98f, 0.82f, 0.25f, 0.35f)));
-                }
 
                 ImGui.TableNextColumn();
                 if (ImGui.SmallButton("🗑"))
@@ -2007,7 +2075,7 @@ public sealed class ConfigurationWindow : Window
                 ImGui.TableNextColumn();
                 ImGui.TextUnformatted(key.Name);
                 ImGui.TableNextColumn();
-                ImGui.TextUnformatted(key.World?.ToString() ?? "—");
+                ImGui.TextUnformatted(this.WorldLabel(key.World));
 
                 ImGui.TableNextColumn();
                 var current = this.characterPending.TryGetValue(profile.SpeakerKey, out var pending)
@@ -2112,14 +2180,37 @@ public sealed class ConfigurationWindow : Window
         if (player)
         {
             ImGui.SameLine();
-            ImGui.SetNextItemWidth(80f);
-            var world = form.World;
-            if (ImGui.InputTextWithHint("##add-player-world", "World id", ref world, 16))
+            var worldList = this.WorldList();
+            if (worldList.Count > 0)
             {
-                form.World = world;
-            }
+                ImGui.SetNextItemWidth(140f);
+                var selected = uint.TryParse(form.World, out var selectedId) ? this.WorldLabel(selectedId) : "World";
+                if (ImGui.BeginCombo("##add-player-world", selected))
+                {
+                    foreach (var (id, worldName) in worldList)
+                    {
+                        if (ImGui.Selectable(worldName, form.World == id.ToString()))
+                        {
+                            form.World = id.ToString();
+                        }
+                    }
 
-            Controls.Tooltip("Numeric world id distinguishing same-named characters across worlds.");
+                    ImGui.EndCombo();
+                }
+
+                Controls.Tooltip("The character's home world, to tell same-named characters apart.");
+            }
+            else
+            {
+                ImGui.SetNextItemWidth(80f);
+                var world = form.World;
+                if (ImGui.InputTextWithHint("##add-player-world", "World id", ref world, 16))
+                {
+                    form.World = world;
+                }
+
+                Controls.Tooltip("Numeric world id distinguishing same-named characters across worlds.");
+            }
         }
         ImGui.SameLine();
         if (Controls.Button("New", enabled: true)
@@ -2137,6 +2228,19 @@ public sealed class ConfigurationWindow : Window
             ImGui.TextUnformatted(error);
             ImGui.PopStyleColor();
         }
+    }
+
+    private IReadOnlyList<(uint Id, string Name)> WorldList()
+    {
+        if (this.sortedWorlds is null)
+        {
+            _ = this.WorldLabel(0); // fills the name table on first use
+            this.sortedWorlds = this.worldNames is { Count: > 0 } names
+                ? [.. names.OrderBy(w => w.Value, StringComparer.OrdinalIgnoreCase).Select(w => (w.Key, w.Value))]
+                : [];
+        }
+
+        return this.sortedWorlds;
     }
 
     /// <summary>The voice a new override starts on: the first slot of the Unknown row

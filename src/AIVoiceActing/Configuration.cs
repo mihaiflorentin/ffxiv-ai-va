@@ -124,6 +124,9 @@ public class Configuration
     /// <summary>Long lines start playing after their first sentence instead of after the whole line.</summary>
     public bool StreamSentences { get; set; } = true;
 
+    /// <summary>Shows the small now-speaking panel (speaker, voice, mood, Replay/Skip/Stop).</summary>
+    public bool ShowNowSpeaking { get; set; }
+
     /// <summary>Lines older than this are dropped at playback instead of played late. 0 keeps everything.</summary>
     public int StaleLineSeconds { get; set; } = 20;
 
