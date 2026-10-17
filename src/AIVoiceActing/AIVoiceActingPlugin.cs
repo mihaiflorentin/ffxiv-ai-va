@@ -422,7 +422,16 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
                 .Where(w => w.Item2.Length > 0)]),
         });
         this.windowSystem.AddWindow(this.configWindow);
-        this.nowSpeakingWindow = new NowSpeakingWindow(config, this.SaveConfig, this.services.SpeechQueue);
+        this.nowSpeakingWindow = new NowSpeakingWindow(
+            config,
+            this.SaveConfig,
+            this.services.SpeechQueue,
+            this.services.VoiceLibrary,
+            () =>
+            {
+                nav.OpenAt(NavTab.Voices);
+                this.configWindow.IsOpen = true;
+            });
         this.windowSystem.AddWindow(this.nowSpeakingWindow);
 
         // /aivaconfig + /aivastyles route through the container hooks (headless-safe);

@@ -32,7 +32,7 @@ public static class Ui
     public static float RowHeight() => ImGui.GetFrameHeight() + Em(Space1);
 
     /// <summary>Vertical gap of <paramref name="spaceEm"/> em.</summary>
-    public static void Gap(float spaceEm = Space2) => ImGui.Dummy(new Vector2(0f, Em(spaceEm)));
+    public static void Gap(float spaceEm = Space2) => ImGui.Dummy(Vector2.UnitY * Em(spaceEm));
 
     /// <summary>Width left in the current content region, for controls that fill the row.</summary>
     public static float Fill() => ImGui.GetContentRegionAvail().X;

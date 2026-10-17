@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using AIVoiceActing.Domain;
 using AIVoiceActing.Ports;
 
 /// <summary>
@@ -22,7 +23,7 @@ public sealed class RemoteSynthesizer : ISpeechSynthesizer, IDisposable
     public const string DefaultUrl = "http://127.0.0.1:8880";
     public const int DefaultTimeoutSeconds = 30;
     public const string DefaultModel = "kokoro";
-    private const string DefaultVoiceName = "af_heart";
+    private const string DefaultVoiceName = VoiceCatalog.FallbackFemale;
 
     private readonly Func<IReadOnlyDictionary<string, string>> extraFactory;
     private readonly Func<string, string?>? referenceClipResolver;
