@@ -166,6 +166,13 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             ageAwareCastingFactory: () => config.AgeAwareCasting,
             streamSentencesFactory: () => config.StreamSentences,
             expressiveEngineFactory: () => config.Engine.Expressive.Enabled,
+            expressiveEngineIdFactory: () => config.Engine.Expressive.EngineId,
+            enginePrecisionFactory: engineId => config.Engine.PerEngine.TryGetValue(engineId, out var options)
+                ? options.Precision
+                : "auto",
+            engineDeviceFactory: engineId => config.Engine.PerEngine.TryGetValue(engineId, out var options)
+                ? options.Device
+                : "inherit",
             modelsDirFactory: () => Path.Combine(configDir, "models"),
             voicesManifestFactory: () => ExtractVoicesManifest(configDir),
             // Re-read on first use and whenever the processor sees changed files; the
@@ -206,9 +213,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             kokoroVoicesDirFactory: () => Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
                 "voices"),
-            f5VoicesDirFactory: () => Path.Combine(
+            referenceClipsDirFactory: () => Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
-                "voices-f5"),
+                ReferenceClipBank.FolderName),
             // Voice packs: bundled next to the plugin, user packs in the config folder, then
             // any extra folders from the settings. Order decides who wins an id collision.
             voicePackRootsFactory: () =>

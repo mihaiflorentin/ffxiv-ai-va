@@ -18,7 +18,6 @@
     <!-- Natives only, for the AIVA_GPU_TESTS=1 integration tests; same pin as the plugin. -->
     <PackageReference Include="Microsoft.ML.OnnxRuntime.EP.WebGpu" Version="[0.2.1]" ExcludeAssets="compile;runtime" />
     <PackageReference Include="KokoroSharp" Version="0.8.4" />
-    <PackageReference Include="Horus.F5Tts.Onnx" Version="0.3.1" />
     <PackageReference Include="Tokenizers.DotNet" Version="1.4.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" /><!-- test-only: Dalamud persists configs with it at runtime -->
     <PackageReference Include="Tokenizers.DotNet.runtime.osx-arm64" Version="1.4.1" />
@@ -48,7 +47,6 @@
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Dalamud\GameObjectSpeakerDirectory.cs" Link="AIVoiceActing\Infrastructure\GameObjectSpeakerDirectory.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Onnx\**\*.cs" Link="AIVoiceActing\Infrastructure\Onnx\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Kokoro\**\*.cs" Link="AIVoiceActing\Infrastructure\Kokoro\%(Filename)%(Extension)" />
-    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\F5\**\*.cs" Link="AIVoiceActing\Infrastructure\F5\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Net\RemoteSynthesizer.cs" Link="AIVoiceActing\Infrastructure\Net\RemoteSynthesizer.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Net\HuggingFaceProvisioner.cs" Link="AIVoiceActing\Infrastructure\Net\HuggingFaceProvisioner.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\FileModelStore.cs" Link="AIVoiceActing\Infrastructure\Storage\FileModelStore.cs" />

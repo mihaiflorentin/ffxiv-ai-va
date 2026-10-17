@@ -79,7 +79,7 @@ public sealed class RaceVoiceMap
             ?? throw new InvalidOperationException("voices.json deserialized to null.");
 
         // "disabledSets" holds PARKED accent implementations (true Icelandic/Scottish/
-        // Scouse/Nordic/Japanese flavours that need F5 reference clips and model-id
+        // Scouse/Nordic/Japanese flavours that need reference clips and model-id
         // wiring). NEVER REMOVE that block from voices.json: it is the casting work,
         // preserved so enabling an accent is a data change, not a rewrite. The loader
         // parses it into a side map that the UI never sees (DistinctVoiceIds/SlotsFor

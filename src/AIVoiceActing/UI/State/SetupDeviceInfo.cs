@@ -1,5 +1,6 @@
 namespace AIVoiceActing.UI.State;
 
+using AIVoiceActing.Domain;
 using AIVoiceActing.Ports;
 
 /// <summary>
@@ -17,12 +18,12 @@ public sealed record SetupDeviceInfo(bool HasUsableGpu, string? GpuName)
     /// </summary>
     public static SetupDeviceInfo From(DeviceReport? report, bool gpuDisabledByCrashGuard = false)
     {
-        if (report is null || gpuDisabledByCrashGuard || !report.HasUsableGpu)
+        if (!SetupAdvisor.HasUsableGpu(report, gpuDisabledByCrashGuard))
         {
             return Unknown;
         }
 
-        var name = report.Adapters.Select(a => a.Name).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+        var name = report!.Adapters.Select(a => a.Name).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
         return new SetupDeviceInfo(true, name);
     }
 }

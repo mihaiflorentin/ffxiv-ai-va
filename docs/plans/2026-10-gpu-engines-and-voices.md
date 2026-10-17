@@ -319,6 +319,15 @@ Acceptance: an existing install with fp32 Turbo and Kokoro shows both as downloa
 Tests: `SetupAdvisorTests` (table), `ExpressiveRouterTests` (engine from config, fallback on GPU failure, retry), `ChatterboxTurboSynthesizerTests` updates (session role placement with fakes), render-cache key test.
 Acceptance (needs the owner's GPU): Turbo fp16 on the RX 9070 XT under Wine reaches RTF below 1.0 for a 15-word line, first audio of a streamed 3-sentence line under 2 s after warm-up; GPU impact `gentle` keeps game frame time p99 within an agreed budget (measure with MangoHud during synthesis; budget set after S4); CPU path unchanged.
 
+**Status (ticket #13, 2026-10-17).** Implemented as written, with the S2 variant (LM on the GPU, device-resident cache):
+
+- `TurboDecodeLoop` (OrtValue + OrtIoBinding, Float16 or Float cache read from the graph) serves GPU and CPU; `TurboModelSet` resolves precision (`auto`: q4f16, then fp16, on a GPU plan; fp32 on the CPU) and `ChatterboxSynthesizer` plans per precision (the allowlist keys on the chosen LM graph). The crash scope closes after the first decoded line; a managed GPU failure rebuilds on the CPU (`FellBack`, retry offered) and the line still finishes.
+- `ExpressiveRouter` takes the engine from `Engine.Expressive.EngineId` (container resolves it through the catalog), device and precision from `Device.Mode` and `Engine.PerEngine[id]`; a failed expressive line sits the engine out for 60 s or until Retry.
+- The render-cache key is `engineId:precision/deviceClass` (plus the expressive engine's variant while routing is on).
+- `Domain/SetupAdvisor` drives the Home setup flow: with a verified GPU, Balanced and Most expressive ask for the `turbo` base group plus `turbo-q4f16`.
+- Legacy Chatterbox and F5 code, the F5 package and the F5 SmokeSynth path are gone; their catalog groups stay flagged Retired. The eight reference clips moved from `voices-f5/` to `voices-clips/` (`ReferenceClipBank`) and still back Turbo-as-main when a voice has no clip of its own.
+- Measured on the RX 9070 XT (shared, heavily loaded machine; see the ticket for numbers): the GPU stream equals the CPU stream for short lines and diverges later on near-ties; the CPU decoder is the bottleneck.
+
 ### Phase 6 - Remote engine
 
 `Infrastructure/Net/RemoteSynthesizer.cs` (loopback by default; non-loopback needs an explicit "I understand" flag in `EngineOptions.Extra`), protocol = OpenAI-compatible `POST /v1/audio/speech` returning wav, with a documented extension for reference clips (`voice` = id, optional `reference_wav` base64). `tools/aiva-server/` (Python, optional, not shipped) with Kokoro + Chatterbox backends for CUDA/ROCm. Engine descriptor `remote`, status reports latency and errors.

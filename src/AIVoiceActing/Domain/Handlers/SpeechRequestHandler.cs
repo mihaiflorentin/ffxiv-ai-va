@@ -226,7 +226,9 @@ public sealed class SpeechRequestHandler
 
         if (key is not null)
         {
-            this.cache!.Put(key, audio);
+            // Re-read the key: the engine may have loaded (or fallen back to the CPU) while this line rendered,
+            // and the audio belongs to the configuration that actually made it.
+            this.cache!.Put(SynthesisCache.KeyFor(this.engineKey?.Invoke() ?? string.Empty, request), audio);
         }
 
         return audio;

@@ -1,0 +1,284 @@
+namespace AIVoiceActing.Infrastructure.Onnx;
+
+using AIVoiceActing.Ports;
+using Microsoft.ML.OnnxRuntime;
+
+/// <summary>What one Turbo decode needs from the reference clip and the prompt.</summary>
+/// <param name="ConditionEmbedding">Encoder output, [1, <paramref name="ConditionFrames"/>, width] flattened.</param>
+/// <param name="TextIds">Tokenized prompt (ids below the speech range).</param>
+public sealed record TurboDecodeInput(float[] ConditionEmbedding, int ConditionFrames, long[] TextIds);
+
+/// <summary>
+/// Greedy speech-token loop of Chatterbox Turbo: embed the prompt, run the language model with a key-value
+/// cache, pick the next speech token, repeat until STOP. Built on <see cref="OrtValue"/> and
+/// <see cref="OrtIoBinding"/> so the cache never visits managed memory: every step's "present" tensors are
+/// bound straight back as the next step's "past" inputs, in <paramref name="kvMemory"/> (the GPU buffer
+/// allocator for the WebGPU language model, the CPU allocator otherwise). The cache is Float16 for the
+/// fp16 and q4f16 graphs and Float for fp32; the element type is read from the graph.
+/// Measured on the verified runtime (docs/plans/2026-10-gpu-spike-results.md S2): a device-resident cache
+/// is 3 times faster than copying it through managed arrays and stays flat as the context grows.
+/// </summary>
+public sealed class TurboDecodeLoop
+{
+    public const int StartSpeechToken = 6561;
+    public const int StopSpeechToken = 6562;
+    public const int MaxNewTokens = 256;
+    public const int MinSpeechTokens = 30;
+    public const float RepetitionPenalty = 1.2f;
+    public const int NumKvHeads = 16;
+    public const int HeadDim = 64;
+
+    // Some exports expose the attention-mask preprocessing's total length as an input; feed it when present.
+    private const string TotalSequenceLengthInput = "/model/attn_mask_reformat/attn_mask_subgraph/Gather/Cast/output_0";
+
+    private readonly InferenceSession embed;
+    private readonly InferenceSession lm;
+    private readonly OrtMemoryInfo kvMemory;
+    private readonly bool kvIsHalf;
+    private readonly bool hasTotalLength;
+    private readonly string[] pastNames;
+    private readonly string[] presentNames;
+    private bool outputOrderVerified;
+
+    public TurboDecodeLoop(InferenceSession embed, InferenceSession lm, OrtMemoryInfo kvMemory, int layers = 24)
+    {
+        this.embed = embed;
+        this.lm = lm;
+        this.kvMemory = kvMemory;
+        this.pastNames = new string[layers * 2];
+        this.presentNames = new string[layers * 2];
+        // Layer-major, key then value: the graph's present outputs come in this order.
+        for (var layer = 0; layer < layers; layer++)
+        {
+            this.pastNames[layer * 2] = $"past_key_values.{layer}.key";
+            this.pastNames[(layer * 2) + 1] = $"past_key_values.{layer}.value";
+            this.presentNames[layer * 2] = $"present.{layer}.key";
+            this.presentNames[(layer * 2) + 1] = $"present.{layer}.value";
+        }
+
+        if (!lm.InputMetadata.TryGetValue(this.pastNames[0], out var past))
+        {
+            throw new SpeechSynthesisException($"The language model has no input \"{this.pastNames[0]}\"; wrong model for Chatterbox Turbo.");
+        }
+
+        this.kvIsHalf = past.ElementType == typeof(Float16);
+        this.hasTotalLength = lm.InputMetadata.ContainsKey(TotalSequenceLengthInput);
+    }
+
+    /// <summary>Element type of the key-value cache the loaded graph uses.</summary>
+    public string KvType => this.kvIsHalf ? "float16" : "float32";
+
+    /// <summary>
+    /// Generates speech tokens. The result starts with the seeded START token and ends with STOP when the model
+    /// stopped by itself (the same shape the reference recipe slices from).
+    /// </summary>
+    public List<long> Run(TurboDecodeInput input, CancellationToken ct)
+    {
+        var generated = new List<long> { StartSpeechToken };
+        var seen = new HashSet<long> { StartSpeechToken };
+        var past = new OrtValue?[this.pastNames.Length];
+        IDisposableReadOnlyCollection<OrtValue>? previous = null;
+        using var runOptions = new RunOptions();
+        try
+        {
+            long[] ids = input.TextIds;
+            long lastPosition = 0;
+            long totalLength = 0;
+            for (var step = 0; step < MaxNewTokens; step++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var textEmbeds = this.EmbedTokens(ids, out var width);
+
+                float[] embeds;
+                int frames;
+                long[] positions;
+                if (step == 0)
+                {
+                    frames = input.ConditionFrames + ids.Length;
+                    embeds = new float[frames * width];
+                    input.ConditionEmbedding.AsSpan().CopyTo(embeds);
+                    textEmbeds.AsSpan().CopyTo(embeds.AsSpan(input.ConditionFrames * width));
+                    positions = new long[frames];
+                    for (var i = 0; i < frames; i++)
+                    {
+                        positions[i] = i;
+                    }
+
+                    totalLength = frames;
+                    lastPosition = frames - 1;
+                }
+                else
+                {
+                    frames = 1;
+                    embeds = textEmbeds;
+                    lastPosition++;
+                    positions = [lastPosition];
+                    totalLength++;
+                }
+
+                var mask = new long[totalLength];
+                Array.Fill(mask, 1L);
+
+                var logits = this.RunLanguageModel(runOptions, embeds, frames, width, mask, positions, past, ref previous);
+                ApplyRepetitionPenalty(logits, seen);
+                // DEVIATION (documented): on short prompts this export can emit STOP as its very first token,
+                // yielding zero speech tokens and no audio. FFXIV dialogue lines are short, so while under
+                // MinSpeechTokens (~1 s of speech) the STOP logit is masked to guarantee a minimum utterance.
+                if (generated.Count - 1 < MinSpeechTokens && StopSpeechToken < logits.Length)
+                {
+                    logits[StopSpeechToken] = float.NegativeInfinity;
+                }
+
+                var next = Argmax(logits);
+                generated.Add(next);
+                seen.Add(next);
+                if (next == StopSpeechToken)
+                {
+                    break;
+                }
+
+                ids = [next];
+            }
+        }
+        finally
+        {
+            previous?.Dispose();
+        }
+
+        return generated;
+    }
+
+    private float[] EmbedTokens(long[] ids, out int width)
+    {
+        using var idValue = OrtValue.CreateTensorValueFromMemory(ids, [1L, ids.Length]);
+        using var outputs = this.embed.Run(
+            new RunOptions(),
+            new Dictionary<string, OrtValue> { ["input_ids"] = idValue },
+            this.embed.OutputNames);
+        var shape = outputs[0].GetTensorTypeAndShape().Shape;
+        width = (int)shape[^1];
+        return outputs[0].GetTensorDataAsSpan<float>().ToArray();
+    }
+
+    private float[] RunLanguageModel(
+        RunOptions runOptions,
+        float[] embeds,
+        int frames,
+        int width,
+        long[] mask,
+        long[] positions,
+        OrtValue?[] past,
+        ref IDisposableReadOnlyCollection<OrtValue>? previous)
+    {
+        var owned = new List<OrtValue>();
+        try
+        {
+            using var binding = this.lm.CreateIoBinding();
+            owned.Add(OrtValue.CreateTensorValueFromMemory(embeds, [1L, frames, width]));
+            binding.BindInput("inputs_embeds", owned[^1]);
+            owned.Add(OrtValue.CreateTensorValueFromMemory(mask, [1L, mask.Length]));
+            binding.BindInput("attention_mask", owned[^1]);
+            owned.Add(OrtValue.CreateTensorValueFromMemory(positions, [1L, positions.Length]));
+            binding.BindInput("position_ids", owned[^1]);
+            if (this.hasTotalLength)
+            {
+                owned.Add(OrtValue.CreateTensorValueFromMemory(new[] { mask.Length }, Array.Empty<long>()));
+                binding.BindInput(TotalSequenceLengthInput, owned[^1]);
+            }
+
+            // First step: zero-length CPU tensors seed the cache (ORT copies them to the device itself).
+            for (var i = 0; i < this.pastNames.Length; i++)
+            {
+                if (past[i] is { } existing)
+                {
+                    binding.BindInput(this.pastNames[i], existing);
+                }
+                else
+                {
+                    owned.Add(this.EmptyCache());
+                    binding.BindInput(this.pastNames[i], owned[^1]);
+                }
+            }
+
+            // Output order is the binding order: logits first, then the present tensors.
+            binding.BindOutputToDevice("logits", OrtMemoryInfo.DefaultInstance);
+            foreach (var name in this.presentNames)
+            {
+                binding.BindOutputToDevice(name, this.kvMemory);
+            }
+
+            this.lm.RunWithBinding(runOptions, binding);
+            binding.SynchronizeBoundOutputs();
+            var outputs = binding.GetOutputValues();
+            if (!this.outputOrderVerified)
+            {
+                var names = binding.GetOutputNames();
+                if (names.Length != outputs.Count || names[0] != "logits" || !names.Skip(1).SequenceEqual(this.presentNames))
+                {
+                    outputs.Dispose();
+                    throw new SpeechSynthesisException("The language model returned its outputs in an unexpected order.");
+                }
+
+                this.outputOrderVerified = true;
+            }
+
+            if (outputs.Count != this.presentNames.Length + 1)
+            {
+                outputs.Dispose();
+                throw new SpeechSynthesisException($"The language model returned {outputs.Count} outputs, expected {this.presentNames.Length + 1}.");
+            }
+
+            var vocab = (int)outputs[0].GetTensorTypeAndShape().Shape[^1];
+            var lastLogits = outputs[0].GetTensorDataAsSpan<float>()[^vocab..].ToArray();
+            for (var i = 0; i < past.Length; i++)
+            {
+                past[i] = outputs[1 + i];
+            }
+
+            // The new inputs no longer reference the previous step's buffers; free them now.
+            previous?.Dispose();
+            previous = outputs;
+            return lastLogits;
+        }
+        finally
+        {
+            foreach (var value in owned)
+            {
+                value.Dispose();
+            }
+        }
+    }
+
+    private OrtValue EmptyCache() => this.kvIsHalf
+        ? OrtValue.CreateTensorValueFromMemory(Array.Empty<Float16>(), [1L, NumKvHeads, 0L, HeadDim])
+        : OrtValue.CreateTensorValueFromMemory(Array.Empty<float>(), [1L, NumKvHeads, 0L, HeadDim]);
+
+    /// <summary>Card's RepetitionPenaltyLogitsProcessor over the distinct generated ids: negative scores times the penalty, positive divided.</summary>
+    internal static void ApplyRepetitionPenalty(float[] logits, IEnumerable<long> seen)
+    {
+        foreach (var token in seen)
+        {
+            if (token >= 0 && token < logits.Length)
+            {
+                ref var score = ref logits[(int)token];
+                score = score < 0 ? score * RepetitionPenalty : score / RepetitionPenalty;
+            }
+        }
+    }
+
+    internal static long Argmax(ReadOnlySpan<float> logits)
+    {
+        var best = 0;
+        var bestScore = float.NegativeInfinity;
+        for (var i = 0; i < logits.Length; i++)
+        {
+            if (logits[i] > bestScore)
+            {
+                bestScore = logits[i];
+                best = i;
+            }
+        }
+
+        return best;
+    }
+}

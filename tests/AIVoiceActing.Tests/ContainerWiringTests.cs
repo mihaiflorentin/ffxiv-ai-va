@@ -81,7 +81,8 @@ public sealed class ContainerWiringTests
     [InlineData("nonsense", "KokoroSynthesizer")]
     [InlineData("chatterbox-turbo", "ChatterboxSynthesizer")]
     [InlineData("turbo", "ChatterboxSynthesizer")] // alias still resolves
-    [InlineData("f5", "F5Synthesizer")]
+    [InlineData("f5", "KokoroSynthesizer")] // retired engines fall back to Kokoro
+    [InlineData("chatterbox", "KokoroSynthesizer")]
     public void EngineFactory_ResolvesThroughTheCatalog(string? engine, string expectedType)
     {
         using var container = new ServiceContainer(
