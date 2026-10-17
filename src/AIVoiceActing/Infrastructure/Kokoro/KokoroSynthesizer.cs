@@ -429,7 +429,7 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
             IntraOpNumThreads = Math.Max(1, this.intraOpThreadsFactory()),
             InterOpNumThreads = 1,
             EnableMemoryPattern = true,
-        };
+        }.Quiet();
 
         this.log?.Info($"Initializing Kokoro engine ({modelPath}, intra-op threads: {options.IntraOpNumThreads}).");
         var engine = KokoroWavSynthesizer.LoadModel(modelPath, options);

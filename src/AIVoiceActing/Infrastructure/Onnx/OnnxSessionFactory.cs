@@ -120,10 +120,10 @@ public sealed class OnnxSessionFactory
     private static SessionBuild Cpu(int? intraOpThreads, string fallbackReason) =>
         new(EpSelector.CreateSessionOptions("cpu", intraOpThreads: intraOpThreads).Options, DeviceEp.Cpu, fallbackReason, null);
 
-    private static SessionOptions BareOptions(int? intraOpThreads) => new()
+    private static SessionOptions BareOptions(int? intraOpThreads) => new SessionOptions
     {
         IntraOpNumThreads = intraOpThreads is { } threads && threads > 0
             ? threads
             : Math.Max(2, Environment.ProcessorCount / 2),
-    };
+    }.Quiet();
 }

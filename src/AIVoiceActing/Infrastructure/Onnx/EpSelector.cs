@@ -44,12 +44,12 @@ public static class EpSelector
         // Explicit CPU-impact knob when set; otherwise leave half the logical cores
         // for the game: ORT defaults to using them all, and CPU-fallback synthesis
         // pinned the whole machine (the "framerate dropped" report).
-        SessionOptions BareOptions() => new()
+        SessionOptions BareOptions() => new SessionOptions
         {
             IntraOpNumThreads = intraOpThreads is { } threads && threads > 0
                 ? threads
                 : Math.Max(2, Environment.ProcessorCount / 2),
-        };
+        }.Quiet();
 
         var ep = requested.Trim().ToLowerInvariant();
         switch (ep)

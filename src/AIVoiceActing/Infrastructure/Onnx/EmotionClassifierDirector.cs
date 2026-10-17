@@ -120,7 +120,7 @@ public sealed class EmotionClassifierDirector : IEmotionDirector, IDisposable
         try
         {
             var dir = this.modelsDirFactory();
-            var options = new SessionOptions { IntraOpNumThreads = 2, InterOpNumThreads = 1 };
+            var options = new SessionOptions { IntraOpNumThreads = 2, InterOpNumThreads = 1 }.Quiet();
             this.session = new InferenceSession(Path.Combine(dir, ModelCatalog.EmotionModelFileName), options);
             this.tokenizer = new Tokenizer(vocabPath: Path.Combine(dir, ModelCatalog.EmotionTokenizerFileName));
             this.log?.Info("Emotion classifier loaded.");
