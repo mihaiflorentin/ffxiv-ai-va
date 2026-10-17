@@ -51,6 +51,7 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<string>? selectedEpFactory;
     private readonly Func<bool>? useFp32LanguageModelFactory;
     private readonly Func<string>? selectedEngineFactory;
+    private readonly Func<bool>? streamSentencesFactory;
     private readonly Func<int>? cpuThreadsFactory;
     private readonly Func<string?>? kokoroVoicesDirFactory;
     private readonly Func<string?>? f5VoicesDirFactory;
@@ -143,8 +144,10 @@ public sealed class ServiceContainer : IDisposable
         TimeSpan? profileSaveDelay = null,
         Func<bool>? keepTempoWhenPitchedFactory = null,
         Func<bool>? ageAwareCastingFactory = null,
-        Func<bool>? emotionClassifierEnabledFactory = null)
+        Func<bool>? emotionClassifierEnabledFactory = null,
+        Func<bool>? streamSentencesFactory = null)
     {
+        this.streamSentencesFactory = streamSentencesFactory;
         this.emotionClassifierEnabledFactory = emotionClassifierEnabledFactory;
         this.ageAwareCastingFactory = ageAwareCastingFactory;
         this.keepTempoWhenPitchedFactory = keepTempoWhenPitchedFactory;
@@ -188,6 +191,10 @@ public sealed class ServiceContainer : IDisposable
         this.adHocStyleTagsFactory = adHocStyleTagsFactory;
         this.styleTagRegexFactory = styleTagRegexFactory;
     }
+
+    /// <summary>Recently rendered lines; cleared whenever the engine is rebuilt (a new
+    /// engine, EP or voice set can change what the same request sounds like).</summary>
+    public SynthesisCache SynthesisCache { get; } = new();
 
     /// <summary>Downloaded-model directory (modelsDirFactory or a hard error, like the profile store).</summary>
     public string ModelsDir => this.modelsDirFactory?.Invoke()
@@ -241,6 +248,7 @@ public sealed class ServiceContainer : IDisposable
             this.speechSynthesizer = null;
         }
 
+        this.SynthesisCache.Clear();
         if (retired is IDisposable disposable)
         {
             this.LogSinkOptional?.Info(
@@ -503,7 +511,10 @@ public sealed class ServiceContainer : IDisposable
                             this.styleTagRegexFactory?.Invoke(),
                             this.adHocStyleTagsFactory()),
                     defaultExaggeration: this.defaultExaggerationFactory,
-                    log: this.LogSinkUnlocked());
+                    log: this.LogSinkUnlocked(),
+                    streamSentences: this.streamSentencesFactory,
+                    cache: this.SynthesisCache,
+                    engineKey: () => this.selectedEngineFactory?.Invoke() ?? "kokoro");
             }
         }
     }

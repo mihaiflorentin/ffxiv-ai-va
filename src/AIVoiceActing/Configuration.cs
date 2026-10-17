@@ -121,6 +121,9 @@ public class Configuration
     /// <summary>Children get a higher, quicker take on their voice; elders a lower, slower one.</summary>
     public bool AgeAwareCasting { get; set; } = true;
 
+    /// <summary>Long lines start playing after their first sentence instead of after the whole line.</summary>
+    public bool StreamSentences { get; set; } = true;
+
     /// <summary>Lines older than this are dropped at playback instead of played late. 0 keeps everything.</summary>
     public int StaleLineSeconds { get; set; } = 20;
 

@@ -607,6 +607,11 @@ public sealed class ConfigurationWindow : Window
             "Levels every line to the same loudness, then applies the per-voice volume. Volumes above 100% are softly limited instead of clipping.",
             () => c.LevelVoiceLoudness,
             v => { c.LevelVoiceLoudness = v; save(); });
+        Controls.Checkbox(
+            "Start long lines sooner",
+            "Long lines are rendered sentence by sentence, so the first sentence plays while the rest is still being made.",
+            () => c.StreamSentences,
+            v => { c.StreamSentences = v; save(); });
     }
 
     /// <summary>Background warm-up for an engine: resolves the synthesizer once, reports
