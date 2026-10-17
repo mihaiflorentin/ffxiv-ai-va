@@ -77,7 +77,7 @@ public sealed class ContainerWiringTests
     [Theory]
     [InlineData("kokoro", "KokoroSynthesizer")]
     [InlineData(null, "KokoroSynthesizer")]
-    [InlineData("remote", "KokoroSynthesizer")] // placeholder engine: falls back to the default
+    [InlineData("remote", "RemoteSynthesizer")]
     [InlineData("nonsense", "KokoroSynthesizer")]
     [InlineData("chatterbox-turbo", "ChatterboxSynthesizer")]
     [InlineData("turbo", "ChatterboxSynthesizer")] // alias still resolves

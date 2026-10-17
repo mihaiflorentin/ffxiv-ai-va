@@ -196,6 +196,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             defaultExaggerationFactory: () => config.DefaultExaggeration,
             selectedEpFactory: () => config.Device.ToExecutionProvider(),
             selectedEngineFactory: () => config.Engine.Primary,
+            remoteExtraFactory: () => config.Engine.PerEngine.TryGetValue("remote", out var remote)
+                ? remote.Extra
+                : new Dictionary<string, string>(),
             cpuThreadsFactory: () => config.Device.CpuThreads(),
             // Dalamud loads plugin assemblies with an empty Assembly.Location, so the
             // adapter cannot find the package's voices/ folder relative to itself —

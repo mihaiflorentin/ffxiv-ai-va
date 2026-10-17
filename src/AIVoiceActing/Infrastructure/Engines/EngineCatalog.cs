@@ -6,7 +6,7 @@ using AIVoiceActing.Ports;
 /// <summary>
 /// Static engine descriptors. Group keys come from <see cref="ModelCatalog"/> so the UI stops
 /// hard-coding them. Legacy engines (f5, chatterbox) stay listed as retired so old selections
-/// and their download groups still resolve; remote is a placeholder until its phase.
+/// and their download groups still resolve; remote is the user-run OpenAI-style server (no downloads).
 /// </summary>
 public sealed class EngineCatalog : IEngineCatalog
 {

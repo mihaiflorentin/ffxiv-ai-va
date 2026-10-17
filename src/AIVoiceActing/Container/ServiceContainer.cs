@@ -53,6 +53,7 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<bool>? streamSentencesFactory;
     private readonly Func<bool>? expressiveEngineFactory;
     private readonly Func<IEngineCatalog>? engineCatalogFactory;
+    private readonly Func<IReadOnlyDictionary<string, string>>? remoteExtraFactory;
     private IEngineCatalog? engineCatalog;
     private ISpeechSynthesizer? expressiveSynthesizer;
     private ExpressiveRouter? expressiveRouter;
@@ -150,8 +151,10 @@ public sealed class ServiceContainer : IDisposable
         Func<bool>? emotionClassifierEnabledFactory = null,
         Func<bool>? streamSentencesFactory = null,
         Func<bool>? expressiveEngineFactory = null,
-        Func<IEngineCatalog>? engineCatalogFactory = null)
+        Func<IEngineCatalog>? engineCatalogFactory = null,
+        Func<IReadOnlyDictionary<string, string>>? remoteExtraFactory = null)
     {
+        this.remoteExtraFactory = remoteExtraFactory;
         this.engineCatalogFactory = engineCatalogFactory;
         this.expressiveEngineFactory = expressiveEngineFactory;
         this.streamSentencesFactory = streamSentencesFactory;
@@ -319,6 +322,9 @@ public sealed class ServiceContainer : IDisposable
                         this.LogSinkUnlocked(),
                         voicesDirFactory: this.f5VoicesDirFactory,
                         executionProviderFactory: this.selectedEpFactory),
+                    "remote" => new Infrastructure.Net.RemoteSynthesizer(
+                        this.remoteExtraFactory ?? (() => new Dictionary<string, string>()),
+                        this.LogSinkUnlocked()),
                     // A stale or unknown value (old configs) must never silently pick a
                     // 1.4 GB parked engine.
                     _ => new Infrastructure.Kokoro.KokoroSynthesizer(
