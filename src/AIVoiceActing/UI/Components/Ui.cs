@@ -44,6 +44,51 @@ public static class Ui
         ImGui.TextWrapped(text);
     }
 
+    /// <summary>Muted text wrapped at a fixed width, for auto-sizing popups and modals that have no width to wrap to yet.</summary>
+    public static void MutedTextAt(string text, float widthEm)
+    {
+        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + Em(widthEm));
+        MutedText(text);
+        ImGui.PopTextWrapPos();
+    }
+
+    /// <summary>One line of muted text that does not wrap (labels and counts that sit beside controls).</summary>
+    public static void MutedTextInline(string text)
+    {
+        using var colour = Theme.PushText(Theme.Muted);
+        ImGui.TextUnformatted(text);
+    }
+
+    /// <summary>
+    /// <paramref name="text"/> cut with an ellipsis so it fits in <paramref name="maxWidth"/> pixels
+    /// (for fixed-height list rows; the full text must be shown somewhere else as well).
+    /// </summary>
+    public static string Ellipsize(string text, float maxWidth)
+    {
+        if (maxWidth <= 0f || ImGui.CalcTextSize(text).X <= maxWidth)
+        {
+            return text;
+        }
+
+        const string Dots = "…";
+        var low = 0;
+        var high = text.Length;
+        while (low < high)
+        {
+            var mid = (low + high + 1) / 2;
+            if (ImGui.CalcTextSize(text[..mid] + Dots).X <= maxWidth)
+            {
+                low = mid;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+
+        return text[..low].TrimEnd() + Dots;
+    }
+
     /// <summary>Shows <paramref name="text"/> as a tooltip for the previous item (also when it is disabled).</summary>
     public static void Tooltip(string text)
     {

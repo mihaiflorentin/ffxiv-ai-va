@@ -325,6 +325,12 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             Sessions = () => this.services.DialogueSessions,
             ModelsDir = () => this.services.ModelsDir,
             VoicesDir = () => Path.Combine(this.services.ModelsDir, "voices"),
+            PacksDir = () =>
+            {
+                var packs = Path.Combine(configDir, "voicepacks");
+                Directory.CreateDirectory(packs);
+                return packs;
+            },
             LocalPlayer = () => ObjectTable.LocalPlayer is { } player
                 ? (player.Name.TextValue, (ushort)player.HomeWorld.RowId)
                 : null,
@@ -334,9 +340,6 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             LogError = logError,
             PresetStore = () => this.services.CastingPresetStore,
             InvalidateVoiceMap = () => this.services.InvalidateVoiceMap(),
-            VoiceCatalog = () => VoiceCatalog.FromDirectory(Path.Combine(
-                PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
-                "voices")),
             UnboundModels = this.services.UnboundModels,
             EngineCatalog = this.services.EngineCatalog,
             VoiceLibrary = this.services.VoiceLibrary,
