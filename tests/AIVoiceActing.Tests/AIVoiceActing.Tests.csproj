@@ -18,6 +18,7 @@
     <PackageReference Include="KokoroSharp" Version="0.8.4" />
     <PackageReference Include="Horus.F5Tts.Onnx" Version="0.3.1" />
     <PackageReference Include="Tokenizers.DotNet" Version="1.4.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" /><!-- test-only: Dalamud persists configs with it at runtime -->
     <PackageReference Include="Tokenizers.DotNet.runtime.osx-arm64" Version="1.4.1" />
     <PackageReference Include="Tokenizers.DotNet.runtime.win-x64" Version="1.4.1" />
   </ItemGroup>
@@ -54,6 +55,10 @@
     <!-- Step 7: pure UI state (Dalamud- and ImGui-free by the same rule as Domain). -->
     <Compile Include="..\..\src\AIVoiceActing\UI\State\**\*.cs" Link="AIVoiceActing\UI\State\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Configuration.cs" Link="AIVoiceActing\Configuration.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\ConfigurationSections.cs" Link="AIVoiceActing\ConfigurationSections.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\ConfigMigrator.cs" Link="AIVoiceActing\ConfigMigrator.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Engines\**\*.cs" Link="AIVoiceActing\Infrastructure\Engines\%(Filename)%(Extension)" />
+    <Content Include="Fixtures\config-v1-owner.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\..\src\AIVoiceActing\Container\CommandRouter.cs" Link="AIVoiceActing\CommandRouter.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Container\KeybindMonitor.cs" Link="AIVoiceActing\KeybindMonitor.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Audio\PlaybackSpeechQueue.cs" Link="AIVoiceActing\PlaybackSpeechQueue.cs" />

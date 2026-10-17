@@ -1,6 +1,7 @@
 namespace AIVoiceActing;
 
 using System.Reflection;
+using System.Runtime.InteropServices;
 using AIVoiceActing.Container;
 using AIVoiceActing.Domain;
 using AIVoiceActing.Domain.Pipeline;
@@ -133,11 +134,12 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         this.pluginConfig = PluginInterface.GetPluginConfig() as PluginConfiguration
             ?? new PluginConfiguration();
         var config = this.pluginConfig;
+        MigrateConfiguration(config);
         PluginLog.Information(
-            "[AIVoiceActing] Plugin init: version {Version}, engine \"{Engine}\", ep \"{Ep}\", config dir {ConfigDir}",
+            "[AIVoiceActing] Plugin init: version {Version}, engine \"{Engine}\", device \"{Device}\", config dir {ConfigDir}",
             typeof(AIVoiceActingPlugin).Assembly.GetName().Version,
-            config.SelectedEngine,
-            config.SelectedEp,
+            config.Engine.Primary,
+            config.Device.Mode,
             configDir);
         // Audio sink first so the queue factory closure never sees a null field.
         this.audioSink = new NAudioSink(
@@ -156,7 +158,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             keepTempoWhenPitchedFactory: () => config.KeepTempoWhenPitched,
             ageAwareCastingFactory: () => config.AgeAwareCasting,
             streamSentencesFactory: () => config.StreamSentences,
-            expressiveEngineFactory: () => config.ExpressiveEngine,
+            expressiveEngineFactory: () => config.Engine.Expressive.Enabled,
             modelsDirFactory: () => Path.Combine(configDir, "models"),
             voicesManifestFactory: () => ExtractVoicesManifest(configDir),
             // Re-read on first use and whenever the processor sees changed files; the
@@ -186,15 +188,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             cutsceneActiveFactory: () => conditions.OccupiedInCutscene || conditions.WatchingCutscene,
             talkVisibleFactory: () => this.talkPoller.IsVisible(),
             defaultExaggerationFactory: () => config.DefaultExaggeration,
-            selectedEpFactory: () => config.SelectedEp,
-            useFp32LanguageModelFactory: () => config.UseFp32LanguageModel,
-            selectedEngineFactory: () => config.SelectedEngine,
-            cpuThreadsFactory: () => config.CpuImpact switch
-            {
-                "low" => 2,
-                "high" => 8,
-                _ => 4,
-            },
+            selectedEpFactory: () => config.Device.ToExecutionProvider(),
+            selectedEngineFactory: () => config.Engine.Primary,
+            cpuThreadsFactory: () => config.Device.CpuThreads(),
             // Dalamud loads plugin assemblies with an empty Assembly.Location, so the
             // adapter cannot find the package's voices/ folder relative to itself —
             kokoroVoicesDirFactory: () => Path.Combine(
@@ -362,7 +358,57 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
 
         this.services.LogSink.Info(
             $"AIVoiceActing loaded: capture sources and pipeline armed (volume " +
-            $"{config.GlobalVolume * 100f:0}%, EP \"{config.SelectedEp}\").");
+            $"{config.GlobalVolume * 100f:0}%, device \"{config.Device.Mode}\").");
+    }
+
+    /// <summary>Wine exports <c>wine_get_version</c> from ntdll; real Windows does not.</summary>
+    private static bool DetectWine()
+    {
+        try
+        {
+            return NativeLibrary.TryLoad("ntdll.dll", out var ntdll)
+                && NativeLibrary.TryGetExport(ntdll, "wine_get_version", out _);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Upgrades a v1 config in place (writing the one-time .v1.bak first). Must never throw:
+    /// a constructor exception fails the whole plugin load, and the migrator is idempotent so
+    /// a failed save simply retries on the next load.
+    /// </summary>
+    private static void MigrateConfiguration(PluginConfiguration config)
+    {
+        try
+        {
+            var result = ConfigMigrator.MigrateAndPersist(
+                config,
+                new MigrationContext(IsWine: DetectWine()),
+                PluginInterface.ConfigFile.FullName,
+                new SystemConfigFileOps(),
+                () => PluginInterface.SavePluginConfig(config));
+            if (result.Changed)
+            {
+                PluginLog.Information(
+                    "[AIVoiceActing] Config migrated to v{Version}: {Count} change(s) to report.",
+                    Configuration.CurrentVersion,
+                    result.Changes.Count);
+            }
+            else if (config.Version > Configuration.CurrentVersion)
+            {
+                PluginLog.Warning(
+                    "[AIVoiceActing] Config is v{Version}, newer than this plugin (v{Current}); leaving it untouched.",
+                    config.Version,
+                    Configuration.CurrentVersion);
+            }
+        }
+        catch (Exception ex)
+        {
+            PluginLog.Error(ex, "[AIVoiceActing] Config migration failed; continuing with the migrated in-memory values.");
+        }
     }
 
     private void OnClientLogin()
