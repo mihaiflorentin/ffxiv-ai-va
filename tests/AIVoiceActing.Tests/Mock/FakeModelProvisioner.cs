@@ -53,6 +53,17 @@ public sealed class FakeModelProvisioner : IModelProvisioner
         this.Present.Add(asset.FileName);
     }
 
+    public long BytesNeeded(IReadOnlyList<ModelAsset> assets) =>
+        assets.Where(a => !this.IsDownloaded(a)).Sum(a => a.SizeBytes ?? 0);
+
+    public async Task DownloadGroupAsync(IReadOnlyList<ModelAsset> assets, IProgress<DownloadProgress> progress, CancellationToken cancellationToken)
+    {
+        foreach (var asset in assets)
+        {
+            await this.DownloadAsync(asset, progress, cancellationToken);
+        }
+    }
+
     /// <summary>Lets the pending download of <paramref name="fileName"/> finish.</summary>
     public void Release(string fileName)
     {
