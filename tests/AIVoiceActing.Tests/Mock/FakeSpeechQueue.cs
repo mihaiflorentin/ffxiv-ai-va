@@ -11,7 +11,14 @@ public sealed class FakeSpeechQueue : ISpeechQueue
 
     public int ClearCalls { get; private set; }
 
-    public void Enqueue(SpeechItem item) => this.Enqueued.Add(item);
+    public void Enqueue(SpeechItem item)
+    {
+        // The pipeline's background worker enqueues off the test thread.
+        lock (this.Enqueued)
+        {
+            this.Enqueued.Add(item);
+        }
+    }
 
     public void CancelCurrent() => this.CancelCurrentCalls++;
 

@@ -22,7 +22,9 @@ public sealed class NAudioSink : IAudioSink
     private readonly Func<int>? deviceIndexFactory;
     private readonly ILogSink? log;
     private readonly object currentGate = new();
+    private const long PlaybackGraceMs = 3000;
     private bool unsupportedLogged;
+    private int? wasapiFailedDevice;
     private IWavePlayer? current;
 
     public NAudioSink(Func<int>? deviceIndexFactory = null, ILogSink? log = null)
@@ -41,7 +43,8 @@ public sealed class NAudioSink : IAudioSink
             return [];
         }
 
-        return [.. new MMDeviceEnumerator()
+        using var enumerator = new MMDeviceEnumerator();
+        return [.. enumerator
             .EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
             .Select((device, index) => (index, device.FriendlyName))];
     }
@@ -68,6 +71,13 @@ public sealed class NAudioSink : IAudioSink
             }
             catch (Exception ex)
             {
+                // Remember a WASAPI failure so later lines go straight to waveOut instead
+                // of paying the failed device setup every time.
+                if (backend.StartsWith("wasapi", StringComparison.Ordinal))
+                {
+                    this.wasapiFailedDevice = this.deviceIndexFactory?.Invoke() ?? 0;
+                }
+
                 this.log?.Warn($"{backend} playback failed: {ex.Message}");
             }
             finally
@@ -106,8 +116,19 @@ public sealed class NAudioSink : IAudioSink
 
         try
         {
+            // Watchdog: if the backend never reports the stop (seen with some Wine audio
+            // drivers), the queue would stall behind this line forever.
+            var deadline = Environment.TickCount64
+                + (long)(audio.Samples.Length * 1000.0 / audio.SampleRate) + PlaybackGraceMs;
             while (!finished.IsSet)
             {
+                if (Environment.TickCount64 > deadline)
+                {
+                    this.log?.Warn($"{backend} never reported the end of playback; stopping it.");
+                    output.Stop();
+                    break;
+                }
+
                 finished.Wait(100);
             }
 
@@ -131,9 +152,15 @@ public sealed class NAudioSink : IAudioSink
     {
         var attempts = new List<(IWavePlayer Output, string Backend)>();
         var devices = new List<MMDevice>();
+        if (this.wasapiFailedDevice is { } failed && failed == (this.deviceIndexFactory?.Invoke() ?? 0))
+        {
+            attempts.Add((new WaveOutEvent { DesiredLatency = 200 }, "waveOut"));
+            return attempts;
+        }
+
         try
         {
-            var enumerator = new MMDeviceEnumerator();
+            using var enumerator = new MMDeviceEnumerator();
             devices.AddRange(enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active));
             var index = this.deviceIndexFactory?.Invoke() ?? 0;
             var device = index >= 0 && index < devices.Count

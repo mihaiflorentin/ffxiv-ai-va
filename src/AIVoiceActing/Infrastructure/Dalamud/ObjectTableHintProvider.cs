@@ -20,11 +20,16 @@ public sealed class ObjectTableHintProvider
 {
     private readonly IObjectTable objects;
     private readonly IReadOnlySet<int> ungenderedModelIds;
+    private readonly Func<NpcIdentityIndex?>? npcSheets;
 
-    public ObjectTableHintProvider(IObjectTable objects, IReadOnlySet<int>? ungenderedModelIds = null)
+    public ObjectTableHintProvider(
+        IObjectTable objects,
+        IReadOnlySet<int>? ungenderedModelIds = null,
+        Func<NpcIdentityIndex?>? npcSheets = null)
     {
         this.objects = objects;
         this.ungenderedModelIds = ungenderedModelIds ?? UngenderedModelIds.Load();
+        this.npcSheets = npcSheets;
     }
 
     /// <summary>ObjectTableUtils.GetGameObjectByName for a plain addon name: names are
@@ -62,15 +67,40 @@ public sealed class ObjectTableHintProvider
     public SpeakerHint ForTalk(string speakerName)
     {
         var obj = this.FindObject(speakerName);
-        var (race, tribe, sex, modelCharaId) = ReadCustomize(obj);
+        if (obj is null)
+        {
+            return this.FromNpcSheets(speakerName, world: null);
+        }
+
+        var (race, tribe, sex, modelCharaId, bodyType) = this.ReadCustomize(obj);
         return new SpeakerHint(
-            obj?.Name.TextValue ?? speakerName,
+            obj.Name.TextValue,
             World: null,
-            ObjectIndex: obj?.ObjectIndex,
+            ObjectIndex: obj.ObjectIndex,
             ModelCharaId: modelCharaId,
             Race: race,
             Tribe: tribe,
-            Sex: sex);
+            Sex: sex,
+            BodyType: bodyType,
+            Source: IdentitySource.Live);
+    }
+
+    /// <summary>
+    /// Speaker not spawned (cutscene actors, BattleTalk portraits, far-away NPCs): look the
+    /// name up in the game's NPC sheets. The ungendered-model override applies here too.
+    /// </summary>
+    private SpeakerHint FromNpcSheets(string speakerName, ushort? world)
+    {
+        var name = SpeakerKey.StripWorldSuffix(speakerName);
+        if (world is null && this.npcSheets?.Invoke() is { } sheets && sheets.TryGet(name, out var npc))
+        {
+            var sex = npc.ModelCharaId is { } model && this.ungenderedModelIds.Contains(model) ? null : npc.Sex;
+            return new SpeakerHint(
+                speakerName, World: null, ObjectIndex: null, npc.ModelCharaId,
+                npc.Race, npc.Tribe, sex, npc.BodyType, IdentitySource.NpcSheet);
+        }
+
+        return new SpeakerHint(speakerName, world, null, null, null, null, null);
     }
 
     /// <summary>
@@ -80,15 +110,24 @@ public sealed class ObjectTableHintProvider
     /// </summary>
     public SpeakerHint FromChat(IGameObject? speakerObject, SeString sender)
     {
-        var (race, tribe, sex, modelCharaId) = ReadCustomize(speakerObject);
+        var world = SeStringUtils.GetPlayerWorldRowId(sender, speakerObject);
+        if (speakerObject is null)
+        {
+            // NPC dialogue echoed to chat (cutscenes) has no object; players keep their world.
+            return this.FromNpcSheets(sender.TextValue, world);
+        }
+
+        var (race, tribe, sex, modelCharaId, bodyType) = this.ReadCustomize(speakerObject);
         return new SpeakerHint(
-            speakerObject?.Name.TextValue ?? sender.TextValue,
-            World: SeStringUtils.GetPlayerWorldRowId(sender, speakerObject),
-            ObjectIndex: speakerObject?.ObjectIndex,
+            speakerObject.Name.TextValue,
+            World: world,
+            ObjectIndex: speakerObject.ObjectIndex,
             ModelCharaId: modelCharaId,
             Race: race,
             Tribe: tribe,
-            Sex: sex);
+            Sex: sex,
+            BodyType: bodyType,
+            Source: IdentitySource.Live);
     }
 
     /// <summary>
@@ -96,12 +135,12 @@ public sealed class ObjectTableHintProvider
     /// character struct carries DrawData.CustomizeData and ModelContainer.ModelCharaId.
     /// The ungendered override applies to non-PC actors only and nulls the sex byte.
     /// </summary>
-    private (byte? Race, byte? Tribe, byte? Sex, int? ModelCharaId) ReadCustomize(
+    private (byte? Race, byte? Tribe, byte? Sex, int? ModelCharaId, byte? BodyType) ReadCustomize(
         IGameObject? gameObject)
     {
         if (gameObject is null || gameObject.Address == nint.Zero)
         {
-            return (null, null, null, null);
+            return (null, null, null, null, null);
         }
 
         unsafe
@@ -119,7 +158,8 @@ public sealed class ObjectTableHintProvider
                 sex = null;
             }
 
-            return ((byte)customize.Race, (byte)customize.Tribe, sex, modelCharaId);
+            byte? bodyType = customize.BodyType == 0 ? null : customize.BodyType;
+            return ((byte)customize.Race, (byte)customize.Tribe, sex, modelCharaId, bodyType);
         }
     }
 }

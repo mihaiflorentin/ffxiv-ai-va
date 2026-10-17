@@ -20,11 +20,16 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
     private readonly IAudioSink sink;
     private readonly Func<float> volume;
     private readonly Func<long>? staleAfterMsFactory;
+    private readonly Func<bool>? levelLoudnessFactory;
     private readonly ILogSink? log;
+
+    // Two readers: the play loop and Clear's drain.
     private readonly Channel<SpeechItem> channel =
-        Channel.CreateUnbounded<SpeechItem>(new UnboundedChannelOptions { SingleReader = true });
+        Channel.CreateUnbounded<SpeechItem>(new UnboundedChannelOptions { SingleReader = false });
     private readonly CancellationTokenSource disposal = new();
     private int depth;
+    private volatile SpeechItem? nowPlaying;
+    private long skipLineId;
     private readonly Task worker;
     private bool disposed;
 
@@ -32,8 +37,10 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
         IAudioSink sink,
         Func<float>? volumeFactory = null,
         ILogSink? log = null,
-        Func<long>? staleAfterMsFactory = null)
+        Func<long>? staleAfterMsFactory = null,
+        Func<bool>? levelLoudnessFactory = null)
     {
+        this.levelLoudnessFactory = levelLoudnessFactory;
         this.sink = sink ?? throw new ArgumentNullException(nameof(sink));
         this.volume = volumeFactory ?? (() => 1f);
         this.staleAfterMsFactory = staleAfterMsFactory;
@@ -57,8 +64,19 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
     public int Depth => Volatile.Read(ref this.depth);
 
 
-    /// <summary>Stops the item currently being spoken; queued items are kept.</summary>
-    public void CancelCurrent() => this.sink.Cancel();
+    /// <summary>Stops the item currently being spoken; queued items are kept, except the
+    /// remaining chunks of the same streamed line.</summary>
+    public void CancelCurrent()
+    {
+        if (this.nowPlaying is { LineId: not 0 } current)
+        {
+            Volatile.Write(ref this.skipLineId, current.LineId);
+        }
+
+        this.sink.Cancel();
+    }
+
+    public SpeechItem? NowPlaying => this.nowPlaying;
 
     /// <summary>
     /// Clears all queued items, including any current playback. The backlog is drained
@@ -74,6 +92,7 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
     {
         while (this.channel.Reader.TryRead(out _))
         {
+            Interlocked.Decrement(ref this.depth);
         }
 
         this.sink.Cancel();
@@ -100,6 +119,11 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
 
     private void PlayItem(SpeechItem item)
     {
+        if (item.LineId != 0 && item.LineId == Volatile.Read(ref this.skipLineId))
+        {
+            return; // the rest of a line the player skipped
+        }
+
         var staleAfterMs = this.staleAfterMsFactory?.Invoke() ?? 0;
         if (item.RequestedAtTicks != 0 && staleAfterMs > 0)
         {
@@ -120,7 +144,20 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
 
         try
         {
-            this.sink.Play(item.Audio, Math.Clamp(this.volume() * item.Request.Volume, 0f, 2f));
+            // Gain, levelling, limiting and fades happen here so the device sees unity gain
+            // and a volume above 100% compresses instead of clipping.
+            var gain = Math.Clamp(this.volume() * item.Request.Volume, 0f, 2f);
+            var shaped = AudioPolish.Finish(
+                item.Audio.Samples, item.Audio.SampleRate, gain, this.levelLoudnessFactory?.Invoke() ?? false);
+            this.nowPlaying = item;
+            try
+            {
+                this.sink.Play(item.Audio with { Samples = shaped }, 1f);
+            }
+            finally
+            {
+                this.nowPlaying = null;
+            }
         }
         catch (Exception ex)
         {

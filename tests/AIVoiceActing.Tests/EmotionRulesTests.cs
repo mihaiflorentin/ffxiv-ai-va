@@ -27,7 +27,8 @@ public sealed class EmotionRulesTests
     [Theory]
     [InlineData("WHERE IS MY WIFE")]
     [InlineData("STOP THAT!")] // caps outrank "!" (priority 1 before 4)
-    [InlineData("it is an OK answer")] // any 2+ letter caps word
+    [InlineData("I said NO.")] // a capitalised NO is a shout
+    [InlineData("you are SO wrong, GO away")] // two short caps words
     public void AllCaps_IsAngry_AndWinsOverOtherSignals(string line) => AssertPlan(EmotionRules.Plan(line), "angry", 0.8f);
 
     [Theory]
@@ -63,6 +64,10 @@ public sealed class EmotionRulesTests
     [InlineData("No signals here")]
     [InlineData("ha alone is not a laugh")]
     [InlineData("he alone is not a laugh")]
+    [InlineData("it is an OK answer")] // acronyms and names of things are not shouting
+    [InlineData("Report to your GC officer")]
+    [InlineData("Welcome back to the MSQ")]
+    [InlineData("Emperor Solus zos Galvus II")]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData(null)]

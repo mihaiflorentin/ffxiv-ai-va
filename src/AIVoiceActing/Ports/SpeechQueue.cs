@@ -10,11 +10,16 @@ using AIVoiceActing.Domain;
 /// Environment.TickCount64 when the line arrived (pre-synthesis), for staleness drops.
 /// Zero means "never stale" (explicit user-initiated tests).
 /// </param>
+/// <param name="LineId">Chunks of one streamed line share an id (0: unstreamed); skipping
+/// the line drops its remaining chunks too.</param>
+/// <param name="Emotion">The delivery the line was planned with (shown while it plays).</param>
 public sealed record SpeechItem(
     SpeakerIdentity Speaker,
     SynthesisRequest Request,
     SynthesisResult Audio,
-    long RequestedAtTicks = 0);
+    long RequestedAtTicks = 0,
+    long LineId = 0,
+    string? Emotion = null);
 
 /// <summary>Driven port serializing speech so overlapping lines play in order instead of mixing.</summary>
 public interface ISpeechQueue
@@ -24,8 +29,12 @@ public interface ISpeechQueue
     /// <summary>Items waiting to play (excludes the one currently playing).</summary>
     int Depth { get; }
 
-    /// <summary>Stops the item currently being spoken; queued items are kept.</summary>
+    /// <summary>Stops the item currently being spoken (and the rest of its streamed line);
+    /// other queued items are kept.</summary>
     void CancelCurrent();
+
+    /// <summary>The item playing right now, if any (for the now-speaking overlay).</summary>
+    SpeechItem? NowPlaying => null;
 
     /// <summary>Clears all queued items, including any current playback.</summary>
     void Clear();

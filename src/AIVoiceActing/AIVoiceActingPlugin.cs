@@ -3,6 +3,7 @@ namespace AIVoiceActing;
 using System.Reflection;
 using AIVoiceActing.Container;
 using AIVoiceActing.Domain;
+using AIVoiceActing.Domain.Pipeline;
 using AIVoiceActing.Infrastructure.Audio;
 using AIVoiceActing.Infrastructure.Onnx;
 using AIVoiceActing.Ports;
@@ -62,6 +63,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     [PluginService]
     public static ISigScanner SigScanner { get; private set; } = null!;
 
+    [PluginService]
+    public static IDataManager DataManager { get; private set; } = null!;
+
     private static readonly string[] CommandNames =
     [
         "/aivaconfig", "/aiva", "/cancelspeech", "/toggletts", "/enabletts",
@@ -76,6 +80,8 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     private readonly TalkAddonPoller talkPoller;
     private readonly TalkAddonPoller battleTalkPoller;
     private readonly ObjectTableHintProvider hints;
+    private readonly NpcSheetIndexLoader npcSheets;
+    private readonly RecentDialogueSpeakers recentSpeakers = new();
     private readonly TalkDialogueSource talkSource;
     private readonly BattleTalkDialogueSource battleTalkSource;
     private readonly ChatDialogueSource chatSource;
@@ -84,6 +90,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     private readonly WindowSystem windowSystem = new("AIVoiceActing");
     private readonly ConfigurationWindow configWindow;
     private readonly StylesWindow stylesWindow;
+    private readonly NowSpeakingWindow nowSpeakingWindow;
     private readonly Action openConfigUiHook;
 
     public AIVoiceActingPlugin()
@@ -145,6 +152,11 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             logSinkFactory: () => new Infrastructure.Dalamud.HarvestLogSink(
                 new DalamudLogSink(PluginLog), Path.Combine(configDir, "beast-tribe-harvest.log")),
             profileStorePathFactory: () => Path.Combine(configDir, "voice-assignments.json"),
+            profileSaveDelay: TimeSpan.FromSeconds(2),
+            keepTempoWhenPitchedFactory: () => config.KeepTempoWhenPitched,
+            ageAwareCastingFactory: () => config.AgeAwareCasting,
+            streamSentencesFactory: () => config.StreamSentences,
+            expressiveEngineFactory: () => config.ExpressiveEngine,
             modelsDirFactory: () => Path.Combine(configDir, "models"),
             voicesManifestFactory: () => ExtractVoicesManifest(configDir),
             // Re-read on first use and whenever the processor sees changed files; the
@@ -153,7 +165,8 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
                 config.Lexicons, new DalamudLogSink(PluginLog)),
             speechQueueFactory: () => new PlaybackSpeechQueue(
                 sink, () => config.GlobalVolume, new DalamudLogSink(PluginLog),
-                staleAfterMsFactory: () => (long)config.StaleLineSeconds * 1000),
+                staleAfterMsFactory: () => (long)config.StaleLineSeconds * 1000,
+                levelLoudnessFactory: () => config.LevelVoiceLoudness),
             enabledChatTypesFactory: () => config.CurrentPreset?.EnabledChatTypes as IReadOnlyCollection<int>,
             enableAllChatTypesFactory: () => config.CurrentPreset?.EnableAllChatTypes ?? false,
             triggersFactory: () => config.Triggers.AsReadOnly(),
@@ -190,11 +203,13 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             f5VoicesDirFactory: () => Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
                 "voices-f5"),
-            llmDirectorFactory: () => config.DirectorEnabled ? this.TryGetLlmDirector() : null,
+            emotionClassifierEnabledFactory: () => config.DirectorEnabled,
             useRaceVoicePresetsFactory: () => config.UseRaceVoicePresets,
             adHocStyleTagsFactory: () => config.AdHocStyleTagsEnabled,
             styleTagRegexFactory: () => config.StyleRegex);
-        this.hints = new ObjectTableHintProvider(ObjectTable);
+        this.npcSheets = new NpcSheetIndexLoader(DataManager, PluginLog);
+        _ = this.npcSheets.StartAsync();
+        this.hints = new ObjectTableHintProvider(ObjectTable, npcSheets: () => this.npcSheets.Index);
 
         this.talkSource = new TalkDialogueSource(
             Framework, this.talkPoller, this.hints, this.services.SpeakerDirectory,
@@ -216,12 +231,15 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             readFromQuestTalkAddon: () => config.ReadFromQuestTalkAddon,
             readFromBattleTalkAddon: () => config.ReadFromBattleTalkAddon,
             skipMessagesFromYou: () => config.SkipMessagesFromYou,
-            this.services.PipelineSink);
+            this.services.PipelineSink,
+            this.recentSpeakers);
         this.subtitleSource = new CutsceneSubtitleSource(
             Framework, GameGui, this.services.SpeakerDirectory, conditions, PluginLog,
             // Verified addon name ("TalkSubtitle"); gated alongside the master toggle.
             enabled: () => config.Enabled && config.ReadCutsceneSubtitles,
-            this.services.PipelineSink);
+            this.services.PipelineSink,
+            this.recentSpeakers,
+            this.hints);
         this.voiceLineDetector = new VoiceLineDetector(SigScanner, GameInteropProvider, PluginLog);
 
         this.commands = new CommandRouter(
@@ -233,7 +251,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             },
             // TTT parity: /cancelspeech and /disabletts drop the WHOLE backlog
             // (CancelTts -> CancelAllSpeech); text advance stays current-line only.
-            cancelSpeech: () => this.services.SpeechQueue.Clear(),
+            cancelSpeech: () => this.services.Pipeline.CancelAll(),
             currentPresetId: () => config.CurrentPresetId,
             presets: () => [.. config.EnabledChatTypesPresets.Select(p => new PresetSummary(p.Id, p.Name))],
             switchPreset: id =>
@@ -293,10 +311,17 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             invalidateVoiceMap: () => this.services.InvalidateVoiceMap(),
             voiceCatalog: () => VoiceCatalog.FromDirectory(Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
-                "voices")));
+                "voices")),
+            unboundModels: this.services.UnboundModels,
+            worlds: () => [.. DataManager.GetExcelSheet<Lumina.Excel.Sheets.World>()
+                .Where(w => w.IsPublic)
+                .Select(w => (w.RowId, w.Name.ExtractText()))
+                .Where(w => w.Item2.Length > 0)]);
         this.stylesWindow = new StylesWindow(config, this.SaveConfig);
         this.windowSystem.AddWindow(this.configWindow);
         this.windowSystem.AddWindow(this.stylesWindow);
+        this.nowSpeakingWindow = new NowSpeakingWindow(config, this.SaveConfig, this.services.SpeechQueue);
+        this.windowSystem.AddWindow(this.nowSpeakingWindow);
 
         // /aivaconfig + /aivastyles route through the container hooks (headless-safe);
         // the game's own OpenConfigUi (system menu) opens our configuration window.
@@ -394,25 +419,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     {
         if (this.pluginConfig.CancelSpeechOnTextAdvance)
         {
-            this.services.SpeechHandler.CancelCurrent();
+            this.services.Pipeline.InterruptDialogue();
         }
     }
-
-    private IEmotionDirector? TryGetLlmDirector()
-    {
-        // The LLM director asset (Qwen3-0.6B ONNX) has no verified export yet; the rules
-        // table always covers delivery until it lands. Log once so the option is auditable.
-        if (!this.llmDirectorUnavailableLogged)
-        {
-            this.llmDirectorUnavailableLogged = true;
-            this.services.LogSink.Info(
-                "DirectorEnabled is on but no LLM director asset is available; using the rules director.");
-        }
-
-        return null;
-    }
-
-    private bool llmDirectorUnavailableLogged;
 
     private bool prewarmChecked;
 

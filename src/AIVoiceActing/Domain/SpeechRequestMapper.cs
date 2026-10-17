@@ -6,6 +6,7 @@ using AIVoiceActing.Ports;
 /// Maps an emotion plan (plus the resolved reference voice) onto the synthesizer port:
 /// exaggeration is the plan value plus the per-speaker bias, clamped to 0..1; tags are
 /// carried on the request — the synthesizer renders them as "[tag] " prompt prefixes.
+/// The plan's own volume (a quieter sad line, a louder shout) scales the profile volume.
 /// </summary>
 public static class SpeechRequestMapper
 {
@@ -24,5 +25,5 @@ public static class SpeechRequestMapper
             Tags: plan.Tags,
             Pitch: pitch,
             Speed: speed,
-            Volume: volume);
+            Volume: Math.Clamp(volume * plan.Volume, 0f, 2f));
 }

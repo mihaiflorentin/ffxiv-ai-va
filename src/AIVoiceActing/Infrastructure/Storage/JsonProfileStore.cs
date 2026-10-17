@@ -14,9 +14,16 @@ using AIVoiceActing.Ports;
 /// NEVER reassigned — only <see cref="SetOverride"/> (Custom = true) replaces one. First-sight
 /// assignments go through <see cref="VoiceAssigner.AssignSlot"/>, so the chosen slot's
 /// (voice id, exaggeration bias, pitch, speed, volume) persists as one unit.
+/// First-sight saves are coalesced when a <c>firstSightSaveDelay</c> is given (the
+/// in-game wiring): a busy chat channel creates many speakers per second, and each save
+/// rewrites the whole file. User edits (overrides, removals, clears) still save at once.
+/// Automatic player entries are capped (oldest evicted first); NPCs and overrides never are.
 /// </summary>
-public sealed class JsonProfileStore : IProfileStore
+public sealed class JsonProfileStore : IProfileStore, IDisposable
 {
+    /// <summary>Most automatic <c>pc:</c> entries kept; chat players otherwise grow the file forever.</summary>
+    public const int MaxAutomaticPlayerEntries = 2000;
+
     private sealed record EntryDto(
         [property: JsonPropertyName("referenceVoiceId")] string ReferenceVoiceId,
         [property: JsonPropertyName("exaggerationBias")] float ExaggerationBias,
@@ -31,13 +38,17 @@ public sealed class JsonProfileStore : IProfileStore
     private readonly object gate = new();
     private readonly ILogSink log;
     private readonly Dictionary<string, VoiceProfile> entries;
+    private readonly TimeSpan? firstSightSaveDelay;
+    private Timer? saveTimer;
+    private bool dirty;
     private bool loaded;
 
-    public JsonProfileStore(string filePath, ILogSink log)
+    public JsonProfileStore(string filePath, ILogSink log, TimeSpan? firstSightSaveDelay = null)
     {
         FilePath = filePath;
         this.log = log;
         this.entries = [];
+        this.firstSightSaveDelay = firstSightSaveDelay;
     }
 
     public string FilePath { get; }
@@ -76,7 +87,16 @@ public sealed class JsonProfileStore : IProfileStore
 
             var profile = VoiceAssigner.AssignSlot(slots) with { SpeakerKey = speakerKey };
             this.entries[speakerKey] = profile;
-            this.SaveUnlocked();
+            this.EvictOldPlayersUnlocked();
+            if (this.firstSightSaveDelay is { } delay)
+            {
+                this.ScheduleSaveUnlocked(delay);
+            }
+            else
+            {
+                this.SaveUnlocked();
+            }
+
             return profile;
         }
     }
@@ -133,6 +153,74 @@ public sealed class JsonProfileStore : IProfileStore
 
             this.SaveUnlocked();
             return true;
+        }
+    }
+
+    /// <summary>Writes any coalesced first-sight assignments now.</summary>
+    public void Flush()
+    {
+        lock (this.gate)
+        {
+            if (this.dirty)
+            {
+                this.TrySaveUnlocked();
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (this.gate)
+        {
+            this.saveTimer?.Dispose();
+            this.saveTimer = null;
+            if (this.dirty)
+            {
+                this.TrySaveUnlocked();
+            }
+        }
+    }
+
+    private void ScheduleSaveUnlocked(TimeSpan delay)
+    {
+        this.dirty = true;
+        this.saveTimer ??= new Timer(_ => this.Flush());
+        this.saveTimer.Change(delay, Timeout.InfiniteTimeSpan);
+    }
+
+    private void TrySaveUnlocked()
+    {
+        try
+        {
+            this.SaveUnlocked();
+        }
+        catch (ProfileStoreException e)
+        {
+            // Background save: the in-memory entry stands and the next save retries.
+            this.log.Error(e.Message, e.InnerException);
+        }
+    }
+
+    private void EvictOldPlayersUnlocked()
+    {
+        if (this.entries.Count <= MaxAutomaticPlayerEntries)
+        {
+            return;
+        }
+
+        var players = this.entries.Values
+            .Where(p => !p.Custom && p.SpeakerKey.StartsWith("pc:", StringComparison.Ordinal))
+            .ToList();
+        if (players.Count <= MaxAutomaticPlayerEntries)
+        {
+            return;
+        }
+
+        foreach (var stale in players
+            .OrderBy(p => p.CreatedUtc)
+            .Take(players.Count - MaxAutomaticPlayerEntries))
+        {
+            this.entries.Remove(stale.SpeakerKey);
         }
     }
 
@@ -210,6 +298,7 @@ public sealed class JsonProfileStore : IProfileStore
                             kv.Value.Volume)),
                     JsonOptions));
             File.Move(temp, FilePath, overwrite: true);
+            this.dirty = false;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

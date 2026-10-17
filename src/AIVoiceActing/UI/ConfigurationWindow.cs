@@ -128,6 +128,35 @@ public sealed class ConfigurationWindow : Window
 
     private volatile bool warmingEngine;
     private string? warmingEngineKey;
+    private readonly UnboundModelLog? unboundModels;
+
+    /// <summary>Public worlds by id and name (from the game data), for the world picker and
+    /// world-name columns. Null in tests: raw ids are shown instead.</summary>
+    private readonly Func<IReadOnlyList<(uint Id, string Name)>>? worlds;
+    private Dictionary<uint, string>? worldNames;
+    private IReadOnlyList<(uint Id, string Name)>? sortedWorlds;
+
+    private string WorldLabel(uint? world)
+    {
+        if (world is not { } id)
+        {
+            return "—";
+        }
+
+        if (this.worldNames is null && this.worlds is not null)
+        {
+            try
+            {
+                this.worldNames = this.worlds().ToDictionary(w => w.Id, w => w.Name);
+            }
+            catch (Exception)
+            {
+                this.worldNames = [];
+            }
+        }
+
+        return this.worldNames is not null && this.worldNames.TryGetValue(id, out var name) ? name : id.ToString();
+    }
 
     public ConfigurationWindow(
         Configuration config,
@@ -151,9 +180,13 @@ public sealed class ConfigurationWindow : Window
         Action<string, Exception?> logError,
         Func<ICastingPresetStore> presetStore,
         Action invalidateVoiceMap,
-        Func<IReadOnlyList<VoiceCatalogEntry>> voiceCatalog)
+        Func<IReadOnlyList<VoiceCatalogEntry>> voiceCatalog,
+        UnboundModelLog? unboundModels = null,
+        Func<IReadOnlyList<(uint Id, string Name)>>? worlds = null)
         : base("AI Voice Acting Settings###AIVAConfig")
     {
+        this.worlds = worlds;
+        this.unboundModels = unboundModels;
         this.config = config;
         this.save = save;
         this.speech = speech;
@@ -308,6 +341,11 @@ public sealed class ConfigurationWindow : Window
             $"Process memory: {this.processWorkingSet / (1024.0 * 1024.0):0} MB");
 
         var missingRequiredForSelected = this.RequiredForSelectedMissing();
+        if (missingRequiredForSelected > 0)
+        {
+            this.DrawGetStarted(anyDownload);
+        }
+
         if (Controls.Button(
                 "Load engine now",
                 !this.warmingEngine && !ready,
@@ -383,6 +421,9 @@ public sealed class ConfigurationWindow : Window
         {
             this.DrawEngineCard(key, title, blurb, assets, anyDownload);
         }
+
+        this.DrawEmotionCard(assets, anyDownload);
+        this.DrawExpressiveCard(assets, anyDownload);
     }
 
     private void DrawEngineCard(string key, string title, string blurb, IReadOnlyList<(ModelAsset Asset, string Group)> assets, bool anyDownload)
@@ -448,7 +489,13 @@ public sealed class ConfigurationWindow : Window
             this.DrawActiveEngineKnobs();
         }
 
-        // Per-engine asset table: Download fetches EXACTLY that asset.
+        this.DrawAssetTable(key, sectionAssets, active, anyDownload);
+        ImGui.Spacing();
+    }
+
+    /// <summary>Per-card asset table: Download fetches EXACTLY that asset.</summary>
+    private void DrawAssetTable(string key, IReadOnlyList<(ModelAsset Asset, string Group)> sectionAssets, bool active, bool anyDownload)
+    {
         ImGui.Spacing();
         if (ImGui.BeginTable($"##engine-assets-{key}", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
         {
@@ -491,6 +538,100 @@ public sealed class ConfigurationWindow : Window
             ImGui.EndTable();
         }
 
+    }
+
+    /// <summary>
+    /// The optional emotion classifier: reads each line's meaning to pick its delivery
+    /// (and the expressive tags), on top of the punctuation rules.
+    /// </summary>
+    private const string EmotionAssetGroup = "emotion"; // ModelCatalog.EmotionGroup (UI stays port-only)
+    private const string ExpressiveAssetGroup = "turbo"; // ModelCatalog.TurboGroup
+
+    /// <summary>The optional expressive engine (Turbo) for strongly emotional lines.</summary>
+    private void DrawExpressiveCard(IReadOnlyList<(ModelAsset Asset, string Group)> assets, bool anyDownload)
+    {
+        var sectionAssets = assets.Where(a => a.Group == ExpressiveAssetGroup).ToList();
+        if (sectionAssets.Count == 0)
+        {
+            return;
+        }
+
+        var installed = sectionAssets.Where(a => !a.Asset.Optional).All(a => this.IsDownloadedCached(a.Asset));
+        var on = installed && this.config.ExpressiveEngine && this.config.SelectedEngine == "kokoro";
+        if (!ImGui.CollapsingHeader("Expressive voices (experimental)" + (on ? " — ON" : string.Empty) + "##expressive-card"))
+        {
+            return;
+        }
+
+        ImGui.TextWrapped(
+            "Optional second engine (Chatterbox Turbo, ~3.2 GB) for lines with a strong mood or a direction " +
+            "such as a laugh or a sigh. It clones each speaker's Kokoro voice from a short clip made the first " +
+            "time that voice needs it, so characters keep sounding like themselves. Every other line stays on " +
+            "Kokoro. It runs on the CPU and is several times slower than Kokoro, so these lines arrive later; " +
+            "if it fails, the line falls back to Kokoro.");
+        Controls.Checkbox(
+            "Use expressive voices for emotional lines when downloaded",
+            () => this.config.ExpressiveEngine,
+            v => { this.config.ExpressiveEngine = v; this.save(); });
+        ImGui.TextDisabled(
+            !installed ? "State: not downloaded"
+                : this.config.SelectedEngine != "kokoro" ? "State: downloaded (only used with Kokoro as the main engine)"
+                : "State: downloaded");
+        var missing = sectionAssets.Where(a => !this.IsDownloadedCached(a.Asset)).Select(a => a.Asset).ToList();
+        if (missing.Count > 0)
+        {
+            ImGui.SameLine();
+            if (Controls.Button(
+                    ModelsTabModel.DownloadAllLabel(missing.Count) + "##dl-expressive",
+                    ModelsTabModel.CanDownloadAll(anyDownload, missing.Count),
+                    anyDownload ? "A download is already in progress." : null))
+            {
+                this.StartDownloads(missing);
+            }
+        }
+
+        this.DrawAssetTable("expressive", sectionAssets, active: true, anyDownload);
+        ImGui.Spacing();
+    }
+
+    private void DrawEmotionCard(IReadOnlyList<(ModelAsset Asset, string Group)> assets, bool anyDownload)
+    {
+        var sectionAssets = assets.Where(a => a.Group == EmotionAssetGroup).ToList();
+        if (sectionAssets.Count == 0)
+        {
+            return;
+        }
+
+        var installed = sectionAssets.All(a => this.IsDownloadedCached(a.Asset));
+        var header = "Emotion detection" + (installed && this.config.DirectorEnabled ? " — ON" : string.Empty) + "##emotion-card";
+        if (!ImGui.CollapsingHeader(header))
+        {
+            return;
+        }
+
+        ImGui.TextWrapped(
+            "Optional text classifier (GoEmotions, ~480 MB) that reads what each line means: grief, fear, " +
+            "anger, joy and more. It shapes pace, pauses, loudness and the expressive tags. Runs on the " +
+            "speech thread in a few tens of milliseconds per line. Without it, mood comes from punctuation.");
+        Controls.Checkbox(
+            "Use the emotion classifier when downloaded",
+            () => this.config.DirectorEnabled,
+            v => { this.config.DirectorEnabled = v; this.save(); });
+        ImGui.TextDisabled(installed ? "State: downloaded" : "State: not downloaded");
+        var missing = sectionAssets.Where(a => !this.IsDownloadedCached(a.Asset)).Select(a => a.Asset).ToList();
+        if (missing.Count > 0)
+        {
+            ImGui.SameLine();
+            if (Controls.Button(
+                    ModelsTabModel.DownloadAllLabel(missing.Count) + "##dl-emotion",
+                    ModelsTabModel.CanDownloadAll(anyDownload, missing.Count),
+                    anyDownload ? "A download is already in progress." : null))
+            {
+                this.StartDownloads(missing);
+            }
+        }
+
+        this.DrawAssetTable("emotion", sectionAssets, active: true, anyDownload);
         ImGui.Spacing();
     }
 
@@ -541,10 +682,25 @@ public sealed class ConfigurationWindow : Window
         Controls.HelpMarker(
             "If a line finishes synthesizing after the conversation moved on, skip it instead of playing it late. 0 keeps everything.");
         Controls.Checkbox(
-            "Use LLM emotion director (context-aware delivery)",
-            "Needs the optional director model; the free rules table runs otherwise.",
-            () => c.DirectorEnabled,
-            v => { c.DirectorEnabled = v; save(); });
+            "Keep speaking pace on pitched voices",
+            "Pitch shifting used to slow deep voices and speed up high ones. On keeps every voice at its own pace; off restores the old behaviour.",
+            () => c.KeepTempoWhenPitched,
+            v => { c.KeepTempoWhenPitched = v; save(); });
+        Controls.Checkbox(
+            "Even out voice loudness",
+            "Levels every line to the same loudness, then applies the per-voice volume. Volumes above 100% are softly limited instead of clipping.",
+            () => c.LevelVoiceLoudness,
+            v => { c.LevelVoiceLoudness = v; save(); });
+        Controls.Checkbox(
+            "Start long lines sooner",
+            "Long lines are rendered sentence by sentence, so the first sentence plays while the rest is still being made.",
+            () => c.StreamSentences,
+            v => { c.StreamSentences = v; save(); });
+        Controls.Checkbox(
+            "Show the now-speaking panel",
+            "A small panel with who is talking, their voice and mood, and Replay, Skip and Stop buttons.",
+            () => c.ShowNowSpeaking,
+            v => { c.ShowNowSpeaking = v; save(); });
     }
 
     /// <summary>Background warm-up for an engine: resolves the synthesizer once, reports
@@ -637,6 +793,36 @@ public sealed class ConfigurationWindow : Window
     }
 
     /// <summary>Missing REQUIRED assets for the SELECTED engine (read from the cache).</summary>
+    /// <summary>First-run guide, shown while the active engine is not installed: one
+    /// button downloads exactly what the engine needs, then two short pointers.</summary>
+    private void DrawGetStarted(bool anyDownload)
+    {
+        var groups = this.config.SelectedEngine == "chatterbox"
+            ? ChatterboxSectionGroups
+            : [this.config.SelectedEngine];
+        var missing = this.modelAssets()
+            .Where(a => groups.Contains(a.Group) && !a.Asset.Optional && !this.IsDownloadedCached(a.Asset))
+            .Select(a => a.Asset)
+            .ToList();
+        var megabytes = missing.Sum(a => a.SizeBytes ?? 0) / (1024.0 * 1024.0);
+
+        ImGui.Separator();
+        ImGui.TextColored(new Vector4(0.98f, 0.82f, 0.25f, 1f), "Get started");
+        ImGui.TextWrapped($"1. Download the voice engine (about {megabytes:0} MB, once).");
+        ImGui.SameLine();
+        if (Controls.Button(
+                "Download##get-started",
+                !anyDownload && missing.Count > 0,
+                anyDownload ? "A download is already in progress." : null))
+        {
+            this.StartDownloads(missing);
+        }
+
+        ImGui.TextWrapped("2. Talk to any NPC: each character gets a voice that fits their race, gender and age, and keeps it.");
+        ImGui.TextWrapped("3. Optional: download the emotion reader below for moodier delivery, and fine-tune voices in the voices tabs.");
+        ImGui.Separator();
+    }
+
     private int RequiredForSelectedMissing()
     {
         var groups = this.config.SelectedEngine == "chatterbox"
@@ -1303,6 +1489,11 @@ public sealed class ConfigurationWindow : Window
             "Speakers without their own assignment pick randomly from their race/gender row; off resolves everyone from the Unknown row.",
             () => this.config.UseRaceVoicePresets,
             v => { this.config.UseRaceVoicePresets = v; this.save(); });
+        Controls.Checkbox(
+            "Age-aware voices",
+            "Children speak a little higher and quicker, elders a little lower and slower, on top of their row's voice. Manual overrides are never changed.",
+            () => this.config.AgeAwareCasting,
+            v => { this.config.AgeAwareCasting = v; this.save(); });
 
         var catalog = this.voiceCatalog();
         var rawIds = this.VoiceOptions;
@@ -1322,7 +1513,8 @@ public sealed class ConfigurationWindow : Window
         Controls.Section("Beast tribes");
         ImGui.TextWrapped(
             "Tribe voices serve every member; male/female lists override the pool once filled. "
-            + "Bind model ids harvested from the plugin log's \"Conversation:\" lines so tribe members find their row.");
+            + "Models you hear that no tribe claims collect just below; assign them in one click.");
+        this.DrawUnboundModels();
         foreach (var tribe in this.casting.EditBuffer.BeastTribes)
         {
             if (!ImGui.CollapsingHeader($"{tribe.Name}###tribe-{tribe.Key}"))
@@ -1464,6 +1656,71 @@ public sealed class ConfigurationWindow : Window
         }
 
         ImGui.PopID();
+    }
+
+    /// <summary>
+    /// Inbox of non-human models heard this session with no tribe binding: each row names
+    /// the last speaker so the model is recognisable, and Assign binds it to the chosen
+    /// tribe in the edit buffer (Save persists it, as with typed bindings).
+    /// </summary>
+    private void DrawUnboundModels()
+    {
+        var heard = this.unboundModels?.Entries ?? [];
+        if (heard.Count == 0)
+        {
+            ImGui.TextDisabled("No unassigned creature models heard yet this session.");
+            return;
+        }
+
+        ImGui.TextUnformatted($"Heard this session, not assigned to a tribe ({heard.Count}):");
+        var tribes = this.casting.EditBuffer.BeastTribes;
+        if (!ImGui.BeginTable("##unbound-models", 4, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
+        {
+            return;
+        }
+
+        ImGui.TableSetupColumn("Model", ImGuiTableColumnFlags.WidthFixed, 60f);
+        ImGui.TableSetupColumn("Last speaker", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("Lines", ImGuiTableColumnFlags.WidthFixed, 45f);
+        ImGui.TableSetupColumn("##assign", ImGuiTableColumnFlags.WidthFixed, 230f);
+        ImGui.TableHeadersRow();
+        foreach (var model in heard)
+        {
+            ImGui.PushID($"unbound-{model.ModelId}");
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(model.ModelId.ToString(CultureInfo.InvariantCulture));
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(model.LastSpeaker);
+            ImGui.TableNextColumn();
+            ImGui.TextUnformatted(model.Lines.ToString(CultureInfo.InvariantCulture));
+            ImGui.TableNextColumn();
+            ImGui.SetNextItemWidth(150f);
+            if (ImGui.BeginCombo("##tribe", "Assign to…"))
+            {
+                foreach (var tribe in tribes)
+                {
+                    if (ImGui.Selectable(tribe.Name))
+                    {
+                        this.casting.BindModelId(tribe.Key, model.ModelId);
+                        this.unboundModels!.Dismiss(model.ModelId);
+                        this.ReportStatus($"Model {model.ModelId} assigned to {tribe.Name}; Save the preset to keep it.", isError: false);
+                    }
+                }
+
+                ImGui.EndCombo();
+            }
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Ignore"))
+            {
+                this.unboundModels!.Dismiss(model.ModelId);
+            }
+
+            ImGui.PopID();
+        }
+
+        ImGui.EndTable();
     }
 
     /// <summary>Model-id binding row for one tribe: bound ids as trash chips plus the
@@ -1830,15 +2087,18 @@ public sealed class ConfigurationWindow : Window
 
             var view = SpeakerKeyView.Parse(profile.SpeakerKey);
             return view.Name.Contains(query, StringComparison.InvariantCultureIgnoreCase)
-                || (view.World?.ToString().Contains(query, StringComparison.InvariantCultureIgnoreCase) ?? false);
+                || (view.World is not null
+                    && this.WorldLabel(view.World).Contains(query, StringComparison.InvariantCultureIgnoreCase));
         }
 
+        var totalRows = rows.Count;
         if (voiceQuery is { Length: > 0 })
         {
+            rows = [.. rows.Where(profile => VoiceOrNameMatches(profile, voiceQuery))];
             ImGui.SameLine();
             ImGui.TextColored(
                 new Vector4(1f, 0.9f, 0.45f, 1f),
-                $"{rows.Count(profile => VoiceOrNameMatches(profile, voiceQuery))} row(s) highlighted");
+                $"{rows.Count} of {totalRows} shown");
         }
 
         this.DrawCharacterAddForm(player, entries, ids);
@@ -1854,11 +2114,6 @@ public sealed class ConfigurationWindow : Window
                 var key = SpeakerKeyView.Parse(profile.SpeakerKey);
                 ImGui.PushID(profile.SpeakerKey);
                 ImGui.TableNextRow();
-                if (voiceQuery is { Length: > 0 } vq && VoiceOrNameMatches(profile, vq))
-                {
-                    ImGui.TableSetBgColor(
-                        ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(new Vector4(0.98f, 0.82f, 0.25f, 0.35f)));
-                }
 
                 ImGui.TableNextColumn();
                 if (ImGui.SmallButton("🗑"))
@@ -1869,7 +2124,7 @@ public sealed class ConfigurationWindow : Window
                 ImGui.TableNextColumn();
                 ImGui.TextUnformatted(key.Name);
                 ImGui.TableNextColumn();
-                ImGui.TextUnformatted(key.World?.ToString() ?? "—");
+                ImGui.TextUnformatted(this.WorldLabel(key.World));
 
                 ImGui.TableNextColumn();
                 var current = this.characterPending.TryGetValue(profile.SpeakerKey, out var pending)
@@ -1974,14 +2229,37 @@ public sealed class ConfigurationWindow : Window
         if (player)
         {
             ImGui.SameLine();
-            ImGui.SetNextItemWidth(80f);
-            var world = form.World;
-            if (ImGui.InputTextWithHint("##add-player-world", "World id", ref world, 16))
+            var worldList = this.WorldList();
+            if (worldList.Count > 0)
             {
-                form.World = world;
-            }
+                ImGui.SetNextItemWidth(140f);
+                var selected = uint.TryParse(form.World, out var selectedId) ? this.WorldLabel(selectedId) : "World";
+                if (ImGui.BeginCombo("##add-player-world", selected))
+                {
+                    foreach (var (id, worldName) in worldList)
+                    {
+                        if (ImGui.Selectable(worldName, form.World == id.ToString()))
+                        {
+                            form.World = id.ToString();
+                        }
+                    }
 
-            Controls.Tooltip("Numeric world id distinguishing same-named characters across worlds.");
+                    ImGui.EndCombo();
+                }
+
+                Controls.Tooltip("The character's home world, to tell same-named characters apart.");
+            }
+            else
+            {
+                ImGui.SetNextItemWidth(80f);
+                var world = form.World;
+                if (ImGui.InputTextWithHint("##add-player-world", "World id", ref world, 16))
+                {
+                    form.World = world;
+                }
+
+                Controls.Tooltip("Numeric world id distinguishing same-named characters across worlds.");
+            }
         }
         ImGui.SameLine();
         if (Controls.Button("New", enabled: true)
@@ -1999,6 +2277,19 @@ public sealed class ConfigurationWindow : Window
             ImGui.TextUnformatted(error);
             ImGui.PopStyleColor();
         }
+    }
+
+    private IReadOnlyList<(uint Id, string Name)> WorldList()
+    {
+        if (this.sortedWorlds is null)
+        {
+            _ = this.WorldLabel(0); // fills the name table on first use
+            this.sortedWorlds = this.worldNames is { Count: > 0 } names
+                ? [.. names.OrderBy(w => w.Value, StringComparer.OrdinalIgnoreCase).Select(w => (w.Key, w.Value))]
+                : [];
+        }
+
+        return this.sortedWorlds;
     }
 
     /// <summary>The voice a new override starts on: the first slot of the Unknown row

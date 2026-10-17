@@ -5,7 +5,9 @@ Local AI voice acting for FFXIV. The plugin captures quest Talk dialogue, Battle
 - Every character gets a **persistent voice**: a speaker's first line picks randomly from their race/gender row and the pick is pinned in `voice-assignments.json` forever. Manual per-NPC and per-player overrides win.
 - **Lore-faithful casting**: every playable race maps to curated voice sets — French-accented for Elezen, Chinese bank for Au Ra, pitched British voices for Lalafell, Italian for Roegadyn — with multiple voices per race/gender so crowds vary. Beast tribes get their own rows (pool + male/female lists), bound to in-game model ids.
 - **Per-voice control**: the General Voices tab shapes every row directly (voice picker, pitch/speed/volume/exaggeration per slot); the NPC Voices and Player Voices tabs override individual characters, with add forms, scoped clear, and clipboard export/import.
-- **Delivery is shaped by context**: a rules-based emotion director (zero cost, always on) sets exaggeration, pacing, and paralinguistic style per line; an optional small LLM director asset can read the recent cutscene dialogue for finer direction.
+- **Who is speaking**: race, gender, tribe and age (child / adult / elder) come from the live game object, or from the game's NPC sheets when the speaker is off screen; named cutscene subtitles pick up the speaker from the chat echo.
+- **Delivery is shaped by mood**: a rules-based director (zero cost, always on) sets exaggeration, pacing, volume and style per line; an optional emotion reader (GoEmotions RoBERTa, ~500 MB ONNX on CPU) reads the mood of each line when installed from the Engine tab.
+- **Responsive playback**: speech work runs off the game thread, long lines start after their first sentence, repeated lines play from a cache, and loudness is levelled across voices. An optional now-speaking panel shows who is talking with Replay, Skip and Stop.
 - **The game's own voice acting always wins**: when a voiced line plays in-game, the plugin cancels its speech and stays silent for that line.
 
 Kokoro's accent banks cover English (US/UK), French, Spanish, Italian, Portuguese, Hindi, and Chinese. The Japanese bank is parked (it does not render English); f5, turbo, and legacy Chatterbox engines remain in the code but are hidden from the UI.
@@ -24,7 +26,7 @@ Kokoro's accent banks cover English (US/UK), French, Spanish, Italian, Portugues
 |---|---|---|
 | Kokoro v1.0 ONNX model (`kokoro-v1.0.onnx`, ~310 MB) | [Kokoro](https://huggingface.co/hexgrad/kokoro) (KokoroSharp ships the export) | Apache-2.0 |
 | Voice bank (`voices/*.npy`, 54 voices) | Kokoro v1.0/v1.1 style vectors, shipped with the plugin | Apache-2.0 |
-| Optional emotion-director LLM (Qwen3-0.6B ONNX; not required, off by default) | Qwen3 | Apache-2.0 |
+| Optional emotion reader (`emotion-classifier.onnx`, ~500 MB) | [`SamLowe/roberta-base-go_emotions-onnx`](https://huggingface.co/SamLowe/roberta-base-go_emotions-onnx) | MIT |
 | Legacy Chatterbox assets (engine parked; only if manually enabled) | [`onnx-community/chatterbox-ONNX`](https://huggingface.co/onnx-community/chatterbox-ONNX) | MIT |
 
 Models are downloaded to `ConfigDirectory/models/` at runtime; nothing model-sized ships in the plugin zip.
@@ -47,7 +49,7 @@ The repository must be public — the plugin installer and the manual download l
 
 Download `latest.zip` from the [releases page](https://github.com/mihaiflorentin/ffxiv-ai-va/releases) — direct link: <https://github.com/mihaiflorentin/ffxiv-ai-va/releases/latest/download/latest.zip> — and extract it into `%APPDATA%\XIVLauncher\devPlugins\AIVoiceActing\` so that folder directly contains `AIVoiceActing.dll`.
 
-**First use:** launch the game, run `/aivaconfig`, open the **Models** tab, and press **Download** (~1.1 GB, one time; the button is the only trigger). Voices start working immediately after the download finishes.
+**First use:** launch the game, run `/aivaconfig`, and follow **Get started** on the **Engine** tab: press **Download** (~350 MB, one time; the button is the only trigger). Voices start working immediately after the download finishes.
 
 ## Building from source
 
@@ -104,12 +106,13 @@ The game ships real voice acting for main-story cutscenes and some quest dialogu
 
 ## Configuration
 
-`/aivaconfig` has four tabs:
+`/aivaconfig` has six tabs:
 
-1. **Engine** — the engine card (Kokoro), model download/remove per asset with progress and cancel, execution-provider selector, load-engine-now button, and a live status strip (state, queue depth, models-dir size).
-2. **Voices** — Players and NPCs tables: voice picker, exaggeration bias, per-voice volume slider, test button, and add-form.
-3. **Chat** — master enable, keybinds, capture sources, channel presets, and triggers/exclusions.
-4. **Test** — free-text synthesis with speaker picker, emotion dropdown, forced-emotion audition, and rules-vs-context director buttons; failures surface in an in-window status line.
+1. **Engine** — first-run guide, the engine card (Kokoro) and the optional emotion reader, model download/remove per asset with progress and cancel, playback knobs (pace on pitched voices, loudness levelling, sentence streaming, now-speaking panel), and a live status strip.
+2. **General Voices** — per race/gender/tribe voice rows, age-aware voices, and an inbox of tribe models heard but not yet assigned.
+3. **NPC Voices** / 4. **Player Voices** — per-character tables (filtered by search; players show their world by name): voice picker, exaggeration bias, pitch, pace, volume, test button, and add-form.
+5. **Chat** — master enable, keybinds, capture sources, channel presets, and triggers/exclusions.
+6. **Test** — free-text synthesis with speaker picker, emotion dropdown, forced-emotion audition, and rules-vs-context director buttons; failures surface in an in-window status line.
 
 Every capture source, filter, and courtesy behavior can be toggled individually; defaults follow TextToTalk where options are shared. `/aivastyles` opens the style-tag editor (custom styles, tag delimiter, style regex).
 

@@ -195,4 +195,60 @@ public sealed class JsonProfileStoreTests : IDisposable
         Assert.Single(store.Entries);
         Assert.NotEqual(copy, store.Entries);
     }
+
+    [Fact]
+    public void FirstSight_WithSaveDelay_WritesOnFlush()
+    {
+        using var store = new JsonProfileStore(this.FilePath, new FakeLogSink(), TimeSpan.FromMinutes(5));
+        store.GetOrCreate("npc:yda", Candidates, null, null, null);
+        Assert.False(File.Exists(this.FilePath));
+
+        store.Flush();
+        Assert.True(File.Exists(this.FilePath));
+        Assert.Contains("npc:yda", File.ReadAllText(this.FilePath));
+    }
+
+    [Fact]
+    public void FirstSight_WithSaveDelay_WritesAfterTheDelay()
+    {
+        using var store = new JsonProfileStore(this.FilePath, new FakeLogSink(), TimeSpan.FromMilliseconds(50));
+        store.GetOrCreate("npc:yda", Candidates, null, null, null);
+        Assert.True(SpinWait.SpinUntil(() => File.Exists(this.FilePath), TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    public void Dispose_WritesPendingFirstSightSaves()
+    {
+        var store = new JsonProfileStore(this.FilePath, new FakeLogSink(), TimeSpan.FromMinutes(5));
+        store.GetOrCreate("npc:yda", Candidates, null, null, null);
+        store.Dispose();
+        Assert.Contains("npc:yda", File.ReadAllText(this.FilePath));
+    }
+
+    [Fact]
+    public void Overrides_StillSaveImmediately_WithSaveDelay()
+    {
+        using var store = new JsonProfileStore(this.FilePath, new FakeLogSink(), TimeSpan.FromMinutes(5));
+        store.SetOverride("npc:yda", "bf_emma", 0.2f);
+        Assert.Contains("bf_emma", File.ReadAllText(this.FilePath));
+    }
+
+    [Fact]
+    public void AutomaticPlayers_AreCapped_OldestFirst_OverridesAndNpcsKept()
+    {
+        using var store = new JsonProfileStore(this.FilePath, new FakeLogSink(), TimeSpan.FromMinutes(5));
+        store.SetOverride("pc:Kept Override@1", "bf_emma", 0.2f);
+        store.GetOrCreate("npc:yda", Candidates, null, null, null);
+        for (var i = 0; i < JsonProfileStore.MaxAutomaticPlayerEntries + 5; i++)
+        {
+            store.GetOrCreate($"pc:Player {i}@1", Candidates, null, null, null);
+        }
+
+        var keys = store.Entries.Select(e => e.SpeakerKey).ToHashSet();
+        Assert.Equal(JsonProfileStore.MaxAutomaticPlayerEntries, keys.Count(k => k.StartsWith("pc:Player", StringComparison.Ordinal)));
+        Assert.Contains("pc:Kept Override@1", keys);
+        Assert.Contains("npc:yda", keys);
+        Assert.DoesNotContain("pc:Player 0@1", keys);
+        Assert.Contains($"pc:Player {JsonProfileStore.MaxAutomaticPlayerEntries + 4}@1", keys);
+    }
 }

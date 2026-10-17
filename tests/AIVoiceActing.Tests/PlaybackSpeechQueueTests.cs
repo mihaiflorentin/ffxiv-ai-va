@@ -10,14 +10,15 @@ using Xunit;
 /// The playback queue's observable contract: sequential order, live volume, CancelCurrent
 /// stops the in-flight line but keeps the backlog, Clear drops everything, and an
 /// unsupported sink (macOS) skips audio while the queue stays alive. Items carry distinct
-/// sample payloads so play order is observable through the fake sink.
+/// buffer lengths so play order is observable through the fake sink (sample values are
+/// reshaped by gain, limiting and fades on the way).
 /// </summary>
 public sealed class PlaybackSpeechQueueTests
 {
     private static SpeechItem Item(float tag, long requestedAtTicks = 0) => new(
         new SpeakerIdentity("npc:x", "x", null, null, null, null),
         new SynthesisRequest("default", "line", 0.5f, []),
-        new SynthesisResult([tag], 24000),
+        new SynthesisResult([.. Enumerable.Repeat(0.1f, (int)tag)], 24000),
         requestedAtTicks);
 
     [Fact]
@@ -34,7 +35,7 @@ public sealed class PlaybackSpeechQueueTests
             SpinWait.SpinUntil(() => sink.Played.Count == 1, Seconds(5)),
             "expected exactly the fresh item to play");
 
-        Assert.Equal([2f], sink.Played.Select(p => p.Audio.Samples[0]));
+        Assert.Equal([2f], sink.Played.Select(p => (float)p.Audio.Samples.Length));
     }
 
     [Fact]
@@ -65,7 +66,7 @@ public sealed class PlaybackSpeechQueueTests
             SpinWait.SpinUntil(() => sink.Played.Count == 2, Seconds(5)),
             "expected both items to play");
 
-        Assert.Equal([1f, 2f], sink.Played.Select(p => p.Audio.Samples[0]));
+        Assert.Equal([1f, 2f], sink.Played.Select(p => (float)p.Audio.Samples.Length));
 
         volume = 1.5f;
         queue.Enqueue(Item(3));
@@ -73,7 +74,9 @@ public sealed class PlaybackSpeechQueueTests
             SpinWait.SpinUntil(() => sink.Played.Count == 3, Seconds(5)),
             "expected the third item to play");
 
-        Assert.Equal(1.5f, sink.Played[2].Volume);
+        // Gain is baked into the samples (the device runs at unity): 0.1 × 1.5.
+        Assert.Equal(1f, sink.Played[2].Volume);
+        Assert.Equal(0.15f, sink.Played[2].Audio.Samples[1], 3);
     }
 
     [Fact]
@@ -96,7 +99,7 @@ public sealed class PlaybackSpeechQueueTests
             "expected the backlog to play after the in-flight line was cancelled");
 
         Assert.Equal(1, sink.CancelCalls);
-        Assert.Equal([1f, 2f], sink.Played.Select(p => p.Audio.Samples[0]));
+        Assert.Equal([1f, 2f], sink.Played.Select(p => (float)p.Audio.Samples.Length));
     }
 
     [Fact]
@@ -120,6 +123,9 @@ public sealed class PlaybackSpeechQueueTests
         // The backlog item was dropped, not played after the cancel released the worker.
         await Task.Delay(200);
         Assert.Single(sink.Played);
+
+        // Drained items leave the depth gauge (it used to only ever grow).
+        Assert.Equal(0, queue.Depth);
     }
 
     [Fact]

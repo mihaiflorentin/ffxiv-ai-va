@@ -28,6 +28,7 @@ public sealed class ChatDialogueSource : IDialogueSource, IDisposable
     private readonly Func<bool> readFromBattleTalkAddon;
     private readonly Func<bool> skipMessagesFromYou;
     private readonly PipelineSource<TextEmitEvent> sink;
+    private readonly RecentDialogueSpeakers? recentSpeakers;
     private IChatGui.OnHandleableChatMessageDelegate? chatHandler;
 
     public ChatDialogueSource(
@@ -42,8 +43,10 @@ public sealed class ChatDialogueSource : IDialogueSource, IDisposable
         Func<bool> readFromQuestTalkAddon,
         Func<bool> readFromBattleTalkAddon,
         Func<bool> skipMessagesFromYou,
-        PipelineSource<TextEmitEvent> sink)
+        PipelineSource<TextEmitEvent> sink,
+        RecentDialogueSpeakers? recentSpeakers = null)
     {
+        this.recentSpeakers = recentSpeakers;
         this.chat = chat;
         this.talkPoller = talkPoller;
         this.battleTalkPoller = battleTalkPoller;
@@ -84,6 +87,13 @@ public sealed class ChatDialogueSource : IDialogueSource, IDisposable
         }
 
         textValue = ChatTextNormalizer.NormalizePunctuation(textValue);
+
+        // Remember who said it, even when the Talk addon covers the line below: the
+        // speakerless cutscene subtitle source looks the speaker up here.
+        if (type is XivChatType.NPCDialogue or XivChatType.NPCDialogueAnnouncements)
+        {
+            this.recentSpeakers?.Record(textValue, sender.TextValue, Environment.TickCount64);
+        }
 
         // (TextToTalk#40) When the Talk addon is showing the same NPC dialogue, skip it.
         if (type == XivChatType.NPCDialogue &&

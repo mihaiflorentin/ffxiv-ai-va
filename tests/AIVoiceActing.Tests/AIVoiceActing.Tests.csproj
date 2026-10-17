@@ -14,7 +14,7 @@
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageReference Include="Standart.Hash.xxHash" Version="4.0.5" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.29.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.24.4" /><!-- same ORT as the plugin ships -->
     <PackageReference Include="KokoroSharp" Version="0.8.4" />
     <PackageReference Include="Horus.F5Tts.Onnx" Version="0.3.1" />
     <PackageReference Include="Tokenizers.DotNet" Version="1.4.1" />

@@ -94,7 +94,8 @@ public class Configuration
     /// <summary>Baseline delivery intensity (0..1) used when the emotion plan is neutral.</summary>
     public float DefaultExaggeration { get; set; } = 0.5f;
 
-    /// <summary>Gates the (future) LLM-backed emotion director; the rules table runs otherwise.</summary>
+    /// <summary>Plans delivery with the optional GoEmotions classifier once its files are
+    /// downloaded; the rules table runs otherwise (and whenever the classifier fails).</summary>
     public bool DirectorEnabled { get; set; }
 
     /// <summary>
@@ -109,6 +110,26 @@ public class Configuration
     /// <summary>"kokoro" (fast, default), "f5" (voice-acting quality — opt-in, ~10×
     /// slower than real time on CPU), or "chatterbox" (legacy cloning).</summary>
     public string SelectedEngine { get; set; } = "kokoro";
+
+    /// <summary>Pitch-shifted voices keep their speaking pace (the shift used to slow deep
+    /// voices and speed up high ones). Off restores the old coupled behaviour.</summary>
+    public bool KeepTempoWhenPitched { get; set; } = true;
+
+    /// <summary>Levels every line to the same loudness before the per-voice volume applies.</summary>
+    public bool LevelVoiceLoudness { get; set; } = true;
+
+    /// <summary>Children get a higher, quicker take on their voice; elders a lower, slower one.</summary>
+    public bool AgeAwareCasting { get; set; } = true;
+
+    /// <summary>Long lines start playing after their first sentence instead of after the whole line.</summary>
+    public bool StreamSentences { get; set; } = true;
+
+    /// <summary>Shows the small now-speaking panel (speaker, voice, mood, Replay/Skip/Stop).</summary>
+    public bool ShowNowSpeaking { get; set; }
+
+    /// <summary>Strongly emotional lines use the expressive engine (Turbo) when it is
+    /// downloaded and Kokoro is the main engine. Off by default: ~3.2 GB, slower on CPU.</summary>
+    public bool ExpressiveEngine { get; set; }
 
     /// <summary>Lines older than this are dropped at playback instead of played late. 0 keeps everything.</summary>
     public int StaleLineSeconds { get; set; } = 20;

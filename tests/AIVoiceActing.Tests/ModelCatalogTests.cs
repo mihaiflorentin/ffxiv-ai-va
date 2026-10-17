@@ -50,7 +50,14 @@ public sealed class ModelCatalogTests
     public void RequiredGroup_HoldsExactlyTheTenChatterboxAssets_AndKokoroAndF5AreSeparate()
     {
         Assert.Equal(10, ModelCatalog.ChatterboxRequiredAssets.Count);
-        Assert.Equal(27, ModelCatalog.Assets.Count);
+        Assert.Equal(29, ModelCatalog.Assets.Count);
+
+        var emotion = ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.EmotionGroup).ToArray();
+        Assert.Equal(2, emotion.Length);
+        Assert.All(emotion, a => Assert.True(a.Asset.Optional));
+        Assert.Equal(
+            ModelCatalog.EmotionRepoBaseUrl + "onnx/model.onnx",
+            ModelCatalog.UrlFor(emotion.Single(a => a.Asset.FileName == ModelCatalog.EmotionModelFileName).Asset));
         Assert.All(ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.ChatterboxRequiredGroup),
             a => Assert.False(a.Asset.Optional));
         Assert.All(ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.ChatterboxFp32LmGroup), a => Assert.True(a.Asset.Optional));

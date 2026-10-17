@@ -24,14 +24,23 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
     private readonly Func<string> modelsDirFactory;
     private readonly Func<int> intraOpThreadsFactory;
     private readonly Func<string?>? voicesDirFactory;
+    private readonly Func<bool>? keepTempoWhenPitched;
     private readonly ILogSink? log;
 
+    /// <summary>Guards the small state fields only; never held across a model load, so
+    /// readiness checks (read every UI frame) never wait on one.</summary>
     private readonly object gate = new();
+
+    /// <summary>Serializes the model load itself. Nesting order: synthesisGate → loadGate → gate.</summary>
+    private readonly object loadGate = new();
+    private string? assetReasonCache;
+    private long? assetReasonCheckedAt;
+    private const long AssetRecheckMs = 2000;
 
     /// <summary>
     /// Serializes synthesis so Dispose can drain the in-flight line before tearing
     /// down the native session (the in-game engine-switch crash). Nesting order is
-    /// always synthesisGate → gate, never reversed.
+    /// always synthesisGate → loadGate → gate, never reversed.
     /// </summary>
     private readonly SemaphoreSlim synthesisGate = new(1, 1);
     private KokoroWavSynthesizer? engine;
@@ -43,8 +52,10 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
         Func<string> modelsDirFactory,
         Func<int> intraOpThreadsFactory,
         ILogSink? log = null,
-        Func<string?>? voicesDirFactory = null)
+        Func<string?>? voicesDirFactory = null,
+        Func<bool>? keepTempoWhenPitched = null)
     {
+        this.keepTempoWhenPitched = keepTempoWhenPitched;
         this.modelsDirFactory = modelsDirFactory ?? throw new ArgumentNullException(nameof(modelsDirFactory));
         this.intraOpThreadsFactory = intraOpThreadsFactory ?? throw new ArgumentNullException(nameof(intraOpThreadsFactory));
         this.voicesDirFactory = voicesDirFactory;
@@ -120,13 +131,25 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
                 return error;
             }
 
-            return !File.Exists(ModelPathFor(this.modelsDirFactory()))
-                ? "Kokoro model not downloaded — use the Models tab."
-                : this.ResolveVoicesDir() is null
-                    ? "Kokoro voices missing — reinstall the plugin."
-                    : null;
+            // The disk probe (a stat plus a directory scan) is cached: callers poll this
+            // every frame while the window is open.
+            var now = Environment.TickCount64;
+            if (this.assetReasonCheckedAt is not { } checkedAt || now - checkedAt >= AssetRecheckMs)
+            {
+                this.assetReasonCache = this.FindMissingAssetReason();
+                this.assetReasonCheckedAt = now;
+            }
+
+            return this.assetReasonCache;
         }
     }
+
+    private string? FindMissingAssetReason() =>
+        !File.Exists(ModelPathFor(this.modelsDirFactory()))
+            ? "Kokoro model not downloaded — use the Models tab."
+            : this.ResolveVoicesDir() is null
+                ? "Kokoro voices missing — reinstall the plugin."
+                : null;
 
     public async Task<SynthesisResult> SynthesizeAsync(SynthesisRequest request, CancellationToken cancellationToken)
     {
@@ -151,6 +174,13 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
             // Exaggeration maps to pace: flat reads stay brisk, theatrical ones slow down.
             // The per-speaker slot speed (Lalafell bubbly 1.1) scales on top.
             var speed = request.Speed * (1.05f - (0.20f * Math.Clamp(request.Exaggeration, 0f, 1f)));
+            var pitched = Math.Abs(request.Pitch - 1f) > 0.01f;
+            if (pitched && this.keepTempoWhenPitched?.Invoke() == true)
+            {
+                // The pitch resample below scales duration by 1/pitch; render at the
+                // compensating pace so a deep voice is not also a slow one.
+                speed /= request.Pitch;
+            }
 
             byte[] pcm16;
             try
@@ -170,7 +200,7 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
             cancellationToken.ThrowIfCancellationRequested();
 
             var samples = Pcm16ToFloat(pcm16);
-            if (Math.Abs(request.Pitch - 1f) > 0.01f)
+            if (pitched)
             {
                 samples = ResamplePitch(samples, request.Pitch);
             }
@@ -219,10 +249,21 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
         var drained = this.synthesisGate.Wait(TimeSpan.FromSeconds(10));
         try
         {
-            lock (this.gate)
+            if (!drained)
             {
-                this.engine?.Dispose();
-                this.engine = null;
+                // A line is still inside native inference: freeing the session under it
+                // is an access violation in the game process. Leak it instead.
+                this.log?.Warn("Kokoro line still running at teardown; leaving its session for the GC.");
+                return;
+            }
+
+            lock (this.loadGate)
+            {
+                lock (this.gate)
+                {
+                    this.engine?.Dispose();
+                    this.engine = null;
+                }
             }
         }
         finally
@@ -238,6 +279,7 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
     /// Naive pitch shift by resampling: output[i] = input[i * pitch]. Above 1 the sample
     /// stream shortens and plays brighter/faster (the child-voice lift); below 1 it
     /// lengthens and deepens. Linear interpolation; good enough for character colouring.
+    /// With keep-tempo on, synthesis already ran at speed / pitch, so only the pitch moves.
     /// </summary>
     private static float[] ResamplePitch(float[] samples, float pitch)
     {
@@ -262,16 +304,20 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
 
     private KokoroWavSynthesizer EnsureEngine()
     {
-        lock (this.gate)
+        lock (this.loadGate)
         {
-            if (this.engine is not null)
+            lock (this.gate)
             {
-                return this.engine;
-            }
+                if (this.engine is not null)
+                {
+                    return this.engine;
+                }
 
-            if (this.disposed)
-            {
-                throw new SpeechSynthesisEngineDisposedException();
+                if (this.disposed)
+                {
+                    throw new SpeechSynthesisEngineDisposedException();
+                }
+
             }
 
             var modelPath = ModelPathFor(this.modelsDirFactory());
@@ -281,57 +327,83 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
                     "Kokoro model not downloaded — use the Models tab.");
             }
 
-            this.initializing = true;
+            lock (this.gate)
+            {
+                this.initializing = true;
+            }
+
             try
             {
-                var options = new SessionOptions
+                var engine = this.LoadEngine(modelPath);
+                lock (this.gate)
                 {
-                    // CPU-impact knob: bounded intra-op parallelism protects the frame rate.
-                    IntraOpNumThreads = Math.Max(1, this.intraOpThreadsFactory()),
-                    InterOpNumThreads = 1,
-                    EnableMemoryPattern = true,
-                };
-
-                this.log?.Info($"Initializing Kokoro engine ({modelPath}, intra-op threads: {options.IntraOpNumThreads}).");
-                var engine = KokoroWavSynthesizer.LoadModel(modelPath, options);
-
-                if (this.ResolveVoicesDir() is { } voicesDir)
-                {
-                    KokoroVoiceManager.LoadVoicesFromPath(voicesDir);
-                    try
-                    {
-                        // Latch init on an unreadable bank: GetVoice's own auto-load hits
-                        // the game dir under Wine and spits hundreds of errors per line.
-                        _ = KokoroVoiceManager.GetVoice(DefaultVoiceName);
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new SpeechSynthesisException($"Kokoro voices unreadable at {voicesDir}: {ex.Message}");
-                    }
-
-                    this.log?.Info($"Kokoro voices loaded from {voicesDir}.");
-                }
-                else
-                {
-                    this.log?.Warn("Kokoro voices directory not found; synthesis will fail until the plugin is reinstalled.");
+                    this.engine = engine;
+                    this.initError = null;
                 }
 
-                this.engine = engine;
-                this.initError = null;
                 this.log?.Info("Kokoro engine ready.");
                 return engine;
             }
             catch (Exception ex)
             {
-                this.initError = $"Kokoro engine failed to load: {ex.Message}";
+                var error = $"Kokoro engine failed to load: {ex.Message}";
+                lock (this.gate)
+                {
+                    this.initError = error;
+                }
+
                 this.log?.Error("Kokoro engine initialization failed.", ex);
-                throw new SpeechSynthesisException(this.initError, ex);
+                throw new SpeechSynthesisException(error, ex);
             }
             finally
             {
-                this.initializing = false;
+                lock (this.gate)
+                {
+                    this.initializing = false;
+                    this.assetReasonCheckedAt = null;
+                }
             }
         }
+    }
+
+    /// <summary>Builds the ONNX session and loads the voice bank. Runs under
+    /// <see cref="loadGate"/> only, so readiness polls stay non-blocking meanwhile.</summary>
+    private KokoroWavSynthesizer LoadEngine(string modelPath)
+    {
+        var options = new SessionOptions
+        {
+            // CPU-impact knob: bounded intra-op parallelism protects the frame rate.
+            IntraOpNumThreads = Math.Max(1, this.intraOpThreadsFactory()),
+            InterOpNumThreads = 1,
+            EnableMemoryPattern = true,
+        };
+
+        this.log?.Info($"Initializing Kokoro engine ({modelPath}, intra-op threads: {options.IntraOpNumThreads}).");
+        var engine = KokoroWavSynthesizer.LoadModel(modelPath, options);
+
+        if (this.ResolveVoicesDir() is { } voicesDir)
+        {
+            KokoroVoiceManager.LoadVoicesFromPath(voicesDir);
+            try
+            {
+                // Latch init on an unreadable bank: GetVoice's own auto-load hits
+                // the game dir under Wine and spits hundreds of errors per line.
+                _ = KokoroVoiceManager.GetVoice(DefaultVoiceName);
+            }
+            catch (Exception ex)
+            {
+                engine.Dispose();
+                throw new SpeechSynthesisException($"Kokoro voices unreadable at {voicesDir}: {ex.Message}");
+            }
+
+            this.log?.Info($"Kokoro voices loaded from {voicesDir}.");
+        }
+        else
+        {
+            this.log?.Warn("Kokoro voices directory not found; synthesis will fail until the plugin is reinstalled.");
+        }
+
+        return engine;
     }
 
     private KokoroVoice ResolveVoice(string referenceVoiceId)
@@ -379,10 +451,11 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
 
     private static float[] Pcm16ToFloat(byte[] pcm16)
     {
-        var samples = new float[pcm16.Length / 2];
+        var shorts = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, short>(pcm16);
+        var samples = new float[shorts.Length];
         for (var i = 0; i < samples.Length; i++)
         {
-            samples[i] = BitConverter.ToInt16(pcm16, i * 2) / 32768f;
+            samples[i] = shorts[i] / 32768f;
         }
 
         return samples;

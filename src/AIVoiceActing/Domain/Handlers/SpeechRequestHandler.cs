@@ -24,7 +24,11 @@ public sealed class SpeechRequestHandler
     private readonly Func<string, string>? removeStutters;
     private readonly Func<string, (string, IReadOnlyList<string>)>? extractStyleTags;
     private readonly Func<float>? defaultExaggeration;
+    private readonly Func<bool>? streamSentences;
+    private readonly SynthesisCache? cache;
+    private readonly Func<string>? engineKey;
     private readonly ILogSink? log;
+    private static long nextLineId;
 
     public SpeechRequestHandler(
         ILexicon lexicon,
@@ -36,7 +40,10 @@ public sealed class SpeechRequestHandler
         Func<string, string>? removeStutters = null,
         Func<string, (string, IReadOnlyList<string>)>? extractStyleTags = null,
         Func<float>? defaultExaggeration = null,
-        ILogSink? log = null)
+        ILogSink? log = null,
+        Func<bool>? streamSentences = null,
+        SynthesisCache? cache = null,
+        Func<string>? engineKey = null)
     {
         this.lexicon = lexicon;
         this.dialogueSessions = dialogueSessions;
@@ -48,10 +55,16 @@ public sealed class SpeechRequestHandler
         this.extractStyleTags = extractStyleTags;
         this.defaultExaggeration = defaultExaggeration;
         this.log = log;
+        this.streamSentences = streamSentences;
+        this.cache = cache;
+        this.engineKey = engineKey;
     }
 
     /// <summary>Stops the line currently being spoken; queued lines are kept.</summary>
     public void CancelCurrent() => this.queue.CancelCurrent();
+
+    /// <summary>Flushes the playback queue and stops the line being spoken.</summary>
+    public void ClearQueue() => this.queue.Clear();
 
     /// <summary>
     /// Prepares and speaks one line. The no-profile skip comes before planning so a
@@ -118,19 +131,69 @@ public sealed class SpeechRequestHandler
             return;
         }
 
-        var request = SpeechRequestMapper.ToRequest(
-            plan,
-            profile.ReferenceVoiceId,
-            processed,
-            profile.ExaggerationBias,
-            profile.Pitch,
-            profile.Speed,
-            profile.Volume);
+        // Long lines stream sentence by sentence: the first chunk plays while the rest
+        // renders. Chunks share a line id so skipping the line drops what is left of it.
+        var chunks = this.streamSentences?.Invoke() == true
+            ? SentenceChunker.Split(processed)
+            : [processed];
+        var lineId = chunks.Count > 1 ? Interlocked.Increment(ref nextLineId) : 0;
+        for (var index = 0; index < chunks.Count; index++)
+        {
+            var request = SpeechRequestMapper.ToRequest(
+                plan,
+                profile.ReferenceVoiceId,
+                chunks[index],
+                profile.ExaggerationBias,
+                profile.Pitch,
+                profile.Speed,
+                profile.Volume);
+
+            var audio = await this.RenderAsync(request, speaker, cancellationToken);
+            if (audio is null)
+            {
+                return;
+            }
+
+            // Engines that cannot abort mid-inference still finish; a line the player has
+            // skipped past meanwhile must not reach the speakers.
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // The plan's breath before the line (a sad beat) is rendered as leading silence.
+            if (index == 0 && plan.PauseBeforeMs > 0 && audio.SampleRate > 0)
+            {
+                var lead = (int)(audio.SampleRate * (plan.PauseBeforeMs / 1000.0));
+                var padded = new float[lead + audio.Samples.Length];
+                audio.Samples.CopyTo(padded, lead);
+                audio = audio with { Samples = padded };
+            }
+
+            this.log?.Info(
+                $"Queued {(chunks.Count > 1 ? $"chunk {index + 1}/{chunks.Count}" : "line")} for \"{speaker.Key}\": " +
+                $"{audio.Samples.Length} samples @ {audio.SampleRate} Hz (voice \"{request.ReferenceVoiceId}\").");
+            this.queue.Enqueue(new SpeechItem(speaker, request, audio, requestedAtTicks, lineId, plan.Emotion));
+        }
+    }
+
+    /// <summary>
+    /// One synthesis call: served from the cache when the same render was made recently;
+    /// retried once when the engine was swapped mid-line. Null when the line must be dropped.
+    /// </summary>
+    private async Task<SynthesisResult?> RenderAsync(
+        SynthesisRequest request,
+        SpeakerIdentity speaker,
+        CancellationToken cancellationToken)
+    {
+        var key = this.cache is null ? null : SynthesisCache.KeyFor(this.engineKey?.Invoke() ?? string.Empty, request);
+        if (key is not null && this.cache!.TryGet(key, out var cached))
+        {
+            this.log?.Info($"Cache hit for \"{speaker.Key}\" ({cached.Samples.Length} samples).");
+            return cached;
+        }
 
         SynthesisResult audio;
         try
         {
-            audio = await synth.SynthesizeAsync(request, cancellationToken);
+            audio = await this.Synth.SynthesizeAsync(request, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -152,19 +215,21 @@ public sealed class SpeechRequestHandler
             catch (Exception ex)
             {
                 this.log?.Error($"Synthesis failed for \"{speaker.Key}\".", ex);
-                return;
+                return null;
             }
         }
         catch (Exception ex)
         {
             this.log?.Error($"Synthesis failed for \"{speaker.Key}\".", ex);
-            return;
+            return null;
         }
 
-        this.log?.Info(
-            $"Queued line for \"{speaker.Key}\": {audio.Samples.Length} samples @ {audio.SampleRate} Hz " +
-            $"(voice \"{request.ReferenceVoiceId}\").");
-        this.queue.Enqueue(new SpeechItem(speaker, request, audio, requestedAtTicks));
+        if (key is not null)
+        {
+            this.cache!.Put(key, audio);
+        }
+
+        return audio;
     }
 
     /// <summary>Log-safe preview of a line: single-line, bounded.</summary>
