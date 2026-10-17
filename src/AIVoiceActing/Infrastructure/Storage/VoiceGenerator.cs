@@ -77,7 +77,7 @@ public sealed class VoiceGenerator : IVoiceGenerator
             .OfType<BlendCandidate>()
             .ToList();
         var widen = this.library.Voices
-            .Select(VoiceBlend.CandidateFor)
+            .Select(VoiceBlend.WidenCandidateFor)
             .OfType<BlendCandidate>()
             .ToList();
 

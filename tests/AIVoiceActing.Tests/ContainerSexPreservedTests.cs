@@ -57,7 +57,7 @@ public sealed class ContainerSexPreservedTests : IClassFixture<ContainerUniqueVo
     {
         using var container = this.Container("chatterbox-turbo", unique);
         var voiceId = container.ResolveProfile(Woman).ReferenceVoiceId;
-        Assert.Matches("^.f_", voiceId);
+        Assert.Matches(@"^(.f_|isles\..*_f_)", voiceId);
         var turbo = Fake();
         var kokoro = Fake();
         Set(container, "speechSynthesizer", turbo);
@@ -115,7 +115,7 @@ public sealed class ContainerSexPreservedTests : IClassFixture<ContainerUniqueVo
             new SynthesisRequest(voiceId, "Hello.", 0.5f, []), CancellationToken.None);
 
         Assert.Equal(voiceId, Assert.Single(kokoro.Calls).Request.ReferenceVoiceId);
-        Assert.Matches("^.f_", voiceId);
+        Assert.Matches(@"^(.f_|isles\..*_f_)", voiceId);
     }
 
     [Theory]
