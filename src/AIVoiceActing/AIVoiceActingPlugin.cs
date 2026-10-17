@@ -10,6 +10,8 @@ using AIVoiceActing.Infrastructure.Onnx;
 using AIVoiceActing.Ports;
 using AIVoiceActing.Infrastructure.Dalamud;
 using AIVoiceActing.UI;
+using AIVoiceActing.UI.Components;
+using AIVoiceActing.UI.State;
 using Dalamud.Interface.Windowing;
 using Dalamud.Game.ClientState;
 using Dalamud.Game.ClientState.Keys;
@@ -277,51 +279,96 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
 
         // UI (Step 7): the windows receive container-resolved ports only — the UI layer
         // never references Infrastructure types directly.
-        this.configWindow = new ConfigurationWindow(
-            config,
-            save: this.SaveConfig,
-            speech: this.services.SpeechHandler,
-            synthesizer: () => this.services.SpeechSynthesizer,
-            invalidateSynthesizer: () => this.services.InvalidateSpeechSynthesizer(),
-            queue: this.services.SpeechQueue,
-            profiles: this.services.ProfileStore,
-            modelAssets: () => [.. ModelCatalog.Assets.Select(a => (a.Asset, a.Group))],
-            provisioner: () => this.services.ModelProvisioner,
-            modelStore: () => this.services.ModelStore,
-            voiceMap: () => this.services.VoiceMap,
-            sessions: () => this.services.DialogueSessions,
-            modelsDir: () => this.services.ModelsDir,
-            voicesDir: () => Path.Combine(this.services.ModelsDir, "voices"),
-            localPlayer: () => ObjectTable.LocalPlayer is { } player
+        var status = new StatusCenter();
+        var openDirectory = (string path) =>
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo { FileName = path, UseShellExecute = true });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning($"Could not open \"{path}\": {ex.Message}");
+                return false;
+            }
+        };
+        Action<string> logInfo = message => this.services.LogSink.Info(message);
+        Action<string, Exception?> logError = (message, ex) => this.services.LogSink.Error(message, ex);
+        this.configWindow = new ConfigurationWindow(new UiContext
+        {
+            Config = config,
+            Save = this.SaveConfig,
+            Speech = this.services.SpeechHandler,
+            Synthesizer = () => this.services.SpeechSynthesizer,
+            InvalidateSynthesizer = () => this.services.InvalidateSpeechSynthesizer(),
+            Queue = this.services.SpeechQueue,
+            Profiles = this.services.ProfileStore,
+            ModelAssets = () => [.. ModelCatalog.Assets.Select(a => (a.Asset, a.Group))],
+            Provisioner = () => this.services.ModelProvisioner,
+            ModelStore = () => this.services.ModelStore,
+            VoiceMap = () => this.services.VoiceMap,
+            Sessions = () => this.services.DialogueSessions,
+            ModelsDir = () => this.services.ModelsDir,
+            VoicesDir = () => Path.Combine(this.services.ModelsDir, "voices"),
+            LocalPlayer = () => ObjectTable.LocalPlayer is { } player
                 ? (player.Name.TextValue, (ushort)player.HomeWorld.RowId)
                 : null,
-            openDirectory: path =>
-            {
-                try
-                {
-                    System.Diagnostics.Process.Start(
-                        new System.Diagnostics.ProcessStartInfo { FileName = path, UseShellExecute = true });
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    PluginLog.Warning($"Could not open \"{path}\": {ex.Message}");
-                    return false;
-                }
-            },
-            reportError: message => this.services.LogSink.Warn(message),
-            logInfo: message => this.services.LogSink.Info(message),
-            logError: (message, ex) => this.services.LogSink.Error(message, ex),
-            presetStore: () => this.services.CastingPresetStore,
-            invalidateVoiceMap: () => this.services.InvalidateVoiceMap(),
-            voiceCatalog: () => VoiceCatalog.FromDirectory(Path.Combine(
+            OpenDirectory = openDirectory,
+            ReportError = message => this.services.LogSink.Warn(message),
+            LogInfo = logInfo,
+            LogError = logError,
+            PresetStore = () => this.services.CastingPresetStore,
+            InvalidateVoiceMap = () => this.services.InvalidateVoiceMap(),
+            VoiceCatalog = () => VoiceCatalog.FromDirectory(Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
                 "voices")),
-            unboundModels: this.services.UnboundModels,
-            worlds: () => [.. DataManager.GetExcelSheet<Lumina.Excel.Sheets.World>()
+            UnboundModels = this.services.UnboundModels,
+            EngineCatalog = this.services.EngineCatalog,
+            Status = status,
+            Modals = new ModalHost(),
+            Toasts = this.Toasts,
+            Nav = new NavModel(config.LastPage, page =>
+            {
+                config.LastPage = page;
+                this.SaveConfig();
+            }),
+            Downloads = new DownloadQueueModel(() => this.services.ModelProvisioner, status, logInfo, logError),
+            EngineSession = new EngineSessionModel(status, logInfo, logError),
+            Probes = new CachedProbes(
+                () => DateTimeOffset.UtcNow,
+                () => ModelCatalog.Assets.Select(a => a.Asset),
+                asset => this.services.ModelProvisioner.IsDownloaded(asset),
+                () =>
+                {
+                    using var process = System.Diagnostics.Process.GetCurrentProcess();
+                    return process.WorkingSet64;
+                },
+                () =>
+                {
+                    try
+                    {
+                        return Directory.EnumerateFiles(this.services.ModelsDir, "*", SearchOption.AllDirectories)
+                            .Sum(file => new FileInfo(file).Length);
+                    }
+                    catch (Exception)
+                    {
+                        // Directory missing or unreadable: report zero rather than drawing errors.
+                        return 0L;
+                    }
+                }),
+            Preview = new PreviewController(
+                () => this.services.SpeechSynthesizer,
+                this.services.SpeechQueue,
+                status,
+                logInfo: logInfo,
+                logError: logError),
+            Worlds = new WorldDirectory(() => [.. DataManager.GetExcelSheet<Lumina.Excel.Sheets.World>()
                 .Where(w => w.IsPublic)
                 .Select(w => (w.RowId, w.Name.ExtractText()))
-                .Where(w => w.Item2.Length > 0)]);
+                .Where(w => w.Item2.Length > 0)]),
+        });
         this.stylesWindow = new StylesWindow(config, this.SaveConfig);
         this.windowSystem.AddWindow(this.configWindow);
         this.windowSystem.AddWindow(this.stylesWindow);

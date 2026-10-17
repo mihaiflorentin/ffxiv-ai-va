@@ -11,6 +11,9 @@ public sealed class FakeSpeechQueue : ISpeechQueue
 
     public int ClearCalls { get; private set; }
 
+    /// <summary>What the overlay would show as playing; tests set it to simulate playback.</summary>
+    public SpeechItem? NowPlaying { get; set; }
+
     public void Enqueue(SpeechItem item)
     {
         // The pipeline's background worker enqueues off the test thread.

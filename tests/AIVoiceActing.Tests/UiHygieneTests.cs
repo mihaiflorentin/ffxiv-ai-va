@@ -8,7 +8,9 @@ using Xunit;
 /// uses icon glyphs from the icon font, so pixel literals and emoji are banned outside the
 /// allowlist. Theme.cs and Ui.cs are the sanctioned homes of scale maths; the legacy files
 /// below predate the redesign. THE ALLOWLIST ONLY SHRINKS: delete a legacy entry when its
-/// page moves to the new components, never add one.
+/// page moves to the new components, never add one. The shell and all pages (#7) comply;
+/// the remaining legacy entries (VoiceSetEditor, TriggerList, Controls, StylesWindow,
+/// NowSpeakingWindow) shrink away in the page tickets #15-#18.
 /// </summary>
 public sealed class UiHygieneTests
 {
@@ -16,7 +18,6 @@ public sealed class UiHygieneTests
     {
         "Theme.cs",
         "Ui.cs",
-        "ConfigurationWindow.cs",
         "VoiceSetEditor.cs",
         "TriggerList.cs",
         "StylesWindow.cs",
