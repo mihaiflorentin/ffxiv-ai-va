@@ -24,6 +24,9 @@ public sealed class SettingsPage(UiContext ctx) : IPage
 
         if (Section("Engine", "engine", anchor, ImGuiTreeNodeFlags.DefaultOpen))
         {
+            // The status strip moved here from Home: it is diagnostics, not a first-screen fact.
+            EngineParts.DrawStatusStrip(ctx);
+            ImGui.Separator();
             this.engine.Draw();
         }
 

@@ -6,9 +6,9 @@ using AIVoiceActing.UI.State;
 using Dalamud.Bindings.ImGui;
 
 /// <summary>
-/// Engine drawing shared by Home (status, get-started) and Settings (engine cards): the status
-/// strip, the first-run guide, the download progress row, and the asset-group helpers. Group
-/// keys come from the engine catalog port, not from string literals per engine.
+/// Engine drawing shared by Home (setup flow) and Settings (engine cards): the status strip, the
+/// download progress row, and the asset-group helpers. Group keys come from the engine catalog
+/// port, not from string literals per engine.
 /// </summary>
 internal static class EngineParts
 {
@@ -19,14 +19,18 @@ internal static class EngineParts
     public static IReadOnlyList<string> Groups(EngineInfo engine) =>
         [.. engine.AssetGroups.Where(g => g != EmotionGroup)];
 
-    /// <summary>Required assets of the selected engine that are not downloaded yet.</summary>
-    public static List<ModelAsset> MissingRequired(UiContext ctx)
+    /// <summary>The assets an engine cannot run without (optional ones such as other precisions excluded).</summary>
+    public static List<ModelAsset> RequiredAssets(UiContext ctx, EngineInfo engine)
     {
-        var groups = Groups(ctx.ActiveEngine);
+        var groups = Groups(engine);
         return [.. ctx.ModelAssets()
-            .Where(a => groups.Contains(a.Group) && !a.Asset.Optional && !ctx.Probes.IsDownloaded(a.Asset))
+            .Where(a => groups.Contains(a.Group) && !a.Asset.Optional)
             .Select(a => a.Asset)];
     }
+
+    /// <summary>Required assets of the selected engine that are not downloaded yet.</summary>
+    public static List<ModelAsset> MissingRequired(UiContext ctx) =>
+        [.. RequiredAssets(ctx, ctx.ActiveEngine).Where(a => !ctx.Probes.IsDownloaded(a))];
 
     public static void StartDownloads(UiContext ctx, IReadOnlyList<ModelAsset> assets) => ctx.Downloads.Start(assets);
 
@@ -61,33 +65,5 @@ internal static class EngineParts
         {
             ctx.Downloads.Cancel();
         }
-    }
-
-    /// <summary>First-run guide, shown while the active engine is not installed: one button
-    /// downloads exactly what the engine needs, then two short pointers.</summary>
-    public static void DrawGetStarted(UiContext ctx, IReadOnlyList<ModelAsset> missing)
-    {
-        var anyDownload = ctx.Downloads.Active;
-        var megabytes = missing.Sum(a => a.SizeBytes ?? 0) / (1024.0 * 1024.0);
-
-        ImGui.Separator();
-        using (Theme.PushText(Theme.Warn))
-        {
-            ImGui.TextUnformatted("Get started");
-        }
-
-        ImGui.TextWrapped($"1. Download the voice engine (about {megabytes:0} MB, once).");
-        ImGui.SameLine();
-        if (Controls.Button(
-                "Download##get-started",
-                !anyDownload && missing.Count > 0,
-                anyDownload ? "A download is already in progress." : null))
-        {
-            StartDownloads(ctx, missing);
-        }
-
-        ImGui.TextWrapped("2. Talk to any NPC: each character gets a voice that fits their race, gender and age, and keeps it.");
-        ImGui.TextWrapped("3. Optional: download the emotion reader in Settings for moodier delivery, and fine-tune voices on the Voices tab.");
-        ImGui.Separator();
     }
 }
