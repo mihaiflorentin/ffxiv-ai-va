@@ -11,14 +11,30 @@ using Xunit;
 /// <summary>Generated voices end to end on temp dirs: store, generator, library lookup and the Kokoro adapter.</summary>
 public sealed class GeneratedVoiceTests : IDisposable
 {
-    private static readonly string[] FemaleCast = ["af_heart", "af_bella", "af_nicole", "af_sarah"];
+    // Pack voices of the bundled Isles pack: Kokoro tensors read through the American phonemizer,
+    // but Scottish, Welsh and so on by accent. They are the only non-American en-us sources there are.
+    private static readonly string[] FemaleCast = ["isles.sc_f_01", "isles.wl_f_01", "isles.nth_f_01", "isles.mid_f_01"];
+
+    private static string PacksRoot()
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, "src", "AIVoiceActing", "voicepacks");
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new DirectoryNotFoundException("src/AIVoiceActing/voicepacks not found above the test output.");
+    }
 
     private readonly string root = Path.Combine(Path.GetTempPath(), "aiva-gen", Guid.NewGuid().ToString("N"));
 
     public GeneratedVoiceTests()
     {
         Directory.CreateDirectory(this.StockDir);
-        foreach (var (id, index) in new[] { "af_heart", "af_bella", "af_nicole", "af_sarah", "am_adam", "am_michael", "bf_emma", "bf_alice" }
+        foreach (var (id, index) in new[] { "bf_isabella", "bf_lily", "bm_daniel", "bm_george", "bf_emma", "bf_alice" }
             .Select((id, i) => (id, i)))
         {
             File.WriteAllBytes(Path.Combine(this.StockDir, id + ".npy"), NpyHeader.WriteStyleTensor(Tensor(index + 1)));
@@ -51,7 +67,7 @@ public sealed class GeneratedVoiceTests : IDisposable
     private (GeneratedVoiceStore Store, FileVoiceLibrary Library, VoiceGenerator Generator) Build(string? genDir = null)
     {
         var store = new GeneratedVoiceStore(() => genDir ?? this.GenDir, new FakeLogSink());
-        var library = new FileVoiceLibrary(() => [], generated: store);
+        var library = new FileVoiceLibrary(() => [PacksRoot()], generated: store);
         return (store, library, new VoiceGenerator(library, store, () => this.StockDir, new FakeLogSink()));
     }
 
@@ -90,12 +106,12 @@ public sealed class GeneratedVoiceTests : IDisposable
     [Fact]
     public void Ensure_WritesTheWeightedBlendOfItsSources()
     {
-        var (store, _, generator) = this.Build();
+        var (store, library, generator) = this.Build();
         var record = generator.Ensure("npc:feo ul", "Feo Ul", FemaleCast, "female")!;
 
         var stored = NpyHeader.ReadStyleTensor(File.ReadAllBytes(Path.Combine(this.GenDir, record.Id[7..] + ".npy")))!;
         var sources = record.Sources
-            .Select(p => NpyHeader.ReadStyleTensor(File.ReadAllBytes(Path.Combine(this.StockDir, p.VoiceId + ".npy")))!)
+            .Select(p => NpyHeader.ReadStyleTensor(File.ReadAllBytes(library.Find(p.VoiceId)!.Realizations.Single(r => r.Kind == RealizationKind.StyleTensor).Path))!)
             .ToList();
         Assert.Equal(VoiceBlend.Mix(sources, [.. record.Sources.Select(p => p.Weight)]), stored);
         Assert.Equal(1.0, record.Sources.Sum(p => (double)p.Weight), 4);
@@ -111,7 +127,7 @@ public sealed class GeneratedVoiceTests : IDisposable
 
         // A different cast must not move an existing character, and a new session finds the files.
         var (reloaded, library, again) = this.Build();
-        var second = again.Ensure("pc:Ada Lovelace@42", "Ada", ["am_adam", "am_michael"], "male")!;
+        var second = again.Ensure("pc:Ada Lovelace@42", "Ada", ["bm_daniel", "bm_george"], "male")!;
 
         Assert.Equal(first.Id, second.Id);
         Assert.Equal(stamp, File.GetLastWriteTimeUtc(Path.Combine(this.GenDir, first.Id[7..] + ".npy")));
@@ -141,12 +157,51 @@ public sealed class GeneratedVoiceTests : IDisposable
     {
         var (_, _, generator) = this.Build();
         // French and Chinese stock voices are in the cast but must never be sources.
-        string[] cast = ["ff_siwis", "zf_xiaobei", "af_heart", "af_bella", "am_adam"];
+        string[] cast = ["ff_siwis", "zf_xiaobei", "isles.sc_f_01", "isles.wl_f_01", "isles.sth_m_01"];
 
         var record = generator.Ensure("npc:x", "X", cast, "female")!;
 
-        Assert.All(record.Sources, p => Assert.StartsWith("af_", p.VoiceId));
+        Assert.All(record.Sources, p => Assert.StartsWith("isles.", p.VoiceId));
+        Assert.All(record.Sources, p => Assert.EndsWith("_f_01", p.VoiceId));
         Assert.StartsWith("af_gen_", record.Id);
+    }
+
+    [Fact]
+    public void Ensure_NeverBlendsAnAmericanVoice_EvenWhenTheCastHasThem()
+    {
+        var (_, _, generator) = this.Build();
+        string[] cast = ["af_heart", "af_bella", "af_nicole", "bf_emma", "bf_alice", "bf_isabella"];
+
+        for (var i = 0; i < 30; i++)
+        {
+            var record = generator.Ensure($"npc:american {i}", "X", cast, "female")!;
+
+            Assert.All(record.Sources, p => Assert.StartsWith("bf_", p.VoiceId));
+            Assert.StartsWith("bf_gen_", record.Id);
+        }
+    }
+
+    [Fact]
+    public void Ensure_WithOneBritishVoiceInTheCast_WidensToBritishStock_NotToAmericanOrAccentedVoices()
+    {
+        var (_, _, generator) = this.Build();
+
+        for (var i = 0; i < 20; i++)
+        {
+            var record = generator.Ensure($"npc:widen {i}", "X", ["af_heart", "bf_emma"], "female")!;
+
+            Assert.All(record.Sources, p => Assert.StartsWith("bf_", p.VoiceId));
+            Assert.Contains(record.Sources, p => p.VoiceId == "bf_emma" || p.VoiceId.StartsWith("bf_", StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
+    public void Ensure_WithAnAmericanOnlyCast_MakesNoVoice_SoTheCastPickStands()
+    {
+        var (store, _, generator) = this.Build();
+
+        Assert.Null(generator.Ensure("npc:all american", "X", ["af_heart", "af_bella", "am_adam"], "female"));
+        Assert.Empty(store.Records);
     }
 
     [Fact]
@@ -226,7 +281,7 @@ public sealed class GeneratedVoiceTests : IDisposable
     public void KokoroAdapter_LoadsAGeneratedTensorUnderItsOwnNameAndLanguage()
     {
         var (_, library, generator) = this.Build();
-        var american = generator.Ensure("npc:one", "One", FemaleCast, "female")!;
+        var american = generator.Ensure("npc:one", "One", FemaleCast, "female")!; // American G2P, pack accent
         var british = generator.Ensure("npc:two", "Two", ["bf_emma", "bf_alice"], "female")!;
         var log = new FakeLogSink();
         using var synth = new KokoroSynthesizer(() => this.root, () => 4, log, voiceLibrary: library);

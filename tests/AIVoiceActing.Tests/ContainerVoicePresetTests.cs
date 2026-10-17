@@ -41,10 +41,10 @@ public sealed class ContainerVoicePresetTests
             var profile = container.ResolveProfile(Speaker());
 
             var maleIds = container.VoiceMap.SlotsFor(VoiceGroup.Male, 1).Select(s => s.Id).ToHashSet();
-            var ungenderedIds = container.VoiceMap.SlotsFor(VoiceGroup.Ungendered, null).Select(s => s.Id).ToHashSet();
 
+            // The Unknown row is a neutral mix and may share voices with a race row, so only
+            // membership of the race row is asserted here.
             Assert.Contains(profile.ReferenceVoiceId, maleIds);
-            Assert.DoesNotContain(profile.ReferenceVoiceId, ungenderedIds);
         }
         finally
         {
@@ -62,10 +62,8 @@ public sealed class ContainerVoicePresetTests
             var profile = container.ResolveProfile(Speaker());
 
             var ungenderedIds = container.VoiceMap.SlotsFor(VoiceGroup.Ungendered, null).Select(s => s.Id).ToHashSet();
-            var maleIds = container.VoiceMap.SlotsFor(VoiceGroup.Male, 1).Select(s => s.Id).ToHashSet();
 
             Assert.Contains(profile.ReferenceVoiceId, ungenderedIds);
-            Assert.DoesNotContain(profile.ReferenceVoiceId, maleIds);
         }
         finally
         {

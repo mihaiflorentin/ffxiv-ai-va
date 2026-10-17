@@ -139,10 +139,56 @@ public sealed class VoiceBlendTests
     public void CandidateFor_KeepsEnglishPhonemizersOnly()
     {
         Assert.Equal(Phonemizers.EnglishGb, VoiceBlend.CandidateFor(Voice("bf_x", "en-GB", "female", Phonemizers.EnglishGb))!.Phonemizer);
-        Assert.Equal("male", VoiceBlend.CandidateFor(Voice("am_x", "en-US", "male", Phonemizers.EnglishUs))!.Sex);
+        Assert.Equal("male", VoiceBlend.CandidateFor(Voice("isles.x", "en-IE", "male", Phonemizers.EnglishUs))!.Sex);
         Assert.Null(VoiceBlend.CandidateFor(Voice("ff_x", "fr-FR", "female", Phonemizers.French)));
         Assert.Null(VoiceBlend.CandidateFor(Voice("zf_x", "zh-CN", "female", Phonemizers.Chinese)));
         Assert.Null(VoiceBlend.CandidateFor(Voice("af_x", "en-US", "female", Phonemizers.EnglishUs, available: false)));
+    }
+
+    [Theory]
+    [InlineData("af_heart", "en-US", "female")]
+    [InlineData("am_michael", "en-US", "male")]
+    [InlineData("af_other", "en-GB", "female")] // a stock American id, whatever its metadata says
+    [InlineData("pack.texan", "en-US", "male")] // a third-party pack voice filed under American
+    public void CandidateFor_NeverOffersAnAmericanVoice(string id, string accent, string sex)
+    {
+        var voice = Voice(id, accent, sex, Phonemizers.EnglishUs);
+
+        Assert.True(VoiceBlend.IsAmerican(voice));
+        Assert.Null(VoiceBlend.CandidateFor(voice));
+        Assert.Null(VoiceBlend.WidenCandidateFor(voice));
+    }
+
+    [Theory]
+    [InlineData("isles.ie_m_01", "en-IE")]
+    [InlineData("isles.sc_m_01", "en-GB-SCT")]
+    [InlineData("isles.wl_m_01", "en-GB-WLS")]
+    [InlineData("isles.nth_m_01", "en-GB-NTH")]
+    [InlineData("bm_george", "en-GB")]
+    public void CandidateFor_JudgesTheAccentNotThePhonemizer_SoIslesVoicesPassOnTheAmericanG2p(string id, string accent)
+    {
+        var voice = Voice(id, accent, "male", Phonemizers.EnglishUs);
+
+        Assert.False(VoiceBlend.IsAmerican(voice));
+        Assert.NotNull(VoiceBlend.CandidateFor(voice));
+    }
+
+    [Fact]
+    public void CandidateFor_SkipsGeneratedVoices_SoABlendNeverHidesAnAmericanAncestor()
+    {
+        var generated = Voice("bf_gen_0123456789ab", "en-GB", "female", Phonemizers.EnglishGb) with { PackId = VoiceBlend.GeneratedPackId };
+
+        Assert.Null(VoiceBlend.CandidateFor(generated));
+    }
+
+    [Fact]
+    public void WidenCandidateFor_KeepsBritishAndRegionalVoices_ButNotForeignAccentedOnes()
+    {
+        Assert.NotNull(VoiceBlend.WidenCandidateFor(Voice("bf_x", "en-GB", "female", Phonemizers.EnglishGb)));
+        Assert.NotNull(VoiceBlend.WidenCandidateFor(Voice("isles.sc_f_01", "en-GB-SCT", "female", Phonemizers.EnglishUs)));
+        var japanese = Voice("accented.ja_f", "en-x-ja", "female", Phonemizers.EnglishUs);
+        Assert.NotNull(VoiceBlend.CandidateFor(japanese)); // fine when the casting itself names it
+        Assert.Null(VoiceBlend.WidenCandidateFor(japanese));
     }
 
     [Fact]

@@ -33,13 +33,27 @@ public static class VoiceBlend
         Phonemizers.Normalize(phonemizer) is Phonemizers.EnglishUs or Phonemizers.EnglishGb;
 
     /// <summary>
-    /// A voice as a blend candidate, or null when it cannot be blended: unavailable, no Kokoro
-    /// style tensor, or a non-English phonemizer. English is decided by the phonemizer alone, so a
-    /// pack voice with a foreign accent but an English phonemizer still counts.
+    /// True for an American-accent voice: filed under <c>en-US</c> (the stock <c>af_*</c>/<c>am_*</c>
+    /// bank) or carrying a stock American id. Decided by accent and id, never by the phonemizer: the
+    /// Isles pack pronounces through the American phonemizer but speaks Irish, Welsh and so on.
+    /// </summary>
+    public static bool IsAmerican(VoiceInfo voice) =>
+        string.Equals(voice.Accent, "en-US", StringComparison.OrdinalIgnoreCase)
+        || (voice.Id is { Length: > 3 } id && id[0] == 'a' && id[1] is 'f' or 'm' && id[2] == '_');
+
+    /// <summary>True for a pack voice with a foreign accent in English (<c>en-x-*</c>, such as Japanese-accented).</summary>
+    public static bool IsForeignAccented(VoiceInfo voice) =>
+        voice.Accent?.StartsWith("en-x-", StringComparison.OrdinalIgnoreCase) == true;
+
+    /// <summary>
+    /// A voice as a blend candidate, or null when it cannot be blended: unavailable, American,
+    /// itself a generated voice (no blends of blends, which would also hide an American ancestor),
+    /// no Kokoro style tensor, or a non-English phonemizer. English is decided by the phonemizer
+    /// alone, so a pack voice with a foreign accent but an English phonemizer still counts.
     /// </summary>
     public static BlendCandidate? CandidateFor(VoiceInfo voice)
     {
-        if (!voice.Available)
+        if (!voice.Available || IsAmerican(voice) || voice.PackId == GeneratedPackId)
         {
             return null;
         }
@@ -57,6 +71,16 @@ public static class VoiceBlend
         var sex = voice.Sex is "male" or "female" ? voice.Sex : "neutral";
         return new BlendCandidate(voice.Id, phonemizer, sex);
     }
+
+    /// <summary>
+    /// A candidate for the wider pool a blend falls back on when the casting set is too small:
+    /// <see cref="CandidateFor"/> minus foreign-accented voices, so a Midlands speaker is never
+    /// blended with a Japanese-accented one just because the set had a single voice. What remains
+    /// is British stock plus the regional pack voices that have Kokoro tensors. When even that is
+    /// too small the plan is null and the speaker keeps the plain pick from the casting.
+    /// </summary>
+    public static BlendCandidate? WidenCandidateFor(VoiceInfo voice) =>
+        IsForeignAccented(voice) ? null : CandidateFor(voice);
 
     /// <summary>Public id of a generated voice: <c>{a|b}{f|m}_gen_{hash}</c> (the shape KokoroSharp needs to pick the G2P).</summary>
     public static string IdFor(string phonemizer, string sex, string hash) =>

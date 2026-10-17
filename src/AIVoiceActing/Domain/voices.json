@@ -22,198 +22,6 @@
     "id": "bf_emma"
    }
   ],
-  "poshMale": [
-   {
-    "id": "bm_daniel"
-   },
-   {
-    "id": "bm_george"
-   }
-  ],
-  "poshFemale": [
-   {
-    "id": "bf_isabella"
-   },
-   {
-    "id": "bf_emma"
-   },
-   {
-    "id": "bf_alice"
-   }
-  ],
-  "childMale": [
-   {
-    "id": "bm_fable",
-    "pitch": 1.12,
-    "speed": 1.05
-   },
-   {
-    "id": "bm_lewis",
-    "pitch": 1.12,
-    "speed": 1.05
-   },
-   {
-    "id": "bm_george",
-    "pitch": 1.12,
-    "speed": 1.05
-   }
-  ],
-  "childFemale": [
-   {
-    "id": "bf_lily",
-    "pitch": 1.12,
-    "speed": 1.05
-   },
-   {
-    "id": "bf_isabella",
-    "pitch": 1.12,
-    "speed": 1.05
-   }
-  ],
-  "britishMale": [
-   {
-    "id": "bm_lewis",
-    "exaggerationBias": 0.45,
-    "pitch": 0.86,
-    "speed": 0.97
-   }
-  ],
-  "britishFemale": [
-   {
-    "id": "bf_emma",
-    "exaggerationBias": 0.45,
-    "pitch": 0.92,
-    "speed": 0.98
-   }
-  ],
-  "midlanderMale": [
-   {
-    "id": "bm_daniel"
-   },
-   {
-    "id": "bm_fable"
-   },
-   {
-    "id": "bm_george"
-   },
-   {
-    "id": "bm_lewis"
-   }
-  ],
-  "midlanderFemale": [
-   {
-    "id": "bf_lily"
-   },
-   {
-    "id": "bf_alice"
-   },
-   {
-    "id": "bf_emma"
-   },
-   {
-    "id": "bf_isabella"
-   }
-  ],
-  "highlanderMale": [
-   {
-    "id": "hm_omega"
-   },
-   {
-    "id": "pm_alex"
-   }
-  ],
-  "highlanderFemale": [
-   {
-    "id": "hf_alpha"
-   },
-   {
-    "id": "ef_dora"
-   },
-   {
-    "id": "zf_xiaoni"
-   }
-  ],
-  "keeperMale": [
-   {
-    "id": "hm_psi"
-   },
-   {
-    "id": "zm_yunxi"
-   }
-  ],
-  "keeperFemale": [
-   {
-    "id": "hf_beta"
-   },
-   {
-    "id": "zf_xiaobei"
-   }
-  ],
-  "ungendered": [
-   {
-    "id": "ef_dora"
-   },
-   {
-    "id": "em_alex"
-   },
-   {
-    "id": "pf_dora"
-   },
-   {
-    "id": "hf_alpha"
-   },
-   {
-    "id": "hm_omega"
-   }
-  ],
-  "vieraMale": [
-   {
-    "id": "em_alex"
-   }
-  ],
-  "vieraFemale": [
-   {
-    "id": "pf_dora"
-   }
-  ],
-  "chineseMale": [
-   {
-    "id": "zm_yunjian"
-   },
-   {
-    "id": "zm_yunyang"
-   }
-  ],
-  "chineseFemale": [
-   {
-    "id": "zf_xiaoxiao"
-   },
-   {
-    "id": "zf_xiaoyi"
-   },
-   {
-    "id": "zf_xiaobei"
-   },
-   {
-    "id": "zf_xiaoni"
-   }
-  ],
-  "roegadynMale": [
-   {
-    "id": "im_nicola"
-   },
-   {
-    "id": "em_santa"
-   },
-   {
-    "id": "hm_psi"
-   }
-  ],
-  "roegadynFemale": [
-   {
-    "id": "if_sara"
-   }
-  ],
   "irishMale": [
    {
     "id": "isles.ie_m_01"
@@ -271,23 +79,368 @@
    {
     "id": "isles.sth_f_01"
    }
+  ],
+  "ungendered": [
+   {
+    "id": "bm_lewis"
+   },
+   {
+    "id": "bf_emma"
+   },
+   {
+    "id": "isles.mid_m_01"
+   },
+   {
+    "id": "isles.mid_f_01"
+   },
+   {
+    "id": "isles.sth_m_01"
+   },
+   {
+    "id": "isles.sth_f_01"
+   },
+   {
+    "id": "bf_alice"
+   },
+   {
+    "id": "bm_fable"
+   }
+  ],
+  "hyurMale": [
+   {
+    "id": "isles.mid_m_01"
+   },
+   {
+    "id": "isles.sth_m_01"
+   },
+   {
+    "id": "bm_lewis"
+   },
+   {
+    "id": "bm_daniel"
+   },
+   {
+    "id": "bm_fable"
+   },
+   {
+    "id": "isles.nth_m_01",
+    "pitch": 0.95
+   },
+   {
+    "id": "isles.sc_m_01",
+    "pitch": 0.95
+   },
+   {
+    "id": "accented.ja_m_kumo"
+   }
+  ],
+  "hyurFemale": [
+   {
+    "id": "isles.mid_f_01"
+   },
+   {
+    "id": "isles.sth_f_01"
+   },
+   {
+    "id": "bf_lily"
+   },
+   {
+    "id": "bf_alice"
+   },
+   {
+    "id": "bf_emma"
+   },
+   {
+    "id": "isles.nth_f_01"
+   },
+   {
+    "id": "isles.sc_f_01"
+   },
+   {
+    "id": "accented.ja_f_gongitsune"
+   }
+  ],
+  "elezenMale": [
+   {
+    "id": "bm_daniel",
+    "pitch": 0.97
+   },
+   {
+    "id": "bm_george",
+    "pitch": 0.97
+   },
+   {
+    "id": "bm_lewis",
+    "pitch": 0.95
+   },
+   {
+    "id": "bm_fable",
+    "pitch": 0.97
+   }
+  ],
+  "elezenFemale": [
+   {
+    "id": "bf_isabella",
+    "pitch": 0.97
+   },
+   {
+    "id": "bf_emma",
+    "pitch": 0.96
+   },
+   {
+    "id": "bf_alice",
+    "pitch": 0.97
+   },
+   {
+    "id": "bf_lily",
+    "pitch": 0.98
+   }
+  ],
+  "lalafellMale": [
+   {
+    "id": "bm_fable",
+    "pitch": 1.12,
+    "speed": 1.05
+   },
+   {
+    "id": "isles.sth_m_01",
+    "pitch": 1.12,
+    "speed": 1.05
+   },
+   {
+    "id": "isles.mid_m_01",
+    "pitch": 1.12,
+    "speed": 1.05
+   },
+   {
+    "id": "bm_lewis",
+    "pitch": 1.12,
+    "speed": 1.05
+   }
+  ],
+  "lalafellFemale": [
+   {
+    "id": "bf_lily",
+    "pitch": 1.12,
+    "speed": 1.05
+   },
+   {
+    "id": "bf_isabella",
+    "pitch": 1.12,
+    "speed": 1.05
+   },
+   {
+    "id": "isles.sth_f_01",
+    "pitch": 1.12,
+    "speed": 1.05
+   },
+   {
+    "id": "isles.mid_f_01",
+    "pitch": 1.12,
+    "speed": 1.05
+   }
+  ],
+  "miqoteMale": [
+   {
+    "id": "isles.sth_m_01"
+   },
+   {
+    "id": "isles.mid_m_01"
+   },
+   {
+    "id": "bm_fable"
+   },
+   {
+    "id": "isles.wl_m_01"
+   },
+   {
+    "id": "isles.ie_m_02"
+   },
+   {
+    "id": "isles.ie_m_01"
+   }
+  ],
+  "miqoteFemale": [
+   {
+    "id": "isles.sth_f_01"
+   },
+   {
+    "id": "isles.mid_f_01"
+   },
+   {
+    "id": "bf_lily"
+   },
+   {
+    "id": "isles.wl_f_01"
+   },
+   {
+    "id": "bf_alice"
+   }
+  ],
+  "roegadynMale": [
+   {
+    "id": "isles.nth_m_01",
+    "pitch": 0.92
+   },
+   {
+    "id": "isles.sc_m_01",
+    "pitch": 0.9
+   },
+   {
+    "id": "bm_george",
+    "pitch": 0.88,
+    "speed": 0.96
+   },
+   {
+    "id": "bm_lewis",
+    "pitch": 0.86,
+    "speed": 0.96
+   },
+   {
+    "id": "isles.mid_m_01",
+    "pitch": 0.9
+   }
+  ],
+  "roegadynFemale": [
+   {
+    "id": "isles.nth_f_01",
+    "pitch": 0.94
+   },
+   {
+    "id": "isles.sc_f_01",
+    "pitch": 0.94
+   },
+   {
+    "id": "bf_emma",
+    "pitch": 0.92
+   },
+   {
+    "id": "isles.mid_f_01",
+    "pitch": 0.94
+   },
+   {
+    "id": "bf_alice",
+    "pitch": 0.94
+   }
+  ],
+  "auRaMale": [
+   {
+    "id": "accented.ja_m_kumo"
+   },
+   {
+    "id": "accented.zh_m_yunjian"
+   },
+   {
+    "id": "accented.hi_m_omega"
+   }
+  ],
+  "auRaFemale": [
+   {
+    "id": "accented.ja_f_gongitsune"
+   },
+   {
+    "id": "accented.zh_f_xiaoni"
+   },
+   {
+    "id": "accented.hi_f_alpha"
+   }
+  ],
+  "hrothgarMale": [
+   {
+    "id": "isles.sc_m_01",
+    "pitch": 0.84,
+    "speed": 0.94
+   },
+   {
+    "id": "isles.nth_m_01",
+    "pitch": 0.84,
+    "speed": 0.94
+   },
+   {
+    "id": "bm_george",
+    "pitch": 0.8,
+    "speed": 0.94
+   },
+   {
+    "id": "bm_lewis",
+    "pitch": 0.82,
+    "speed": 0.94
+   },
+   {
+    "id": "isles.mid_m_01",
+    "pitch": 0.85,
+    "speed": 0.94
+   }
+  ],
+  "hrothgarFemale": [
+   {
+    "id": "bf_emma",
+    "pitch": 0.88,
+    "speed": 0.96
+   },
+   {
+    "id": "isles.nth_f_01",
+    "pitch": 0.88,
+    "speed": 0.96
+   },
+   {
+    "id": "isles.sc_f_01",
+    "pitch": 0.88,
+    "speed": 0.96
+   },
+   {
+    "id": "isles.mid_f_01",
+    "pitch": 0.9,
+    "speed": 0.96
+   }
+  ],
+  "vieraMale": [
+   {
+    "id": "accented.es_m_alex"
+   },
+   {
+    "id": "isles.wl_m_01"
+   },
+   {
+    "id": "bm_daniel"
+   },
+   {
+    "id": "isles.sth_m_01"
+   }
+  ],
+  "vieraFemale": [
+   {
+    "id": "accented.fr_f_siwis"
+   },
+   {
+    "id": "isles.wl_f_01"
+   },
+   {
+    "id": "bf_isabella"
+   },
+   {
+    "id": "bf_alice"
+   },
+   {
+    "id": "isles.sth_f_01"
+   }
   ]
  },
  "raceVariants": {
-  "1|Male": "midlanderMale",
-  "1|Female": "midlanderFemale",
-  "2|Male": "britishMale",
-  "2|Female": "britishFemale",
-  "3|Male": "childMale",
-  "3|Female": "childFemale",
-  "4|Male": "poshMale",
-  "4|Female": "poshFemale",
+  "1|Male": "hyurMale",
+  "1|Female": "hyurFemale",
+  "2|Male": "elezenMale",
+  "2|Female": "elezenFemale",
+  "3|Male": "lalafellMale",
+  "3|Female": "lalafellFemale",
+  "4|Male": "miqoteMale",
+  "4|Female": "miqoteFemale",
   "5|Male": "roegadynMale",
   "5|Female": "roegadynFemale",
-  "6|Male": "chineseMale",
-  "6|Female": "chineseFemale",
-  "7|Male": "roegadynMale",
-  "7|Female": "roegadynFemale",
+  "6|Male": "auRaMale",
+  "6|Female": "auRaFemale",
+  "7|Male": "hrothgarMale",
+  "7|Female": "hrothgarFemale",
   "8|Male": "vieraMale",
   "8|Female": "vieraFemale"
  },
@@ -376,26 +529,21 @@
   ]
  },
  "disabledSets": {
-  "why": "Parked casts: 0.0.26 turns these sets into the beast-tribe rows of the Default preset (General Voices > Beast tribes binds model ids; pool/male/female lists per tribe). The jf_/jm_ (Japanese) bank garbles English on the v1.0 model (user-reported in game), so any cast using it stays parked. The zf_/zm_ (Chinese) bank was auditioned by the user on 2026-09-14 and is ACTIVE for Au Ra and several tribe pools. F5-clip casting (Piper-generated accents) was dropped the same day: play stays Kokoro-only. deepMale (am_onyx 0.88) parked 2026-09-14: user moved Roegadyn male to im_nicola after disliking am_fenrir. hrothgarMale/deepFemale parked 2026-09-14: user found no suitable Hrothgar voices; Hrothgar now shares the Roegadyn cast. scottishMale (f5clip_gd_male) UNPARKED 2026-10-17: replaced by the active scottishMale set backed by the aiva-isles pack (Irish, Scottish, Welsh and English-regional sets are active now; they resolve only while the pack is enabled, otherwise RaceVoiceMap availability filtering falls back to the engine default). No Irish female voice exists in the source dataset, so there is no irishFemale set. icelandic/scouse/nordic stay parked: no pack has those accents.",
+  "why": "Parked casts, plus the beast-tribe casts: a tribe's pool is setX and its optional gendered lists are setXMale / setXFemale (the Default preset shows all three on the tribe rows). The icelandic/scouse/nordic/japanese sets are PARKED (no pack has those accents) and must never be removed. Built-in casting is English only with no American-accent voices (docs/casting-lore.md; CastingLoreTests enforce it): no stock af_/am_ voice and no non-English-phonemizer bank (e/f/h/i/j/p/z) appears in the active sets or the tribe sets.",
   "sets": {
-   "icelandicMale": [
-    {
-     "id": "f5clip_is_male"
-    }
-   ],
    "icelandicFemale": [
     {
      "id": "f5clip_is_female"
     }
    ],
-   "scouseMale": [
+   "icelandicMale": [
     {
-     "id": "f5clip_lpool_male"
+     "id": "f5clip_is_male"
     }
    ],
-   "nordicMale": [
+   "japaneseFemale": [
     {
-     "id": "f5clip_no_male"
+     "id": "jf_alpha"
     }
    ],
    "japaneseFlavourFemale": [
@@ -408,329 +556,128 @@
      "id": "jm_kumo"
     }
    ],
+   "japaneseMale": [
+    {
+     "id": "jm_kumo",
+     "pitch": 0.97
+    }
+   ],
+   "nordicMale": [
+    {
+     "id": "f5clip_no_male"
+    }
+   ],
+   "scouseMale": [
+    {
+     "id": "f5clip_lpool_male"
+    }
+   ],
    "setAmaljaa": [
     {
-     "id": "ef_dora",
-     "pitch": 0.89
-    },
-    {
-     "id": "em_alex",
-     "pitch": 0.87
-    },
-    {
-     "id": "em_santa",
-     "pitch": 0.88
-    },
-    {
-     "id": "pm_santa",
-     "pitch": 0.88
-    },
-    {
-     "id": "im_nicola",
-     "pitch": 0.88
-    }
-   ],
-   "setSylph": [
-    {
-     "id": "pm_alex",
-     "pitch": 1.12
-    },
-    {
-     "id": "bf_alice",
-     "pitch": 1.12
-    }
-   ],
-   "setKobold": [
-    {
-     "id": "pm_alex",
-     "pitch": 0.92
-    },
-    {
-     "id": "zm_yunxia",
-     "pitch": 0.92
-    }
-   ],
-   "setSahagin": [
-    {
-     "id": "pf_dora",
-     "pitch": 0.94
-    },
-    {
-     "id": "ef_dora",
-     "pitch": 0.94
-    }
-   ],
-   "setIxal": [
-    {
-     "id": "pm_santa",
-     "pitch": 1.08,
-     "speed": 1.1
-    },
-    {
-     "id": "ef_dora",
-     "pitch": 1.08
-    }
-   ],
-   "setVanuVanu": [
-    {
-     "id": "hm_omega",
-     "exaggerationBias": 0.0,
+     "id": "bm_george",
      "pitch": 0.88,
-     "speed": 1.05
-    }
-   ],
-   "setVath": [
-    {
-     "id": "zm_yunxia",
-     "exaggerationBias": 0.4,
-     "pitch": 1.08,
      "speed": 0.95
     },
     {
-     "id": "pf_dora",
-     "exaggerationBias": 0.5,
-     "pitch": 1.05,
-     "speed": 0.97
-    },
-    {
-     "id": "bf_alice",
-     "exaggerationBias": 0.5,
-     "pitch": 1.02,
-     "speed": 0.97
-    }
-   ],
-   "setMoogle": [
-    {
-     "id": "bm_george",
-     "pitch": 1.25,
-     "speed": 1.15
-    },
-    {
-     "id": "bf_lily",
-     "pitch": 1.25,
-     "speed": 1.15
-    }
-   ],
-   "setKojin": [
-    {
-     "id": "zm_yunjian",
-     "exaggerationBias": 0.5,
-     "pitch": 0.87,
-     "speed": 0.96
-    },
-    {
-     "id": "bm_daniel",
-     "exaggerationBias": 0.5,
-     "pitch": 0.85,
-     "speed": 0.96
-    },
-    {
-     "id": "bm_george",
-     "exaggerationBias": 0.6,
+     "id": "isles.nth_m_01",
      "pitch": 0.88,
-     "speed": 0.97
+     "speed": 0.95
+    },
+    {
+     "id": "isles.sc_m_01",
+     "pitch": 0.9,
+     "speed": 0.95
+    },
+    {
+     "id": "bf_emma",
+     "pitch": 0.9,
+     "speed": 0.95
+    },
+    {
+     "id": "isles.nth_f_01",
+     "pitch": 0.9,
+     "speed": 0.95
+    }
+   ],
+   "setAmaljaaFemale": [
+    {
+     "id": "bf_emma",
+     "pitch": 0.9,
+     "speed": 0.95
+    },
+    {
+     "id": "isles.nth_f_01",
+     "pitch": 0.9,
+     "speed": 0.95
+    }
+   ],
+   "setAmaljaaMale": [
+    {
+     "id": "bm_george",
+     "pitch": 0.88,
+     "speed": 0.95
+    },
+    {
+     "id": "isles.nth_m_01",
+     "pitch": 0.88,
+     "speed": 0.95
+    },
+    {
+     "id": "isles.sc_m_01",
+     "pitch": 0.9,
+     "speed": 0.95
     }
    ],
    "setAnanta": [
     {
-     "id": "hf_beta",
+     "id": "accented.hi_m_omega",
+     "exaggerationBias": 1.0,
+     "pitch": 1.04,
+     "speed": 1.05
+    },
+    {
+     "id": "accented.hi_f_alpha",
      "exaggerationBias": 1.0,
      "pitch": 1.07,
      "speed": 1.06
-    },
+    }
+   ],
+   "setAnantaFemale": [
     {
-     "id": "hf_alpha",
+     "id": "accented.hi_f_alpha",
      "exaggerationBias": 1.0,
      "pitch": 1.07,
      "speed": 1.06
     }
    ],
-   "setNamazu": [
+   "setAnantaMale": [
     {
-     "id": "pm_santa",
-     "exaggerationBias": 0.9,
-     "pitch": 1.12,
-     "speed": 1.08
-    },
-    {
-     "id": "pf_dora",
-     "exaggerationBias": 0.9,
-     "pitch": 1.14,
-     "speed": 1.08
-    },
-    {
-     "id": "zf_xiaoyi",
-     "exaggerationBias": 0.9,
-     "pitch": 1.12,
-     "speed": 1.08
-    }
-   ],
-   "setPixie": [
-    {
-     "id": "hf_alpha",
-     "pitch": 1.07,
-     "speed": 1.1
-    },
-    {
-     "id": "hf_beta",
-     "pitch": 1.07,
-     "speed": 1.1
-    }
-   ],
-   "setDwarf": [
-    {
-     "id": "bm_lewis",
-     "pitch": 0.9
-    },
-    {
-     "id": "bm_fable",
-     "pitch": 0.9
-    }
-   ],
-   "setQitari": [
-    {
-     "id": "bf_alice",
-     "exaggerationBias": 0.75,
-     "pitch": 1.1,
-     "speed": 1.07
-    },
-    {
-     "id": "if_sara",
-     "exaggerationBias": 0.75,
-     "pitch": 1.08,
-     "speed": 1.06
-    },
-    {
-     "id": "im_nicola",
-     "exaggerationBias": 0.75,
-     "pitch": 1.1,
-     "speed": 1.06
-    }
-   ],
-   "setNuMou": [
-    {
-     "id": "bm_daniel",
-     "pitch": 0.95
-    },
-    {
-     "id": "bf_emma",
-     "pitch": 0.95
-    }
-   ],
-   "setLoporrit": [
-    {
-     "id": "bf_lily",
-     "pitch": 1.15,
-     "speed": 1.12
-    },
-    {
-     "id": "bf_isabella",
-     "pitch": 1.15,
-     "speed": 1.12
+     "id": "accented.hi_m_omega",
+     "exaggerationBias": 1.0,
+     "pitch": 1.04,
+     "speed": 1.05
     }
    ],
    "setArkasodara": [
     {
-     "id": "hm_omega"
+     "id": "accented.hi_m_omega",
+     "pitch": 0.92
     },
     {
-     "id": "pf_dora"
-    },
-    {
-     "id": "ef_dora"
-    }
-   ],
-   "setNuMou": [
-    {
-     "id": "bf_lily",
-     "pitch": 1.12,
-     "speed": 0.85
-    },
-    {
-     "id": "bf_isabella",
-     "pitch": 1.12,
-     "speed": 0.85
-    }
-   ],
-   "setOmicron": [
-    {
-     "id": "hf_beta",
-     "exaggerationBias": 0.25,
-     "pitch": 0.95,
-     "speed": 0.96
-    }
-   ],
-   "setPelupelu": [
-    {
-     "id": "ef_dora",
-     "pitch": 1.05,
-     "speed": 1.1
-    },
-    {
-     "id": "bf_lily",
-     "pitch": 1.05
-    }
-   ],
-   "setYokHuy": [
-    {
-     "id": "zm_yunjian",
-     "exaggerationBias": 0.45,
-     "pitch": 0.84,
-     "speed": 0.92
-    },
-    {
-     "id": "bm_daniel",
-     "exaggerationBias": 0.45,
-     "pitch": 0.82,
-     "speed": 0.92
-    },
-    {
-     "id": "hm_omega",
-     "exaggerationBias": 0.5,
-     "pitch": 0.84,
-     "speed": 0.92
-    }
-   ],
-   "setMamoolJaFemale": [
-    {
-     "id": "hf_alpha",
-     "exaggerationBias": 0.5,
-     "pitch": 0.97,
-     "speed": 0.98
-    },
-    {
-     "id": "hf_beta",
-     "exaggerationBias": 0.5,
-     "pitch": 0.97,
-     "speed": 0.98
-    }
-   ],
-   "setMamoolJa": [
-    {
-     "id": "hm_omega"
-    },
-    {
-     "id": "em_alex"
-    }
-   ],
-   "setGarlean": [
-    {
-     "id": "im_nicola",
+     "id": "accented.hi_f_alpha",
      "pitch": 0.95
-    },
-    {
-     "id": "bm_daniel"
     }
    ],
-   "setGoblin": [
+   "setArkasodaraFemale": [
     {
-     "id": "bm_lewis"
-    },
+     "id": "accented.hi_f_alpha",
+     "pitch": 0.95
+    }
+   ],
+   "setArkasodaraMale": [
     {
-     "id": "bm_fable"
-    },
-    {
-     "id": "bm_george"
+     "id": "accented.hi_m_omega",
+     "pitch": 0.92
     }
    ],
    "setDragon": [
@@ -741,68 +688,842 @@
      "speed": 0.94
     },
     {
-     "id": "bm_fable",
+     "id": "bm_daniel",
      "exaggerationBias": 0.4,
      "pitch": 0.83,
      "speed": 0.94
     },
     {
-     "id": "bf_alice",
+     "id": "bf_emma",
      "exaggerationBias": 0.4,
-     "pitch": 0.82,
+     "pitch": 0.86,
+     "speed": 0.94
+    },
+    {
+     "id": "bf_isabella",
+     "exaggerationBias": 0.4,
+     "pitch": 0.86,
      "speed": 0.94
     }
    ],
-   "japaneseMale": [
+   "setDragonFemale": [
     {
-     "id": "jm_kumo",
+     "id": "bf_emma",
+     "exaggerationBias": 0.4,
+     "pitch": 0.86,
+     "speed": 0.94
+    },
+    {
+     "id": "bf_isabella",
+     "exaggerationBias": 0.4,
+     "pitch": 0.86,
+     "speed": 0.94
+    }
+   ],
+   "setDragonMale": [
+    {
+     "id": "bm_george",
+     "exaggerationBias": 0.4,
+     "pitch": 0.82,
+     "speed": 0.94
+    },
+    {
+     "id": "bm_daniel",
+     "exaggerationBias": 0.4,
+     "pitch": 0.83,
+     "speed": 0.94
+    }
+   ],
+   "setDwarf": [
+    {
+     "id": "isles.sc_m_01",
+     "pitch": 0.9
+    },
+    {
+     "id": "isles.wl_m_01",
+     "pitch": 0.9
+    },
+    {
+     "id": "isles.sc_f_01",
+     "pitch": 0.95
+    },
+    {
+     "id": "isles.wl_f_01",
+     "pitch": 0.95
+    }
+   ],
+   "setDwarfFemale": [
+    {
+     "id": "isles.sc_f_01",
+     "pitch": 0.95
+    },
+    {
+     "id": "isles.wl_f_01",
+     "pitch": 0.95
+    }
+   ],
+   "setDwarfMale": [
+    {
+     "id": "isles.sc_m_01",
+     "pitch": 0.9
+    },
+    {
+     "id": "isles.wl_m_01",
+     "pitch": 0.9
+    }
+   ],
+   "setGarlean": [
+    {
+     "id": "accented.it_m_nicola",
+     "pitch": 0.95
+    },
+    {
+     "id": "bm_daniel"
+    },
+    {
+     "id": "accented.it_f_sara",
+     "pitch": 0.97
+    },
+    {
+     "id": "bf_isabella"
+    }
+   ],
+   "setGarleanFemale": [
+    {
+     "id": "accented.it_f_sara",
+     "pitch": 0.97
+    },
+    {
+     "id": "bf_isabella"
+    }
+   ],
+   "setGarleanMale": [
+    {
+     "id": "accented.it_m_nicola",
+     "pitch": 0.95
+    },
+    {
+     "id": "bm_daniel"
+    }
+   ],
+   "setGoblin": [
+    {
+     "id": "bm_fable",
+     "pitch": 1.1,
+     "speed": 1.1
+    },
+    {
+     "id": "isles.sth_m_01",
+     "pitch": 1.08,
+     "speed": 1.1
+    },
+    {
+     "id": "isles.mid_m_01",
+     "pitch": 1.05,
+     "speed": 1.08
+    },
+    {
+     "id": "isles.sth_f_01",
+     "pitch": 1.1,
+     "speed": 1.1
+    },
+    {
+     "id": "bf_lily",
+     "pitch": 1.08,
+     "speed": 1.08
+    }
+   ],
+   "setGoblinFemale": [
+    {
+     "id": "isles.sth_f_01",
+     "pitch": 1.1,
+     "speed": 1.1
+    },
+    {
+     "id": "bf_lily",
+     "pitch": 1.08,
+     "speed": 1.08
+    }
+   ],
+   "setGoblinMale": [
+    {
+     "id": "bm_fable",
+     "pitch": 1.1,
+     "speed": 1.1
+    },
+    {
+     "id": "isles.sth_m_01",
+     "pitch": 1.08,
+     "speed": 1.1
+    },
+    {
+     "id": "isles.mid_m_01",
+     "pitch": 1.05,
+     "speed": 1.08
+    }
+   ],
+   "setIxal": [
+    {
+     "id": "bm_lewis",
+     "pitch": 1.1,
+     "speed": 1.12
+    },
+    {
+     "id": "isles.mid_m_01",
+     "pitch": 1.1,
+     "speed": 1.1
+    },
+    {
+     "id": "isles.mid_f_01",
+     "pitch": 1.1,
+     "speed": 1.1
+    },
+    {
+     "id": "bf_alice",
+     "pitch": 1.1,
+     "speed": 1.12
+    }
+   ],
+   "setIxalFemale": [
+    {
+     "id": "isles.mid_f_01",
+     "pitch": 1.1,
+     "speed": 1.1
+    },
+    {
+     "id": "bf_alice",
+     "pitch": 1.1,
+     "speed": 1.12
+    }
+   ],
+   "setIxalMale": [
+    {
+     "id": "bm_lewis",
+     "pitch": 1.1,
+     "speed": 1.12
+    },
+    {
+     "id": "isles.mid_m_01",
+     "pitch": 1.1,
+     "speed": 1.1
+    }
+   ],
+   "setKobold": [
+    {
+     "id": "isles.wl_m_01",
+     "pitch": 0.95
+    },
+    {
+     "id": "isles.nth_m_01",
+     "pitch": 0.95
+    },
+    {
+     "id": "isles.wl_f_01",
      "pitch": 0.97
     }
    ],
-   "japaneseFemale": [
+   "setKoboldFemale": [
     {
-     "id": "jf_alpha"
+     "id": "isles.wl_f_01",
+     "pitch": 0.97
     }
    ],
-   "setItalianmale": [
+   "setKoboldMale": [
     {
-     "id": "im_nicola"
+     "id": "isles.wl_m_01",
+     "pitch": 0.95
+    },
+    {
+     "id": "isles.nth_m_01",
+     "pitch": 0.95
     }
    ],
-   "setItalianfemale": [
+   "setKojin": [
     {
-     "id": "if_sara"
-    }
-   ],
-   "deepMaleParked": [
+     "id": "accented.ja_m_kumo",
+     "exaggerationBias": 0.5,
+     "pitch": 0.9,
+     "speed": 0.95
+    },
     {
-     "id": "am_onyx",
-     "pitch": 0.88,
+     "id": "accented.ja_f_gongitsune",
+     "exaggerationBias": 0.5,
+     "pitch": 0.93,
      "speed": 0.95
     }
    ],
-   "hrothgarMaleParked": [
+   "setKojinFemale": [
     {
-     "id": "am_fenrir",
-     "pitch": 0.82,
-     "speed": 0.92
-    },
-    {
-     "id": "am_onyx",
-     "pitch": 0.82,
-     "speed": 0.92
+     "id": "accented.ja_f_gongitsune",
+     "exaggerationBias": 0.5,
+     "pitch": 0.93,
+     "speed": 0.95
     }
    ],
-   "deepFemaleParked": [
+   "setKojinMale": [
     {
-     "id": "af_alloy",
-     "pitch": 0.92,
+     "id": "accented.ja_m_kumo",
+     "exaggerationBias": 0.5,
+     "pitch": 0.9,
+     "speed": 0.95
+    }
+   ],
+   "setLoporrit": [
+    {
+     "id": "bm_fable",
+     "pitch": 1.18,
+     "speed": 1.1
+    },
+    {
+     "id": "isles.sth_m_01",
+     "pitch": 1.15,
+     "speed": 1.1
+    },
+    {
+     "id": "bf_lily",
+     "pitch": 1.18,
+     "speed": 1.12
+    },
+    {
+     "id": "isles.sth_f_01",
+     "pitch": 1.15,
+     "speed": 1.1
+    }
+   ],
+   "setLoporritFemale": [
+    {
+     "id": "bf_lily",
+     "pitch": 1.18,
+     "speed": 1.12
+    },
+    {
+     "id": "isles.sth_f_01",
+     "pitch": 1.15,
+     "speed": 1.1
+    }
+   ],
+   "setLoporritMale": [
+    {
+     "id": "bm_fable",
+     "pitch": 1.18,
+     "speed": 1.1
+    },
+    {
+     "id": "isles.sth_m_01",
+     "pitch": 1.15,
+     "speed": 1.1
+    }
+   ],
+   "setMamoolJa": [
+    {
+     "id": "accented.hi_m_omega",
+     "exaggerationBias": 0.5,
+     "pitch": 0.93,
+     "speed": 0.98
+    }
+   ],
+   "setMamoolJaFemale": [
+    {
+     "id": "accented.hi_f_alpha",
+     "exaggerationBias": 0.5,
+     "pitch": 0.97,
+     "speed": 0.98
+    }
+   ],
+   "setMamoolJaFemaleFemale": [
+    {
+     "id": "accented.hi_f_alpha",
+     "exaggerationBias": 0.5,
+     "pitch": 0.97,
+     "speed": 0.98
+    }
+   ],
+   "setMamoolJaMale": [
+    {
+     "id": "accented.hi_m_omega",
+     "exaggerationBias": 0.5,
+     "pitch": 0.93,
+     "speed": 0.98
+    }
+   ],
+   "setMoogle": [
+    {
+     "id": "bm_fable",
+     "pitch": 1.22,
+     "speed": 1.15
+    },
+    {
+     "id": "isles.mid_m_01",
+     "pitch": 1.2,
+     "speed": 1.12
+    },
+    {
+     "id": "bf_lily",
+     "pitch": 1.25,
+     "speed": 1.15
+    },
+    {
+     "id": "isles.sth_f_01",
+     "pitch": 1.22,
+     "speed": 1.12
+    }
+   ],
+   "setMoogleFemale": [
+    {
+     "id": "bf_lily",
+     "pitch": 1.25,
+     "speed": 1.15
+    },
+    {
+     "id": "isles.sth_f_01",
+     "pitch": 1.22,
+     "speed": 1.12
+    }
+   ],
+   "setMoogleMale": [
+    {
+     "id": "bm_fable",
+     "pitch": 1.22,
+     "speed": 1.15
+    },
+    {
+     "id": "isles.mid_m_01",
+     "pitch": 1.2,
+     "speed": 1.12
+    }
+   ],
+   "setNamazu": [
+    {
+     "id": "accented.ja_m_kumo",
+     "exaggerationBias": 0.9,
+     "pitch": 1.1,
+     "speed": 1.08
+    },
+    {
+     "id": "accented.ja_f_gongitsune",
+     "exaggerationBias": 0.9,
+     "pitch": 1.12,
+     "speed": 1.08
+    }
+   ],
+   "setNamazuFemale": [
+    {
+     "id": "accented.ja_f_gongitsune",
+     "exaggerationBias": 0.9,
+     "pitch": 1.12,
+     "speed": 1.08
+    }
+   ],
+   "setNamazuMale": [
+    {
+     "id": "accented.ja_m_kumo",
+     "exaggerationBias": 0.9,
+     "pitch": 1.1,
+     "speed": 1.08
+    }
+   ],
+   "setNuMou": [
+    {
+     "id": "isles.wl_m_01",
+     "pitch": 0.97,
+     "speed": 0.9
+    },
+    {
+     "id": "bm_daniel",
+     "pitch": 0.95,
+     "speed": 0.9
+    },
+    {
+     "id": "isles.wl_f_01",
+     "speed": 0.9
+    },
+    {
+     "id": "bf_isabella",
+     "pitch": 0.98,
+     "speed": 0.9
+    }
+   ],
+   "setNuMouFemale": [
+    {
+     "id": "isles.wl_f_01",
+     "speed": 0.9
+    },
+    {
+     "id": "bf_isabella",
+     "pitch": 0.98,
+     "speed": 0.9
+    }
+   ],
+   "setNuMouMale": [
+    {
+     "id": "isles.wl_m_01",
+     "pitch": 0.97,
+     "speed": 0.9
+    },
+    {
+     "id": "bm_daniel",
+     "pitch": 0.95,
+     "speed": 0.9
+    }
+   ],
+   "setOmicron": [
+    {
+     "id": "bm_lewis",
+     "exaggerationBias": 0.25,
+     "pitch": 0.95,
+     "speed": 0.96
+    },
+    {
+     "id": "bm_daniel",
+     "exaggerationBias": 0.25,
+     "pitch": 0.95,
+     "speed": 0.96
+    },
+    {
+     "id": "bf_emma",
+     "exaggerationBias": 0.25,
+     "pitch": 0.95,
+     "speed": 0.96
+    },
+    {
+     "id": "bf_isabella",
+     "exaggerationBias": 0.25,
+     "pitch": 0.95,
+     "speed": 0.96
+    }
+   ],
+   "setOmicronFemale": [
+    {
+     "id": "bf_emma",
+     "exaggerationBias": 0.25,
+     "pitch": 0.95,
+     "speed": 0.96
+    },
+    {
+     "id": "bf_isabella",
+     "exaggerationBias": 0.25,
+     "pitch": 0.95,
+     "speed": 0.96
+    }
+   ],
+   "setOmicronMale": [
+    {
+     "id": "bm_lewis",
+     "exaggerationBias": 0.25,
+     "pitch": 0.95,
+     "speed": 0.96
+    },
+    {
+     "id": "bm_daniel",
+     "exaggerationBias": 0.25,
+     "pitch": 0.95,
+     "speed": 0.96
+    }
+   ],
+   "setPelupelu": [
+    {
+     "id": "accented.it_m_nicola",
+     "pitch": 1.05,
+     "speed": 1.1
+    },
+    {
+     "id": "accented.it_f_sara",
+     "pitch": 1.07,
+     "speed": 1.1
+    }
+   ],
+   "setPelupeluFemale": [
+    {
+     "id": "accented.it_f_sara",
+     "pitch": 1.07,
+     "speed": 1.1
+    }
+   ],
+   "setPelupeluMale": [
+    {
+     "id": "accented.it_m_nicola",
+     "pitch": 1.05,
+     "speed": 1.1
+    }
+   ],
+   "setPixie": [
+    {
+     "id": "isles.ie_m_01",
+     "pitch": 1.12,
+     "speed": 1.1
+    },
+    {
+     "id": "isles.ie_m_02",
+     "pitch": 1.12,
+     "speed": 1.1
+    },
+    {
+     "id": "isles.wl_f_01",
+     "pitch": 1.12,
+     "speed": 1.1
+    },
+    {
+     "id": "isles.sc_f_01",
+     "pitch": 1.1,
+     "speed": 1.1
+    }
+   ],
+   "setPixieFemale": [
+    {
+     "id": "isles.wl_f_01",
+     "pitch": 1.12,
+     "speed": 1.1
+    },
+    {
+     "id": "isles.sc_f_01",
+     "pitch": 1.1,
+     "speed": 1.1
+    }
+   ],
+   "setPixieMale": [
+    {
+     "id": "isles.ie_m_01",
+     "pitch": 1.12,
+     "speed": 1.1
+    },
+    {
+     "id": "isles.ie_m_02",
+     "pitch": 1.12,
+     "speed": 1.1
+    }
+   ],
+   "setQitari": [
+    {
+     "id": "accented.es_m_alex",
+     "exaggerationBias": 0.75,
+     "pitch": 1.05,
+     "speed": 1.06
+    },
+    {
+     "id": "accented.es_f_dora",
+     "exaggerationBias": 0.75,
+     "pitch": 1.07,
+     "speed": 1.06
+    }
+   ],
+   "setQitariFemale": [
+    {
+     "id": "accented.es_f_dora",
+     "exaggerationBias": 0.75,
+     "pitch": 1.07,
+     "speed": 1.06
+    }
+   ],
+   "setQitariMale": [
+    {
+     "id": "accented.es_m_alex",
+     "exaggerationBias": 0.75,
+     "pitch": 1.05,
+     "speed": 1.06
+    }
+   ],
+   "setSahagin": [
+    {
+     "id": "isles.nth_m_01",
+     "pitch": 0.94
+    },
+    {
+     "id": "isles.ie_m_02",
+     "pitch": 0.94
+    },
+    {
+     "id": "isles.nth_f_01",
+     "pitch": 0.96
+    },
+    {
+     "id": "bf_emma",
+     "pitch": 0.94
+    }
+   ],
+   "setSahaginFemale": [
+    {
+     "id": "isles.nth_f_01",
+     "pitch": 0.96
+    },
+    {
+     "id": "bf_emma",
+     "pitch": 0.94
+    }
+   ],
+   "setSahaginMale": [
+    {
+     "id": "isles.nth_m_01",
+     "pitch": 0.94
+    },
+    {
+     "id": "isles.ie_m_02",
+     "pitch": 0.94
+    }
+   ],
+   "setSylph": [
+    {
+     "id": "bm_fable",
+     "pitch": 1.15,
+     "speed": 1.05
+    },
+    {
+     "id": "isles.sth_m_01",
+     "pitch": 1.15,
+     "speed": 1.05
+    },
+    {
+     "id": "bf_lily",
+     "pitch": 1.15,
+     "speed": 1.05
+    },
+    {
+     "id": "bf_alice",
+     "pitch": 1.12,
+     "speed": 1.05
+    },
+    {
+     "id": "isles.sth_f_01",
+     "pitch": 1.14,
+     "speed": 1.05
+    }
+   ],
+   "setSylphFemale": [
+    {
+     "id": "bf_lily",
+     "pitch": 1.15,
+     "speed": 1.05
+    },
+    {
+     "id": "bf_alice",
+     "pitch": 1.12,
+     "speed": 1.05
+    },
+    {
+     "id": "isles.sth_f_01",
+     "pitch": 1.14,
+     "speed": 1.05
+    }
+   ],
+   "setSylphMale": [
+    {
+     "id": "bm_fable",
+     "pitch": 1.15,
+     "speed": 1.05
+    },
+    {
+     "id": "isles.sth_m_01",
+     "pitch": 1.15,
+     "speed": 1.05
+    }
+   ],
+   "setVanuVanu": [
+    {
+     "id": "accented.pt_m_alex",
+     "pitch": 0.9,
+     "speed": 1.05
+    },
+    {
+     "id": "accented.pt_f_dora",
+     "pitch": 0.95,
+     "speed": 1.05
+    }
+   ],
+   "setVanuVanuFemale": [
+    {
+     "id": "accented.pt_f_dora",
+     "pitch": 0.95,
+     "speed": 1.05
+    }
+   ],
+   "setVanuVanuMale": [
+    {
+     "id": "accented.pt_m_alex",
+     "pitch": 0.9,
+     "speed": 1.05
+    }
+   ],
+   "setVath": [
+    {
+     "id": "accented.zh_m_yunjian",
+     "exaggerationBias": 0.5,
+     "pitch": 1.05,
      "speed": 0.97
     },
     {
-     "id": "af_river",
-     "pitch": 0.92,
+     "id": "accented.zh_f_xiaoni",
+     "exaggerationBias": 0.5,
+     "pitch": 1.05,
      "speed": 0.97
+    }
+   ],
+   "setVathFemale": [
+    {
+     "id": "accented.zh_f_xiaoni",
+     "exaggerationBias": 0.5,
+     "pitch": 1.05,
+     "speed": 0.97
+    }
+   ],
+   "setVathMale": [
+    {
+     "id": "accented.zh_m_yunjian",
+     "exaggerationBias": 0.5,
+     "pitch": 1.05,
+     "speed": 0.97
+    }
+   ],
+   "setYokHuy": [
+    {
+     "id": "accented.es_m_alex",
+     "exaggerationBias": 0.45,
+     "pitch": 0.84,
+     "speed": 0.92
+    },
+    {
+     "id": "bm_george",
+     "exaggerationBias": 0.45,
+     "pitch": 0.84,
+     "speed": 0.92
+    },
+    {
+     "id": "accented.es_f_dora",
+     "exaggerationBias": 0.45,
+     "pitch": 0.92,
+     "speed": 0.94
+    },
+    {
+     "id": "bf_emma",
+     "exaggerationBias": 0.45,
+     "pitch": 0.92,
+     "speed": 0.94
+    }
+   ],
+   "setYokHuyFemale": [
+    {
+     "id": "accented.es_f_dora",
+     "exaggerationBias": 0.45,
+     "pitch": 0.92,
+     "speed": 0.94
+    },
+    {
+     "id": "bf_emma",
+     "exaggerationBias": 0.45,
+     "pitch": 0.92,
+     "speed": 0.94
+    }
+   ],
+   "setYokHuyMale": [
+    {
+     "id": "accented.es_m_alex",
+     "exaggerationBias": 0.45,
+     "pitch": 0.84,
+     "speed": 0.92
+    },
+    {
+     "id": "bm_george",
+     "exaggerationBias": 0.45,
+     "pitch": 0.84,
+     "speed": 0.92
     }
    ]
   },

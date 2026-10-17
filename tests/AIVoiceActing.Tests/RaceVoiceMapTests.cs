@@ -36,7 +36,7 @@ public sealed class RaceVoiceMapTests
     {
         var ids = LoadDefault().SlotsFor(group, race: null).Select(slot => slot.Id).ToArray();
         Assert.Equal(ids.Length, ids.Distinct().Count());
-        Assert.All(ids, id => Assert.Matches("^[a-z]{2}_[a-z]+$", id));
+        Assert.All(ids, id => Assert.Matches("^([a-z]{2}_[a-z]+|(isles|accented)\\.[a-z0-9_]+)$", id));
     }
 
     [Fact]
@@ -47,52 +47,16 @@ public sealed class RaceVoiceMapTests
     }
 
     [Fact]
-    public void Elezen_UseBritishVoice_AtLowerPitch()
+    public void Elezen_AreFormalBritish_StockVoicesOnly()
     {
         var map = LoadDefault();
-        // User verdict 2026-09-14: the French casting didn't suit them — Elezen now
-        // ride the British bank pitched down (haughty, deep).
-        Assert.All(map.SlotsFor(VoiceGroup.Male, 2).Select(s => s.Id), id => Assert.Equal("bm_lewis", id));
-        Assert.All(map.SlotsFor(VoiceGroup.Female, 2).Select(s => s.Id), id => Assert.Equal("bf_emma", id));
-        Assert.All(map.SlotsFor(VoiceGroup.Male, 2), slot => Assert.True(slot.Pitch < 1f));
-        Assert.All(map.SlotsFor(VoiceGroup.Female, 2), slot => Assert.True(slot.Pitch < 1f));
-    }
-
-    [Fact]
-    public void Viera_UsesSpanishMale_PortugueseFemale()
-    {
-        var map = LoadDefault();
-        // Kokoro-only casting (2026-09-14): user-picked from the full-bank audition.
-        Assert.All(map.SlotsFor(VoiceGroup.Male, 8).Select(s => s.Id), id => Assert.Equal("em_alex", id));
-        Assert.All(map.SlotsFor(VoiceGroup.Female, 8).Select(s => s.Id), id => Assert.Equal("pf_dora", id));
-    }
-
-    [Fact]
-    public void AuRa_UsesChineseBank()
-    {
-        var map = LoadDefault();
-        // zf_/zm_ verified by ear on the v1.0 model. The jf_ (Japanese) pair left in
-        // 0.0.26: the bank garbles English on v1.0; zf_xiaobei/zf_xiaoni replaced it.
-        Assert.Equal(
-            new HashSet<string> { "zm_yunjian", "zm_yunyang" },
-            map.SlotsFor(VoiceGroup.Male, 6).Select(s => s.Id).ToHashSet());
-        Assert.Equal(
-            new HashSet<string> { "zf_xiaoxiao", "zf_xiaoyi", "zf_xiaobei", "zf_xiaoni" },
-            map.SlotsFor(VoiceGroup.Female, 6).Select(s => s.Id).ToHashSet());
-    }
-
-    [Fact]
-    public void Roegadyn_And_Hrothgar_ShareItalianBankCast()
-    {
-        var map = LoadDefault();
-        // Roegadyn: im_nicola/em_santa/hm_psi on user verdict (am_fenrir disliked).
-        // Hrothgar: no suitable voices found, so it shares the Roegadyn cast.
-        foreach (var race in new byte?[] { 5, 7 })
+        // Ishgardian Elezen: formal British. Stock RP voices only, a touch below natural pitch (tall).
+        foreach (var group in new[] { VoiceGroup.Male, VoiceGroup.Female })
         {
-            Assert.Equal(
-                new HashSet<string> { "im_nicola", "em_santa", "hm_psi" },
-                map.SlotsFor(VoiceGroup.Male, race).Select(s => s.Id).ToHashSet());
-            Assert.All(map.SlotsFor(VoiceGroup.Female, race).Select(s => s.Id), id => Assert.Equal("if_sara", id));
+            var slots = map.SlotsFor(group, 2);
+            Assert.True(slots.Length >= 3);
+            Assert.All(slots, slot => Assert.StartsWith("b", slot.Id, StringComparison.Ordinal));
+            Assert.All(slots, slot => Assert.True(slot.Pitch < 1f));
         }
     }
 
@@ -122,6 +86,8 @@ public sealed class RaceVoiceMapTests
         Assert.NotEmpty(map.Disabled!.Sets);
         Assert.Contains("icelandicMale", map.Disabled.Sets.Keys);
         Assert.Contains("setMoogle", map.Disabled.Sets.Keys);
+        Assert.Contains("setMoogleMale", map.Disabled.Sets.Keys);
+        Assert.Contains("setMoogleFemale", map.Disabled.Sets.Keys);
 
         // Parked SET NAMES must never collide with active set names or variant targets:
         // the picker (DistinctVoiceIds) reads active sets only, so parked casts stay
@@ -177,11 +143,10 @@ public sealed class DefaultPresetShapeTests
         Assert.All(
             preset.BeastTribes,
             tribe => Assert.NotEmpty(tribe.Voices));
-        Assert.All(preset.BeastTribes, tribe =>
-        {
-            Assert.Empty(tribe.MaleVoices);
-            Assert.Empty(tribe.FemaleVoices);
-        });
+        // Gendered lists come from setXMale / setXFemale in the parked block.
+        Assert.All(preset.BeastTribes, tribe => Assert.True(tribe.MaleVoices.Count + tribe.FemaleVoices.Count > 0, tribe.Key));
+        Assert.NotEmpty(preset.BeastTribes.Single(t => t.Key == "pixie").MaleVoices);
+        Assert.NotEmpty(preset.BeastTribes.Single(t => t.Key == "pixie").FemaleVoices);
         // Shipped bindings flow from the manifest's beastTribes section, per tribe.
         var manifestBindings = RaceVoiceMapTests.LoadDefault().BeastTribeBindings;
         Assert.All(
@@ -214,96 +179,13 @@ public sealed class DefaultPresetShapeTests
     public void BeastTribeBindings_Parse_AndDefaultToEmpty()
     {
         const string withBindings = """
-            {"sets":{"ungendered":[{"id":"em_alex"}]},"raceVariants":{},"beastTribes":{"pixie":[2520,748]}}
+            {"sets":{"ungendered":[{"id":"bm_daniel"}]},"raceVariants":{},"beastTribes":{"pixie":[2520,748]}}
             """;
         Assert.Equal([2520, 748], RaceVoiceMap.FromJson(withBindings).BeastTribeBindings["pixie"]);
 
         const string withoutBindings = """
-            {"sets":{"ungendered":[{"id":"em_alex"}]},"raceVariants":{}}
+            {"sets":{"ungendered":[{"id":"bm_daniel"}]},"raceVariants":{}}
             """;
         Assert.Empty(RaceVoiceMap.FromJson(withoutBindings).BeastTribeBindings);
     }
-
-    [Fact]
-    public void Default_ContainsNoAmericanOrJapaneseVoiceIds()
-    {
-        // User verdict: American accents are allowed for the Omicron robots only
-        // (flat machine read); the Japanese bank stays banned everywhere.
-        var preset = NewStore().GetDefault();
-
-        var outsideOmicron = preset.Buckets.Values.SelectMany(slots => slots).Select(slot => slot.Id)
-            .Concat(preset.BeastTribes.Where(t => t.Key != "omicron")
-                .SelectMany(t => t.Voices).Select(slot => slot.Id))
-            .ToHashSet();
-
-        Assert.DoesNotContain(outsideOmicron, id => id.StartsWith("af_", StringComparison.Ordinal));
-        Assert.DoesNotContain(outsideOmicron, id => id.StartsWith("am_", StringComparison.Ordinal));
-        Assert.DoesNotContain(outsideOmicron, id => id.StartsWith("jf_", StringComparison.Ordinal));
-
-        var omicron = preset.BeastTribes.Single(t => t.Key == "omicron")
-            .Voices.Select(slot => slot.Id);
-        Assert.DoesNotContain(omicron, id => id.StartsWith("jf_", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void Default_AuRaFemale_UsesChineseBank()
-    {
-        var preset = NewStore().GetDefault();
-
-        Assert.Equal(
-            ["zf_xiaoxiao", "zf_xiaoyi", "zf_xiaobei", "zf_xiaoni"],
-            preset.Buckets["6|Female"].Select(slot => slot.Id));
-    }
-
-    [Fact]
-    public void Default_PixiePool_IsFemaleOnly_AtApprovedKnobs()
-    {
-        // User-approved pixie sound (Guyf Uin, 2026-09-14): hf_ female pair only,
-        // pitched/paced like her tuned override — fairies are genderless.
-        var pixie = NewStore().GetDefault().BeastTribes.Single(t => t.Key == "pixie");
-
-        Assert.Equal(["hf_alpha", "hf_beta"], pixie.Voices.Select(slot => slot.Id));
-        Assert.All(pixie.Voices, slot =>
-        {
-            Assert.Equal(1.07f, slot.Pitch);
-            Assert.Equal(1.1f, slot.Speed);
-        });
-    }
-
-    [Fact]
-    public void Default_AmaljaaPool_IsDeepRomanceCast_AtApprovedKnobs()
-    {
-        // User-approved Amalj'aa sound (Yadovv Gah / amalj'aa vendor tune): deep
-        // Romance-bank voices at 0.87-0.89, natural speed.
-        var amaljaa = NewStore().GetDefault().BeastTribes.Single(t => t.Key == "amaljaa");
-
-        Assert.Equal(
-            ["ef_dora", "em_alex", "em_santa", "pm_santa", "im_nicola"],
-            amaljaa.Voices.Select(slot => slot.Id));
-        Assert.All(amaljaa.Voices, slot =>
-        {
-            Assert.InRange(slot.Pitch, 0.87f, 0.89f);
-            Assert.Equal(1f, slot.Speed);
-        });
-    }
-
-    [Fact]
-    public void Default_AnantaPool_IsHindiFemalePair_AtApprovedKnobs()
-    {
-        // User-approved Ananta sound (Eshana / Madhura tune): the hf_ pair at max
-        // exaggeration bias — theatrical snake-ladies. Pool-only: the game's sex
-        // byte reads male for them, and lore says all-female.
-        var ananta = NewStore().GetDefault().BeastTribes.Single(t => t.Key == "ananta");
-
-        Assert.Equal(
-            ["hf_beta", "hf_alpha"],
-            ananta.Voices.Select(slot => slot.Id));
-        Assert.All(ananta.Voices, slot =>
-        {
-            Assert.Equal(1f, slot.ExaggerationBias);
-            Assert.Equal(1.07f, slot.Pitch);
-            Assert.Equal(1.06f, slot.Speed);
-        });
-    }
-
 }

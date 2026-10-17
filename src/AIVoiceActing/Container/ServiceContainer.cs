@@ -1182,8 +1182,17 @@ public sealed class ServiceContainer : IDisposable
             this.UnboundModels.Record(unboundModel, speaker.DisplayName, DateTimeOffset.UtcNow);
         }
 
+        // Hrothgar women count as Ungendered for the group (TextToTalk's rule), but they are women:
+        // they take the Hrothgar female cast instead of the mixed Unknown row.
+        var castGroup = beastTribe is null
+            && racePresets
+            && group == VoiceGroup.Ungendered
+            && speaker.Race == VoiceGroupResolver.RaceHrothgar
+            && speaker.Sex == 1
+                ? VoiceGroup.Female
+                : group;
         var slots = beastSlots
-            ?? (racePresets ? map.SlotsFor(group, speaker.Race) : map.SlotsFor(VoiceGroup.Ungendered, null));
+            ?? (racePresets ? map.SlotsFor(castGroup, speaker.Race) : map.SlotsFor(VoiceGroup.Ungendered, null));
 
         this.LogSinkUnlocked().Info(
             $"Voice resolution for \"{speaker.Key}\": race={speaker.Race?.ToString() ?? "?"} " +
@@ -1206,10 +1215,14 @@ public sealed class ServiceContainer : IDisposable
         // A pack voice demoted by a missing file (Available false) is retired too; a usable
         // pack voice the user picked by hand stays. A voice whose pack was removed is unknown
         // to the library, so the engine's fallback voice (with a log line) covers it.
+        // A stock voice that the built-in casting no longer uses (it was dropped from the casting in
+        // an update) is replaced only on an AUTOMATIC pick: a voice the user chose by hand (Custom)
+        // is theirs and stays, as long as the voice still exists.
         var picked = this.VoiceLibraryUnlocked().Find(profile.ReferenceVoiceId);
         var keptByPack = picked is { Available: true, Quality: not VoiceQuality.Stock };
+        var keptByUser = profile.Custom && picked is { Available: true };
         if (picked is { Available: false }
-            || (!keptByPack && !map.DistinctVoiceIds().Contains(profile.ReferenceVoiceId)))
+            || (!keptByPack && !keptByUser && !map.DistinctVoiceIds().Contains(profile.ReferenceVoiceId)))
         {
             this.LogSinkUnlocked().Info(
                 $"Reassigning \"{speaker.Key}\" from retired voice \"{profile.ReferenceVoiceId}\".");
@@ -1217,7 +1230,7 @@ public sealed class ServiceContainer : IDisposable
             profile = store.GetOrCreate(speaker.Key, () => slots, speaker.Race, speaker.Tribe, speaker.Sex)!;
         }
 
-        profile = this.ApplyUniqueVoiceUnlocked(speaker, profile, slots, group);
+        profile = this.ApplyUniqueVoiceUnlocked(speaker, profile, slots, castGroup);
 
         return this.ageAwareCastingFactory?.Invoke() == false
             ? profile
