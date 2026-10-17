@@ -81,6 +81,7 @@ public sealed class ServiceContainer : IDisposable
     private IEngineCatalog? engineCatalog;
     private ISpeechSynthesizer? expressiveSynthesizer;
     private ExpressiveRouter? expressiveRouter;
+    private ISpeechSynthesizer? kokoroReferenceRenderer;
     private readonly Func<int>? cpuThreadsFactory;
     private readonly Func<string?>? kokoroVoicesDirFactory;
     private readonly Func<string?>? referenceClipsDirFactory;
@@ -528,13 +529,7 @@ public sealed class ServiceContainer : IDisposable
                         this.LogSinkUnlocked()),
                     // A stale or unknown value (old configs, retired engines) must never silently
                     // pick a multi-gigabyte engine.
-                    _ => new Infrastructure.Kokoro.KokoroSynthesizer(
-                        () => this.ModelsDir,
-                        () => Math.Max(1, threads ?? 4),
-                        this.LogSinkUnlocked(),
-                        voicesDirFactory: this.kokoroVoicesDirFactory,
-                        keepTempoWhenPitched: this.keepTempoWhenPitchedFactory,
-                        voiceLibrary: this.VoiceLibraryUnlocked()),
+                    _ => this.CreateKokoroUnlocked(threads),
                 };
 
                 this.LogSinkUnlocked().Info(
@@ -554,6 +549,36 @@ public sealed class ServiceContainer : IDisposable
             intraOpThreads: this.cpuThreadsFactory?.Invoke(),
             log: this.LogSinkUnlocked(),
             devices: this.TurboDevicesUnlocked(DeviceModePolicy.TurboEngineId));
+
+    private bool TurboIsMainEngine =>
+        this.EngineCatalog.Resolve(this.selectedEngineFactory?.Invoke()) == "chatterbox-turbo";
+
+    private Infrastructure.Kokoro.KokoroSynthesizer CreateKokoroUnlocked(int? threads) =>
+        new(
+            () => this.ModelsDir,
+            () => Math.Max(1, threads ?? 4),
+            this.LogSinkUnlocked(),
+            voicesDirFactory: this.kokoroVoicesDirFactory,
+            keepTempoWhenPitched: this.keepTempoWhenPitchedFactory,
+            voiceLibrary: this.VoiceLibraryUnlocked());
+
+    /// <summary>
+    /// The Kokoro instance that renders reference clips: the main engine when that is Kokoro, otherwise a
+    /// separate CPU instance (Turbo cannot render a stock voice itself). Built on first use.
+    /// </summary>
+    private ISpeechSynthesizer KokoroReferenceRenderer()
+    {
+        lock (this.gate)
+        {
+            if (!this.TurboIsMainEngine)
+            {
+                return this.SpeechSynthesizer;
+            }
+
+            return this.kokoroReferenceRenderer ??= this.RegisterDisposable(
+                this.CreateKokoroUnlocked(this.cpuThreadsFactory?.Invoke()));
+        }
+    }
 
     /// <summary>Kokoro-rendered reference clips the expressive engine clones, one per voice and pitch.</summary>
     public const string ExpressiveClipsFolder = "voices-kokoro-ref";
@@ -617,11 +642,14 @@ public sealed class ServiceContainer : IDisposable
         {
             lock (this.gate)
             {
+                // Turbo as the main engine clones every speaker, so every line gets a reference clip rendered
+                // from that speaker's Kokoro voice; the same instance serves as both primary and "expressive".
                 return this.expressiveRouter ??= new ExpressiveRouter(
                     primary: () => this.SpeechSynthesizer,
-                    expressive: () => this.ExpressiveSynthesizer,
+                    expressive: () => this.TurboIsMainEngine ? this.SpeechSynthesizer : this.ExpressiveSynthesizer,
                     prepareVoice: this.PrepareExpressiveVoiceAsync,
-                    log: this.LogSinkUnlocked());
+                    log: this.LogSinkUnlocked(),
+                    everyLine: () => this.TurboIsMainEngine);
             }
         }
     }
@@ -705,7 +733,7 @@ public sealed class ServiceContainer : IDisposable
             return clip;
         }
 
-        var main = this.SpeechSynthesizer;
+        var main = this.KokoroReferenceRenderer();
         if (!main.IsReady)
         {
             return null;

@@ -23,6 +23,7 @@ public sealed class ExpressiveRouter : ISpeechSynthesizer
     private readonly Func<SynthesisRequest, CancellationToken, Task<string?>> prepareVoice;
     private readonly ILogSink? log;
     private readonly Func<long> clockMs;
+    private readonly Func<bool>? everyLine;
     private long expressiveDownUntilMs;
 
     /// <summary>How long the expressive engine is skipped after a failed line.</summary>
@@ -33,8 +34,10 @@ public sealed class ExpressiveRouter : ISpeechSynthesizer
         Func<ISpeechSynthesizer?> expressive,
         Func<SynthesisRequest, CancellationToken, Task<string?>> prepareVoice,
         ILogSink? log = null,
-        Func<long>? clockMs = null)
+        Func<long>? clockMs = null,
+        Func<bool>? everyLine = null)
     {
+        this.everyLine = everyLine;
         this.primary = primary;
         this.expressive = expressive;
         this.prepareVoice = prepareVoice;
@@ -44,6 +47,12 @@ public sealed class ExpressiveRouter : ISpeechSynthesizer
 
     public static bool WantsExpressive(SynthesisRequest request) =>
         request.Tags.Count > 0 || Math.Abs(request.Exaggeration - 0.5f) >= MinIntensityShift;
+
+    /// <summary>
+    /// With <c>everyLine</c> (a cloning engine is the main one and also the "expressive" one) every line
+    /// takes the clip-preparation path, so each speaker is cloned from a reference rendered from their own voice.
+    /// </summary>
+    private bool Wants(SynthesisRequest request) => this.everyLine?.Invoke() == true || WantsExpressive(request);
 
     public bool IsReady => this.primary().IsReady;
 
@@ -64,7 +73,7 @@ public sealed class ExpressiveRouter : ISpeechSynthesizer
         get
         {
             var main = this.primary().RenderVariant;
-            if (this.expressive() is not { } engine)
+            if (this.expressive() is not { } engine || this.everyLine?.Invoke() == true)
             {
                 return main;
             }
@@ -100,7 +109,7 @@ public sealed class ExpressiveRouter : ISpeechSynthesizer
             : this.primary().SupportsStreamingFor(request);
 
     private ISpeechSynthesizer? ExpressiveEngineFor(SynthesisRequest request) =>
-        WantsExpressive(request)
+        this.Wants(request)
         && this.clockMs() >= Interlocked.Read(ref this.expressiveDownUntilMs)
         && this.expressive() is { IsReady: true } engine
             ? engine
@@ -161,7 +170,7 @@ public sealed class ExpressiveRouter : ISpeechSynthesizer
 
     public async Task<SynthesisResult> SynthesizeAsync(SynthesisRequest request, CancellationToken cancellationToken)
     {
-        if (WantsExpressive(request)
+        if (this.Wants(request)
             && this.clockMs() >= Interlocked.Read(ref this.expressiveDownUntilMs)
             && this.expressive() is { IsReady: true } engine)
         {

@@ -12,8 +12,27 @@ public static class ReferenceClipBank
     /// <summary>Folder next to the plugin assembly that holds the clips.</summary>
     public const string FolderName = "voices-clips";
 
-    public static string ClipIdFor(string? voiceId) =>
-        voiceId is not null && Aliases.TryGetValue(voiceId, out var clip) ? clip : DefaultClipId;
+    public const string DefaultFemaleClipId = "uk_female_soft";
+
+    /// <summary>
+    /// The clip for a voice id: the explicit alias, else by the sex letter of the id (Kokoro ids are
+    /// <c>{region}{f|m}_{name}</c>, generated blends keep that prefix), so an id the table does not list
+    /// never turns a woman's line into the male default.
+    /// </summary>
+    public static string ClipIdFor(string? voiceId)
+    {
+        if (voiceId is null)
+        {
+            return DefaultClipId;
+        }
+
+        if (Aliases.TryGetValue(voiceId, out var clip))
+        {
+            return clip;
+        }
+
+        return voiceId.Length > 2 && voiceId[1] == 'f' && voiceId[2] == '_' ? DefaultFemaleClipId : DefaultClipId;
+    }
 
     private static readonly Dictionary<string, string> Aliases = new(StringComparer.Ordinal)
     {
