@@ -2,6 +2,8 @@ namespace AIVoiceActing.UI.Components;
 
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
+using Dalamud.Interface.Utility.Raii;
 
 /// <summary>
 /// Config-bound ImGui widgets: every mutation applies immediately and calls the injected
@@ -163,6 +165,52 @@ public static class Controls
         }
 
         return ImGui.Button(label);
+    }
+
+    /// <summary>
+    /// Small FontAwesome icon button (the game font has no emoji glyphs). <paramref name="id"/>
+    /// keeps the ImGui id unique; the tooltip names the action, or the disabled reason.
+    /// </summary>
+    public static bool IconButton(FontAwesomeIcon icon, string id, string tooltip, bool enabled = true, string? disabledReason = null)
+    {
+        bool clicked;
+        if (!enabled)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        using (ImRaii.PushFont(UiBuilder.IconFont))
+        {
+            clicked = ImGui.SmallButton($"{icon.ToIconString()}##{id}");
+        }
+
+        if (!enabled)
+        {
+            ImGui.EndDisabled();
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(enabled ? tooltip : disabledReason ?? tooltip);
+        }
+
+        return enabled && clicked;
+    }
+
+    /// <summary>Draws a FontAwesome glyph as text (status icons), optionally tinted.</summary>
+    public static void IconText(FontAwesomeIcon icon, Vector4? color = null)
+    {
+        using (ImRaii.PushFont(UiBuilder.IconFont))
+        {
+            if (color is { } c)
+            {
+                ImGui.TextColored(c, icon.ToIconString());
+            }
+            else
+            {
+                ImGui.TextUnformatted(icon.ToIconString());
+            }
+        }
     }
 
     /// <summary>Hover tooltip on the previously drawn item (use right after a control).</summary>
