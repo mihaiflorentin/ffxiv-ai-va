@@ -209,6 +209,15 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             f5VoicesDirFactory: () => Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
                 "voices-f5"),
+            // Voice packs: bundled next to the plugin, user packs in the config folder, then
+            // any extra folders from the settings. Order decides who wins an id collision.
+            voicePackRootsFactory: () =>
+            [
+                Path.Combine(PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir, "voicepacks"),
+                Path.Combine(configDir, "voicepacks"),
+                .. config.Voices.ExtraPackDirs,
+            ],
+            disabledVoicePacksFactory: () => config.Voices.DisabledPacks,
             emotionClassifierEnabledFactory: () => config.DirectorEnabled,
             useRaceVoicePresetsFactory: () => config.UseRaceVoicePresets,
             adHocStyleTagsFactory: () => config.AdHocStyleTagsEnabled,
@@ -330,6 +339,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
                 "voices")),
             UnboundModels = this.services.UnboundModels,
             EngineCatalog = this.services.EngineCatalog,
+            VoiceLibrary = this.services.VoiceLibrary,
             Status = status,
             Modals = new ModalHost(),
             Toasts = this.Toasts,

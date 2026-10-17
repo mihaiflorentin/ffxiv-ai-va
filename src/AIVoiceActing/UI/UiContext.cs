@@ -50,6 +50,9 @@ public sealed record UiContext
 
     public required IEngineCatalog EngineCatalog { get; init; }
 
+    /// <summary>Stock and pack voices (voice browser, pickers, missing-voice rows).</summary>
+    public required IVoiceLibrary VoiceLibrary { get; init; }
+
     public UnboundModelLog? UnboundModels { get; init; }
 
     /// <summary>

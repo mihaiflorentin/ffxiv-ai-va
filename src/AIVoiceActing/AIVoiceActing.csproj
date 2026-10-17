@@ -49,6 +49,7 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Domain\voices.json" />
+    <EmbeddedResource Include="Domain\voices-core.json" LogicalName="voices-core.json" />
     <EmbeddedResource Include="Infrastructure\Onnx\models-catalog.json" LogicalName="models-catalog.json" />
     <EmbeddedResource Include="Infrastructure\Dalamud\overridenModelIds.txt" />
   </ItemGroup>
@@ -56,6 +57,8 @@
     <Content Include="assets\voices-f5\**\*.wav" CopyToOutputDirectory="PreserveNewest" Link="voices-f5\%(RecursiveDir)%(Filename)%(Extension)" />
     <Content Include="assets\voices-f5\**\*.txt" CopyToOutputDirectory="PreserveNewest" Link="voices-f5\%(RecursiveDir)%(Filename)%(Extension)" />
     <Content Include="voices\default_voice.wav" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Bundled voice packs (voicepacks/<packId>/voicepack.json + files), scanned next to the plugin dll. -->
+    <Content Include="voicepacks\**\*" CopyToOutputDirectory="PreserveNewest" Link="voicepacks\%(RecursiveDir)%(Filename)%(Extension)" />
     <Content Include="icon.png" Link="icon.png">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
