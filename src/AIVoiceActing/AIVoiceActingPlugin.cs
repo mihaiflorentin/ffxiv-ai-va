@@ -43,6 +43,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     public static IPluginLog PluginLog { get; private set; } = null!;
 
     [PluginService]
+    public static INotificationManager NotificationManager { get; private set; } = null!;
+
+    [PluginService]
     public static IFramework Framework { get; private set; } = null!;
 
     [PluginService]
@@ -91,6 +94,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     private readonly ConfigurationWindow configWindow;
     private readonly StylesWindow stylesWindow;
     private readonly NowSpeakingWindow nowSpeakingWindow;
+
+    /// <summary>Toast channel for UI pages (nothing calls it yet; the page tickets will).</summary>
+    public IToastSink Toasts { get; } = new DalamudToastSink(NotificationManager);
     private readonly Action openConfigUiHook;
 
     public AIVoiceActingPlugin()
