@@ -1,0 +1,442 @@
+{
+  "schema": 1,
+  "packId": "aiva-kokoro-stock",
+  "packName": "Kokoro stock voices",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "attribution": "Voice styles from Kokoro-82M by hexgrad (Apache-2.0).",
+  "voices": [
+    {
+      "id": "af_alloy",
+      "name": "Alloy",
+      "accent": "en-US",
+      "sex": "female",
+      "description": "American English female voice.",
+      "tags": []
+    },
+    {
+      "id": "af_aoede",
+      "name": "Aoede",
+      "accent": "en-US",
+      "sex": "female",
+      "description": "American English female voice.",
+      "tags": []
+    },
+    {
+      "id": "af_bella",
+      "name": "Bella",
+      "accent": "en-US",
+      "sex": "female",
+      "description": "American English female voice.",
+      "tags": []
+    },
+    {
+      "id": "af_heart",
+      "name": "Heart",
+      "accent": "en-US",
+      "sex": "female",
+      "description": "American English female voice.",
+      "tags": []
+    },
+    {
+      "id": "af_jessica",
+      "name": "Jessica",
+      "accent": "en-US",
+      "sex": "female",
+      "description": "American English female voice.",
+      "tags": []
+    },
+    {
+      "id": "af_kore",
+      "name": "Kore",
+      "accent": "en-US",
+      "sex": "female",
+      "description": "American English female voice.",
+      "tags": []
+    },
+    {
+      "id": "af_nicole",
+      "name": "Nicole",
+      "accent": "en-US",
+      "sex": "female",
+      "description": "American English female voice.",
+      "tags": []
+    },
+    {
+      "id": "af_nova",
+      "name": "Nova",
+      "accent": "en-US",
+      "sex": "female",
+      "description": "American English female voice.",
+      "tags": []
+    },
+    {
+      "id": "af_river",
+      "name": "River",
+      "accent": "en-US",
+      "sex": "female",
+      "description": "American English female voice.",
+      "tags": []
+    },
+    {
+      "id": "af_sarah",
+      "name": "Sarah",
+      "accent": "en-US",
+      "sex": "female",
+      "description": "American English female voice.",
+      "tags": []
+    },
+    {
+      "id": "af_sky",
+      "name": "Sky",
+      "accent": "en-US",
+      "sex": "female",
+      "description": "American English female voice.",
+      "tags": []
+    },
+    {
+      "id": "am_adam",
+      "name": "Adam",
+      "accent": "en-US",
+      "sex": "male",
+      "description": "American English male voice.",
+      "tags": []
+    },
+    {
+      "id": "am_echo",
+      "name": "Echo",
+      "accent": "en-US",
+      "sex": "male",
+      "description": "American English male voice.",
+      "tags": []
+    },
+    {
+      "id": "am_eric",
+      "name": "Eric",
+      "accent": "en-US",
+      "sex": "male",
+      "description": "American English male voice.",
+      "tags": []
+    },
+    {
+      "id": "am_fenrir",
+      "name": "Fenrir",
+      "accent": "en-US",
+      "sex": "male",
+      "description": "American English male voice.",
+      "tags": []
+    },
+    {
+      "id": "am_liam",
+      "name": "Liam",
+      "accent": "en-US",
+      "sex": "male",
+      "description": "American English male voice.",
+      "tags": []
+    },
+    {
+      "id": "am_michael",
+      "name": "Michael",
+      "accent": "en-US",
+      "sex": "male",
+      "description": "American English male voice.",
+      "tags": []
+    },
+    {
+      "id": "am_onyx",
+      "name": "Onyx",
+      "accent": "en-US",
+      "sex": "male",
+      "description": "American English male voice.",
+      "tags": []
+    },
+    {
+      "id": "am_puck",
+      "name": "Puck",
+      "accent": "en-US",
+      "sex": "male",
+      "description": "American English male voice.",
+      "tags": []
+    },
+    {
+      "id": "am_santa",
+      "name": "Santa",
+      "accent": "en-US",
+      "sex": "male",
+      "description": "American English male voice.",
+      "tags": []
+    },
+    {
+      "id": "bf_alice",
+      "name": "Alice",
+      "accent": "en-GB",
+      "sex": "female",
+      "description": "British English female voice.",
+      "tags": []
+    },
+    {
+      "id": "bf_emma",
+      "name": "Emma",
+      "accent": "en-GB",
+      "sex": "female",
+      "description": "British English female voice.",
+      "tags": []
+    },
+    {
+      "id": "bf_isabella",
+      "name": "Isabella",
+      "accent": "en-GB",
+      "sex": "female",
+      "description": "British English female voice.",
+      "tags": []
+    },
+    {
+      "id": "bf_lily",
+      "name": "Lily",
+      "accent": "en-GB",
+      "sex": "female",
+      "description": "British English female voice.",
+      "tags": []
+    },
+    {
+      "id": "bm_daniel",
+      "name": "Daniel",
+      "accent": "en-GB",
+      "sex": "male",
+      "description": "British English male voice.",
+      "tags": []
+    },
+    {
+      "id": "bm_fable",
+      "name": "Fable",
+      "accent": "en-GB",
+      "sex": "male",
+      "description": "British English male voice.",
+      "tags": []
+    },
+    {
+      "id": "bm_george",
+      "name": "George",
+      "accent": "en-GB",
+      "sex": "male",
+      "description": "British English male voice.",
+      "tags": []
+    },
+    {
+      "id": "bm_lewis",
+      "name": "Lewis",
+      "accent": "en-GB",
+      "sex": "male",
+      "description": "British English male voice.",
+      "tags": []
+    },
+    {
+      "id": "ef_dora",
+      "name": "Dora",
+      "accent": "es-ES",
+      "sex": "female",
+      "description": "Spanish female voice.",
+      "tags": []
+    },
+    {
+      "id": "em_alex",
+      "name": "Alex",
+      "accent": "es-ES",
+      "sex": "male",
+      "description": "Spanish male voice.",
+      "tags": []
+    },
+    {
+      "id": "em_santa",
+      "name": "Santa",
+      "accent": "es-ES",
+      "sex": "male",
+      "description": "Spanish male voice.",
+      "tags": []
+    },
+    {
+      "id": "ff_siwis",
+      "name": "Siwis",
+      "accent": "fr-FR",
+      "sex": "female",
+      "description": "French female voice.",
+      "tags": []
+    },
+    {
+      "id": "hf_alpha",
+      "name": "Alpha",
+      "accent": "hi-IN",
+      "sex": "female",
+      "description": "Hindi female voice.",
+      "tags": []
+    },
+    {
+      "id": "hf_beta",
+      "name": "Beta",
+      "accent": "hi-IN",
+      "sex": "female",
+      "description": "Hindi female voice.",
+      "tags": []
+    },
+    {
+      "id": "hm_omega",
+      "name": "Omega",
+      "accent": "hi-IN",
+      "sex": "male",
+      "description": "Hindi male voice.",
+      "tags": []
+    },
+    {
+      "id": "hm_psi",
+      "name": "Psi",
+      "accent": "hi-IN",
+      "sex": "male",
+      "description": "Hindi male voice.",
+      "tags": []
+    },
+    {
+      "id": "if_sara",
+      "name": "Sara",
+      "accent": "it-IT",
+      "sex": "female",
+      "description": "Italian female voice.",
+      "tags": []
+    },
+    {
+      "id": "im_nicola",
+      "name": "Nicola",
+      "accent": "it-IT",
+      "sex": "male",
+      "description": "Italian male voice.",
+      "tags": []
+    },
+    {
+      "id": "jf_alpha",
+      "name": "Alpha",
+      "accent": "ja-JP",
+      "sex": "female",
+      "description": "Japanese female voice.",
+      "tags": []
+    },
+    {
+      "id": "jf_gongitsune",
+      "name": "Gongitsune",
+      "accent": "ja-JP",
+      "sex": "female",
+      "description": "Japanese female voice.",
+      "tags": []
+    },
+    {
+      "id": "jf_nezumi",
+      "name": "Nezumi",
+      "accent": "ja-JP",
+      "sex": "female",
+      "description": "Japanese female voice.",
+      "tags": []
+    },
+    {
+      "id": "jf_tebukuro",
+      "name": "Tebukuro",
+      "accent": "ja-JP",
+      "sex": "female",
+      "description": "Japanese female voice.",
+      "tags": []
+    },
+    {
+      "id": "jm_kumo",
+      "name": "Kumo",
+      "accent": "ja-JP",
+      "sex": "male",
+      "description": "Japanese male voice.",
+      "tags": []
+    },
+    {
+      "id": "pf_dora",
+      "name": "Dora",
+      "accent": "pt-BR",
+      "sex": "female",
+      "description": "Brazilian Portuguese female voice.",
+      "tags": []
+    },
+    {
+      "id": "pm_alex",
+      "name": "Alex",
+      "accent": "pt-BR",
+      "sex": "male",
+      "description": "Brazilian Portuguese male voice.",
+      "tags": []
+    },
+    {
+      "id": "pm_santa",
+      "name": "Santa",
+      "accent": "pt-BR",
+      "sex": "male",
+      "description": "Brazilian Portuguese male voice.",
+      "tags": []
+    },
+    {
+      "id": "zf_xiaobei",
+      "name": "Xiaobei",
+      "accent": "zh-CN",
+      "sex": "female",
+      "description": "Mandarin Chinese female voice.",
+      "tags": []
+    },
+    {
+      "id": "zf_xiaoni",
+      "name": "Xiaoni",
+      "accent": "zh-CN",
+      "sex": "female",
+      "description": "Mandarin Chinese female voice.",
+      "tags": []
+    },
+    {
+      "id": "zf_xiaoxiao",
+      "name": "Xiaoxiao",
+      "accent": "zh-CN",
+      "sex": "female",
+      "description": "Mandarin Chinese female voice.",
+      "tags": []
+    },
+    {
+      "id": "zf_xiaoyi",
+      "name": "Xiaoyi",
+      "accent": "zh-CN",
+      "sex": "female",
+      "description": "Mandarin Chinese female voice.",
+      "tags": []
+    },
+    {
+      "id": "zm_yunjian",
+      "name": "Yunjian",
+      "accent": "zh-CN",
+      "sex": "male",
+      "description": "Mandarin Chinese male voice.",
+      "tags": []
+    },
+    {
+      "id": "zm_yunxi",
+      "name": "Yunxi",
+      "accent": "zh-CN",
+      "sex": "male",
+      "description": "Mandarin Chinese male voice.",
+      "tags": []
+    },
+    {
+      "id": "zm_yunxia",
+      "name": "Yunxia",
+      "accent": "zh-CN",
+      "sex": "male",
+      "description": "Mandarin Chinese male voice.",
+      "tags": []
+    },
+    {
+      "id": "zm_yunyang",
+      "name": "Yunyang",
+      "accent": "zh-CN",
+      "sex": "male",
+      "description": "Mandarin Chinese male voice.",
+      "tags": []
+    }
+  ]
+}

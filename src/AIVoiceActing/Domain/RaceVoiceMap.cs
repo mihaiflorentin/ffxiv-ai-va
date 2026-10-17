@@ -37,18 +37,27 @@ public sealed class RaceVoiceMap
     private readonly Dictionary<string, VoiceSlot[]> sets;
     private readonly Dictionary<string, string> raceVariants;
     private readonly Dictionary<string, IReadOnlyList<int>> beastTribeBindings;
+    private readonly Func<string, bool>? isAvailable;
 
     public RaceVoiceMap(
         Dictionary<string, VoiceSlot[]> sets,
         Dictionary<string, string> raceVariants,
         RaceVoiceMap? disabled = null,
-        Dictionary<string, IReadOnlyList<int>>? beastTribeBindings = null)
+        Dictionary<string, IReadOnlyList<int>>? beastTribeBindings = null,
+        Func<string, bool>? isAvailable = null)
     {
+        this.isAvailable = isAvailable;
         this.sets = new Dictionary<string, VoiceSlot[]>(sets, StringComparer.Ordinal);
         this.raceVariants = new Dictionary<string, string>(raceVariants, StringComparer.Ordinal);
         this.beastTribeBindings = new(beastTribeBindings ?? [], StringComparer.Ordinal);
         this.Disabled = disabled;
     }
+
+    /// <summary>The same map with a voice-availability predicate (the voice library). Slots
+    /// whose voice is unavailable are skipped at lookup time; a set that would become empty
+    /// falls back as described on <see cref="SlotsFor"/>.</summary>
+    public RaceVoiceMap WithAvailability(Func<string, bool>? predicate) =>
+        new(this.sets, this.raceVariants, this.Disabled, this.beastTribeBindings, predicate);
 
     /// <summary>Active sets by key (read-only view; parked/disabled sets are NOT here).</summary>
     public IReadOnlyDictionary<string, VoiceSlot[]> Sets => this.sets;
@@ -97,7 +106,7 @@ public sealed class RaceVoiceMap
     {
         if (this.sets.TryGetValue(setKey, out var slots))
         {
-            return (VoiceSlot[])slots.Clone();
+            return this.Available(slots);
         }
 
         if (this.Disabled is { } parked && parked.sets.TryGetValue(setKey, out var parkedSlots))
@@ -115,8 +124,8 @@ public sealed class RaceVoiceMap
     {
         if (this.sets.TryGetValue(setKey, out var set))
         {
-            slots = (VoiceSlot[])set.Clone();
-            return true;
+            slots = this.AvailableOrNone(set);
+            return slots.Length > 0 || set.Length == 0;
         }
 
         slots = [];
@@ -124,32 +133,45 @@ public sealed class RaceVoiceMap
     }
 
     /// <summary>The slot set for a voice group, nuanced by race; defensive copy.</summary>
-    public VoiceSlot[] SlotsFor(VoiceGroup group, byte? race) =>
-        (VoiceSlot[])this.ResolveSet(group, race).Clone();
+    public VoiceSlot[] SlotsFor(VoiceGroup group, byte? race)
+    {
+        if (race is { } raceId
+            && this.raceVariants.TryGetValue($"{raceId}|{group}", out var variantKey)
+            && this.sets.TryGetValue(variantKey, out var variant)
+            && this.AvailableOrNone(variant) is { Length: > 0 } usable)
+        {
+            return usable;
+        }
+
+        // The race set is gone or has no usable voice left: use the group's base set.
+        return this.sets.TryGetValue(FallbackKey(group), out var set)
+            ? this.Available(set)
+            : throw new InvalidOperationException(
+                $"RaceVoiceMap has no \"{FallbackKey(group)}\" set for group {group}.");
+    }
 
     /// <summary>Candidate voice ids for a group, one entry per slot (hash-ready order).</summary>
     public string[] VoicesFor(VoiceGroup group, byte? race) =>
-        this.ResolveSet(group, race).Select(slot => slot.Id).ToArray();
+        this.SlotsFor(group, race).Select(slot => slot.Id).ToArray();
 
     /// <summary>All distinct reference-voice ids across every set, stable order — the UI
     /// voice-picker options (one clip may back many slots).</summary>
     public string[] DistinctVoiceIds() =>
         [.. this.sets.Values.SelectMany(slots => slots).Select(slot => slot.Id).Distinct()];
 
-    private VoiceSlot[] ResolveSet(VoiceGroup group, byte? race)
+    /// <summary>Slots whose voice is available (all of them without a predicate); a set that
+    /// would end up empty is returned whole, so resolution never yields nothing and the
+    /// engine's own fallback voice covers it.</summary>
+    private VoiceSlot[] Available(VoiceSlot[] slots)
     {
-        if (race is { } raceId
-            && this.raceVariants.TryGetValue($"{raceId}|{group}", out var variantKey)
-            && this.sets.TryGetValue(variantKey, out var variant))
-        {
-            return variant;
-        }
-
-        return this.sets.TryGetValue(FallbackKey(group), out var set)
-            ? set
-            : throw new InvalidOperationException(
-                $"RaceVoiceMap has no \"{FallbackKey(group)}\" set for group {group}.");
+        var usable = this.AvailableOrNone(slots);
+        return usable.Length > 0 ? usable : (VoiceSlot[])slots.Clone();
     }
+
+    private VoiceSlot[] AvailableOrNone(VoiceSlot[] slots) =>
+        this.isAvailable is { } available
+            ? [.. slots.Where(slot => available(slot.Id))]
+            : (VoiceSlot[])slots.Clone();
 
     private static string FallbackKey(VoiceGroup group) => group switch
     {

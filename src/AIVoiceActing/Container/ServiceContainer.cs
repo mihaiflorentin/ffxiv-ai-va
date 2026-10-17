@@ -54,6 +54,10 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<bool>? expressiveEngineFactory;
     private readonly Func<IEngineCatalog>? engineCatalogFactory;
     private readonly Func<IReadOnlyDictionary<string, string>>? remoteExtraFactory;
+    private readonly Func<IReadOnlyList<string>>? voicePackRootsFactory;
+    private readonly Func<IReadOnlyCollection<string>>? disabledVoicePacksFactory;
+    private readonly Func<IVoiceLibrary>? voiceLibraryFactory;
+    private IVoiceLibrary? voiceLibrary;
     private IEngineCatalog? engineCatalog;
     private ISpeechSynthesizer? expressiveSynthesizer;
     private ExpressiveRouter? expressiveRouter;
@@ -152,8 +156,14 @@ public sealed class ServiceContainer : IDisposable
         Func<bool>? streamSentencesFactory = null,
         Func<bool>? expressiveEngineFactory = null,
         Func<IEngineCatalog>? engineCatalogFactory = null,
-        Func<IReadOnlyDictionary<string, string>>? remoteExtraFactory = null)
+        Func<IReadOnlyDictionary<string, string>>? remoteExtraFactory = null,
+        Func<IReadOnlyList<string>>? voicePackRootsFactory = null,
+        Func<IReadOnlyCollection<string>>? disabledVoicePacksFactory = null,
+        Func<IVoiceLibrary>? voiceLibraryFactory = null)
     {
+        this.voicePackRootsFactory = voicePackRootsFactory;
+        this.disabledVoicePacksFactory = disabledVoicePacksFactory;
+        this.voiceLibraryFactory = voiceLibraryFactory;
         this.remoteExtraFactory = remoteExtraFactory;
         this.engineCatalogFactory = engineCatalogFactory;
         this.expressiveEngineFactory = expressiveEngineFactory;
@@ -208,6 +218,31 @@ public sealed class ServiceContainer : IDisposable
     /// <summary>Engine descriptors, alias resolution and download-group ownership.</summary>
     public IEngineCatalog EngineCatalog => this.engineCatalog ??= this.engineCatalogFactory?.Invoke()
         ?? Infrastructure.Engines.EngineCatalog.Instance;
+
+    /// <summary>Voice catalog: stock Kokoro voices plus the packs found under the configured
+    /// roots. Call <see cref="IVoiceLibrary.Reload"/> after packs change on disk.</summary>
+    public IVoiceLibrary VoiceLibrary
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.VoiceLibraryUnlocked();
+            }
+        }
+    }
+
+    private IVoiceLibrary VoiceLibraryUnlocked() =>
+        this.voiceLibrary ??= this.voiceLibraryFactory?.Invoke()
+            ?? new FileVoiceLibrary(
+                this.voicePackRootsFactory ?? (() => []),
+                this.disabledVoicePacksFactory,
+                this.LogSinkUnlocked());
+
+    /// <summary>Slots only lose their place when the library knows the voice and has demoted it;
+    /// ids it has never heard of (legacy bare ids) stay castable.</summary>
+    private bool VoiceIsCastable(string voiceId) =>
+        this.VoiceLibraryUnlocked().Find(voiceId) is not { Available: false };
 
     /// <summary>Downloaded-model directory (modelsDirFactory or a hard error, like the profile store).</summary>
     public string ModelsDir => this.modelsDirFactory?.Invoke()
@@ -332,7 +367,8 @@ public sealed class ServiceContainer : IDisposable
                         () => Math.Max(1, threads ?? 4),
                         this.LogSinkUnlocked(),
                         voicesDirFactory: this.kokoroVoicesDirFactory,
-                        keepTempoWhenPitched: this.keepTempoWhenPitchedFactory),
+                        keepTempoWhenPitched: this.keepTempoWhenPitchedFactory,
+                        voiceLibrary: this.VoiceLibraryUnlocked()),
                 };
 
                 this.LogSinkUnlocked().Info(
@@ -922,7 +958,13 @@ public sealed class ServiceContainer : IDisposable
         // Engine migrations (Chatterbox clip ids → Kokoro voice names) retire ids that
         // the store's never-reassign invariant would keep forever; a retired id can
         // never synthesize, so re-derive a fresh random pick from the current bank.
-        if (!map.DistinctVoiceIds().Contains(profile.ReferenceVoiceId))
+        // A pack voice demoted by a missing file (Available false) is retired too; a usable
+        // pack voice the user picked by hand stays. A voice whose pack was removed is unknown
+        // to the library, so the engine's fallback voice (with a log line) covers it.
+        var picked = this.VoiceLibraryUnlocked().Find(profile.ReferenceVoiceId);
+        var keptByPack = picked is { Available: true, Quality: not VoiceQuality.Stock };
+        if (picked is { Available: false }
+            || (!keptByPack && !map.DistinctVoiceIds().Contains(profile.ReferenceVoiceId)))
         {
             this.LogSinkUnlocked().Info(
                 $"Reassigning \"{speaker.Key}\" from retired voice \"{profile.ReferenceVoiceId}\".");
@@ -1045,7 +1087,7 @@ public sealed class ServiceContainer : IDisposable
             catch (CastingPresetException e)
             {
                 this.LogSinkUnlocked().Warn($"Active casting preset \"{active}\" is unreadable; using the built-in casting. {e.Message}");
-                return this.voiceMap = baseMap;
+                return this.voiceMap = baseMap.WithAvailability(this.VoiceIsCastable);
             }
         }
 
@@ -1087,7 +1129,7 @@ public sealed class ServiceContainer : IDisposable
             .SelectMany(race => (string[])[$"{race}|Male", $"{race}|Female"])
             .ToDictionary(key => key, key => key, StringComparer.Ordinal);
 
-        return this.voiceMap = new RaceVoiceMap(sets, variants, baseMap.Disabled);
+        return this.voiceMap = new RaceVoiceMap(sets, variants, baseMap.Disabled, isAvailable: this.VoiceIsCastable);
     }
 
     /// <summary>Persistent voice-assignment store (JsonProfileStore over voice-assignments.json).</summary>

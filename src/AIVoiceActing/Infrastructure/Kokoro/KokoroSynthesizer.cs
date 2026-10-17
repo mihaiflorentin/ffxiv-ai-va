@@ -26,6 +26,11 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
     private readonly Func<string?>? voicesDirFactory;
     private readonly Func<bool>? keepTempoWhenPitched;
     private readonly ILogSink? log;
+    private readonly IVoiceLibrary? voiceLibrary;
+
+    /// <summary>Pack style tensors already read from disk, keyed by voice id; stale entries
+    /// (file replaced) are detected by length and write time.</summary>
+    private readonly Dictionary<string, (string Path, long Length, DateTime Stamp, KokoroVoice Voice)> customVoices = [];
 
     /// <summary>Guards the small state fields only; never held across a model load, so
     /// readiness checks (read every UI frame) never wait on one.</summary>
@@ -53,8 +58,10 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
         Func<int> intraOpThreadsFactory,
         ILogSink? log = null,
         Func<string?>? voicesDirFactory = null,
-        Func<bool>? keepTempoWhenPitched = null)
+        Func<bool>? keepTempoWhenPitched = null,
+        IVoiceLibrary? voiceLibrary = null)
     {
+        this.voiceLibrary = voiceLibrary;
         this.keepTempoWhenPitched = keepTempoWhenPitched;
         this.modelsDirFactory = modelsDirFactory ?? throw new ArgumentNullException(nameof(modelsDirFactory));
         this.intraOpThreadsFactory = intraOpThreadsFactory ?? throw new ArgumentNullException(nameof(intraOpThreadsFactory));
@@ -406,17 +413,75 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
         return engine;
     }
 
-    private KokoroVoice ResolveVoice(string referenceVoiceId)
+    /// <summary>
+    /// Picks the Kokoro voice for an id. Pack voices carry a style tensor on disk, which is
+    /// registered under an internal name whose first letter selects the phonemizer the
+    /// manifest declared (KokoroSharp derives the G2P language from that letter); stock
+    /// voices are looked up by name in the loaded bank. Anything missing, unavailable or
+    /// unreadable falls back to <see cref="DefaultVoiceName"/> with a log line.
+    /// </summary>
+    internal KokoroVoice ResolveVoice(string referenceVoiceId)
     {
         var name = string.IsNullOrWhiteSpace(referenceVoiceId) ? DefaultVoiceName : referenceVoiceId;
         try
         {
+            if (this.voiceLibrary?.Find(name) is { } entry)
+            {
+                if (!entry.Available)
+                {
+                    throw new InvalidOperationException(entry.UnavailableReason ?? "voice is unavailable");
+                }
+
+                if (this.LoadCustomVoice(entry) is { } custom)
+                {
+                    return custom;
+                }
+            }
+
             return KokoroVoiceManager.GetVoice(name);
         }
         catch (Exception ex)
         {
             this.log?.Warn($"Kokoro voice \"{name}\" unavailable ({ex.Message}); falling back to {DefaultVoiceName}.");
             return KokoroVoiceManager.GetVoice(DefaultVoiceName);
+        }
+    }
+
+    /// <summary>The voice's on-disk style tensor as a Kokoro voice under its internal name, or
+    /// null for a stock voice (no file of its own).</summary>
+    private KokoroVoice? LoadCustomVoice(VoiceInfo entry)
+    {
+        var realization = entry.Realizations.FirstOrDefault(r =>
+            r.Kind == RealizationKind.StyleTensor
+            && r.Available
+            && r.Path.Length > 0
+            && string.Equals(r.Engine, "kokoro", StringComparison.OrdinalIgnoreCase));
+        if (realization is null)
+        {
+            return null;
+        }
+
+        var file = new FileInfo(realization.Path);
+        lock (this.customVoices)
+        {
+            if (this.customVoices.TryGetValue(entry.Id, out var cached)
+                && cached.Path == realization.Path
+                && cached.Length == file.Length
+                && cached.Stamp == file.LastWriteTimeUtc)
+            {
+                return cached.Voice;
+            }
+
+            var phonemizer = Phonemizers.Normalize(realization.Phonemizer) ?? Phonemizers.EnglishUs;
+            var features = KokoroVoice.FromPath(realization.Path).Features;
+            var voice = new KokoroVoice
+            {
+                Name = Phonemizers.InternalName(entry.Id, phonemizer, entry.Sex),
+                Features = features,
+            };
+            this.customVoices[entry.Id] = (realization.Path, file.Length, file.LastWriteTimeUtc, voice);
+            this.log?.Info($"Kokoro pack voice \"{entry.Id}\" loaded as \"{voice.Name}\" (phonemizer {phonemizer}).");
+            return voice;
         }
     }
 
