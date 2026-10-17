@@ -42,7 +42,8 @@ public sealed class CoreVoiceManifestTests
     {
         var map = RaceVoiceMapTests.LoadDefault();
         var ids = Core.Voices.Select(v => v.Id).ToHashSet();
-        Assert.All(map.DistinctVoiceIds(), id => Assert.Contains(id, ids));
+        // Pack voices ("isles.ie_m_01") are checked against their manifest by BundledIslesPackTests.
+        Assert.All(map.DistinctVoiceIds().Where(id => !id.Contains('.')), id => Assert.Contains(id, ids));
     }
 
     [Fact]

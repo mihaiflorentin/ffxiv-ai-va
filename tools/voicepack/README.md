@@ -21,7 +21,7 @@ Files:
 | `make_target.py` | Cuts a ~12-25 s, 24 kHz target clip, its transcript and a per-sentence timing file for one speaker. |
 | `make_clip.py` | Cuts the reference clip: the speaker's longest single sentence of at most 9.5 s, plus its text. |
 | `pt_to_npy.py` | KVoiceWalk `.pt` to the `(510, 1, 256)` float32 `.npy` the plugin reads. |
-| `isles.scores.json` | Written by the `tensor` stage: walk step, fitness score and speaker similarity of each shipped tensor. |
+| `isles.scores.json` | Written by the `tensor` stage: step of the last improvement, fitness score and speaker similarity (resemblyzer, vs. one dataset speaker) of each shipped tensor. |
 | `gen_core_manifest.py` | Unrelated: regenerates the stock Kokoro manifest `Domain/voices-core.json`. |
 
 ## One-time setup

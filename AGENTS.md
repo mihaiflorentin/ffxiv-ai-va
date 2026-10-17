@@ -60,6 +60,10 @@ dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMis
 dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMissingPrunePackageData=true -- \
   --engine turbo --device gpu --precision q4f16 --stream --bench --models <dir with the turbo files> \
   --text "..." --out /tmp/aiva-turbo.wav
+# Turbo device plan: --engine turbo --device cpu|gpu [--api vulkan|d3d12] [--power high|low] [--bench]
+# prints the probe (platform, adapters), the plan and the engine status. The GPU runtime is the
+# WebGPU EP pinned to exactly 0.2.1 (0.3.0/0.4.0 abort the process on the Turbo graphs); GPU
+# integration tests run only with AIVA_GPU_TESTS=1 (they need a real GPU, so not in the sandbox).
 ```
 
 Voice packs (`voicepack.json`, schema 1; see `Domain/VoicePackManifest`) are authored and checked with
@@ -79,10 +83,6 @@ dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMis
 Pack data is CC-BY-SA-4.0 derived from `ylacombe/english_dialects`: keep the pack's LICENSE and NOTICE,
 and mark new voices `experimental` until someone has listened to them. Casting sets for pack voices live in
 `Domain/voices.json` (`RaceVoiceMap` drops slots whose pack is missing or disabled).
-# Turbo device plan: --engine turbo --device cpu|gpu [--api vulkan|d3d12] [--power high|low] [--bench]
-# prints the probe (platform, adapters), the plan and the engine status. The GPU runtime is the
-# WebGPU EP pinned to exactly 0.2.1 (0.3.0/0.4.0 abort the process on the Turbo graphs); GPU
-# integration tests run only with AIVA_GPU_TESTS=1 (they need a real GPU, so not in the sandbox).
 
 The tests project and the SmokeSynth tool must NOT reference Dalamud; the plugin project's
 csproj carries the runtime packages (OnnxRuntime, DirectML, NAudio, Tokenizers.DotNet,
