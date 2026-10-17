@@ -68,8 +68,8 @@ public static class ModelCatalog
     /// Chatterbox Turbo ONNX (ResembleAI official export): distilled Chatterbox with
     /// native paralinguistic tags ([laugh]/[chuckle]/[cough] inline in text). Same
     /// four-session architecture as the legacy export, but 24 layers (vs 30), arange
-    /// position_ids, no exaggeration input, and a GPT2 BPE tokenizer (3.5 MB). ALL
-    /// sessions are fp32 (~3.2 GB): the int8-quantized kernels native-crashed inside
+    /// position_ids, no exaggeration input, and a GPT2 BPE tokenizer (3.5 MB). The default
+    /// group holds the fp32 sessions (~3.2 GB): the int8-quantized kernels native-crashed inside
     /// onnxruntime.dll in-game (same Zen5/AVX-512 kernel class that forced the fp32 LM
     /// on legacy), while the fp32 set ran clean on the same hardware.
     /// </summary>
@@ -122,6 +122,12 @@ public static class ModelCatalog
     public const string TurboFp16Group = "turbo-fp16";
     public const string TurboQ4F16Group = "turbo-q4f16";
 
+    /// <summary>
+    /// What every Turbo install needs whatever its precision: the tokenizer and the default reference voice
+    /// (4 MB). Split from the graphs so a graphics card needs only the small q4f16 build next to it.
+    /// </summary>
+    public const string TurboBaseGroup = "turbo-base";
+
     private const string CatalogResourceName = "models-catalog.json";
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
@@ -168,9 +174,13 @@ public static class ModelCatalog
     public static IReadOnlyList<ModelAsset> ChatterboxRequiredAssets { get; } =
         Assets.Where(a => a.Group == ChatterboxRequiredGroup).Select(a => a.Asset).ToArray();
 
-    /// <summary>Required Chatterbox Turbo assets (graph + weights + tokenizer).</summary>
+    /// <summary>The tokenizer and default voice every Turbo install needs (see <see cref="TurboBaseGroup"/>).</summary>
+    public static IReadOnlyList<ModelAsset> TurboBaseAssets { get; } =
+        Assets.Where(a => a.Group == TurboBaseGroup).Select(a => a.Asset).ToArray();
+
+    /// <summary>The full-size Turbo install (the CPU choice): the base files plus the fp32 graphs and weights.</summary>
     public static IReadOnlyList<ModelAsset> TurboRequiredAssets { get; } =
-        Assets.Where(a => a.Group == TurboGroup).Select(a => a.Asset).ToArray();
+        Assets.Where(a => a.Group is TurboBaseGroup or TurboGroup).Select(a => a.Asset).ToArray();
 
     /// <summary>Resolve URL for a catalog asset; unknown files fall back to the legacy Chatterbox repo.</summary>
     public static string UrlFor(ModelAsset asset) =>

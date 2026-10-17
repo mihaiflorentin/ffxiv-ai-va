@@ -65,7 +65,7 @@ public sealed class OnnxSessionFactory
         ArgumentNullException.ThrowIfNull(plan);
         if (role != SessionRole.Lm || !plan.IsGpu)
         {
-            return Cpu(intraOpThreads, string.Empty);
+            return Cpu(role == SessionRole.Decoder ? DecoderThreads(intraOpThreads) : intraOpThreads, string.Empty);
         }
 
         if (!this.guard.TryBegin($"{plan.Ep} session for the language model", out var scope))
@@ -101,6 +101,21 @@ public sealed class OnnxSessionFactory
             return Cpu(intraOpThreads, "The GPU could not be started, so this runs on the CPU.");
         }
     }
+
+    /// <summary>
+    /// Most intra-op threads the conditional decoder takes by default. Its calls are short bursts of small
+    /// matrices (one per chunk of a streamed line) that already run faster than real time on two threads,
+    /// where more threads mostly spin: the same call costs 0.7 CPU seconds on one thread, 1.2 on two, 1.9 on
+    /// four and 3.5 on eight (docs/plans/2026-10-gpu-spike-results.md), and the CPU is shared with the game.
+    /// An explicit thread setting (the CPU impact choice) is respected as given.
+    /// </summary>
+    public const int DecoderDefaultMaxThreads = 2;
+
+    /// <summary>The decoder's thread count: the explicit setting, else half the logical cores capped at <see cref="DecoderDefaultMaxThreads"/>.</summary>
+    public static int DecoderThreads(int? explicitThreads) =>
+        explicitThreads is { } threads && threads > 0
+            ? threads
+            : Math.Min(DecoderDefaultMaxThreads, Math.Max(2, Environment.ProcessorCount / 2));
 
     private static SessionBuild Cpu(int? intraOpThreads, string fallbackReason) =>
         new(EpSelector.CreateSessionOptions("cpu", intraOpThreads: intraOpThreads).Options, DeviceEp.Cpu, fallbackReason, null);

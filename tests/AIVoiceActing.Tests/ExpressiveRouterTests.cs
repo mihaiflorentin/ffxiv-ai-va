@@ -184,4 +184,94 @@ public sealed class ExpressiveRouterTests
         Assert.Equal("Missing it", h.Router.ExpressiveStatus!.Reason);
         Assert.Null(Create(expressivePresent: false).Router.ExpressiveStatus);
     }
+
+    // ---- streaming: the request decides which engine would stream ----------------------------------------
+
+    [Fact]
+    public void OnlyAnEmotionalLine_StreamsWhenOnlyTheExpressiveEngineCan()
+    {
+        var h = Create();
+        h.Expressive.SupportsStreaming = true;
+
+        Assert.True(h.Router.SupportsStreaming);
+        Assert.True(h.Router.SupportsStreamingFor(Line(0.9f, "laugh")));
+        Assert.False(h.Router.SupportsStreamingFor(Line())); // a calm line goes to Kokoro, which renders whole
+    }
+
+    [Fact]
+    public void NeitherEngineStreaming_MeansNothingStreams()
+    {
+        var h = Create();
+
+        Assert.False(h.Router.SupportsStreaming);
+        Assert.False(h.Router.SupportsStreamingFor(Line(0.9f, "laugh")));
+    }
+
+    [Fact]
+    public async Task AnEmotionalLine_StreamsThroughTheExpressiveEngine_WithTheSpeakersClip()
+    {
+        var h = Create();
+        h.Expressive.SupportsStreaming = true;
+        var heard = new List<float>();
+
+        var whole = await h.Router.SynthesizeStreamingAsync(Line(0.9f, "gasp"), s => heard.AddRange(s.ToArray()), CancellationToken.None);
+
+        var sent = Assert.Single(h.Expressive.StreamingCalls);
+        Assert.Equal("/clips/af_heart_p110.wav", sent.ReferenceVoiceId);
+        Assert.Equal([0.1f, 0.2f, 0.3f, 0.4f, 0.5f], heard);
+        Assert.Equal(heard, whole.Samples);
+        Assert.Empty(h.Main.Calls);
+    }
+
+    [Fact]
+    public async Task ACalmLine_ThroughTheStreamingDoor_IsRenderedWholeByTheMainEngine()
+    {
+        var h = Create();
+        var pieces = 0;
+
+        var whole = await h.Router.SynthesizeStreamingAsync(Line(), _ => pieces++, CancellationToken.None);
+
+        Assert.Equal(1, pieces); // handed over in one go
+        Assert.Single(h.Main.Calls);
+        Assert.Equal(3, whole.Samples.Length);
+        Assert.Empty(h.Expressive.StreamingCalls);
+    }
+
+    [Fact]
+    public async Task AStreamFailureBeforeAnyAudio_FallsBackToMain_AndBenchesTheExpressiveEngine()
+    {
+        var now = 1_000L;
+        var main = new FakeSpeechSynthesizer();
+        var expressive = new FakeSpeechSynthesizer { SupportsStreaming = true, Throw = new InvalidOperationException("no") };
+        var router = new ExpressiveRouter(() => main, () => expressive, (_, _) => Task.FromResult<string?>("/clip.wav"), clockMs: () => now);
+        var heard = 0;
+
+        await router.SynthesizeStreamingAsync(Line(0.9f), _ => heard++, CancellationToken.None);
+
+        Assert.Single(main.Calls);
+        Assert.Equal(1, heard);
+        Assert.False(router.SupportsStreamingFor(Line(0.9f))); // benched: the line would go to the main engine
+    }
+
+    [Fact]
+    public async Task AStreamFailureAfterAudioStarted_IsNotHiddenByTheMainEngine()
+    {
+        var main = new FakeSpeechSynthesizer();
+        var expressive = new FakeSpeechSynthesizer { SupportsStreaming = true };
+        expressive.AfterPiece = i =>
+        {
+            if (i == 0)
+            {
+                throw new InvalidOperationException("died mid-line");
+            }
+        };
+        var router = new ExpressiveRouter(() => main, () => expressive, (_, _) => Task.FromResult<string?>("/clip.wav"));
+        var heard = 0;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => router.SynthesizeStreamingAsync(Line(0.9f), _ => heard++, CancellationToken.None));
+
+        Assert.Equal(1, heard); // the first piece was out; the rest of the line is not re-voiced by another engine
+        Assert.Empty(main.Calls);
+    }
 }

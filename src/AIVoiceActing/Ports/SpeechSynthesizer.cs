@@ -101,6 +101,37 @@ public interface ISpeechSynthesizer
     Task<SynthesisResult> SynthesizeAsync(SynthesisRequest request, CancellationToken cancellationToken);
 
     /// <summary>
+    /// True when <see cref="SynthesizeStreamingAsync"/> really delivers audio piece by piece, early enough
+    /// to start playing before the line is done (it can depend on where the engine runs right now). The
+    /// default hands over the whole line at once, so callers only use it when this is true.
+    /// </summary>
+    bool SupportsStreaming => false;
+
+    /// <summary>
+    /// Whether this particular request would stream. Engines that route between others (the expressive
+    /// router) answer per request; everyone else answers <see cref="SupportsStreaming"/>.
+    /// </summary>
+    bool SupportsStreamingFor(SynthesisRequest request) => this.SupportsStreaming;
+
+    /// <summary>Sample rate of the pieces <see cref="SynthesizeStreamingAsync"/> delivers.</summary>
+    int StreamingSampleRate => 24000;
+
+    /// <summary>
+    /// Renders a line and hands each finished piece of audio to <paramref name="onSamples"/> in order, as
+    /// soon as it is ready. Returns the whole line (the pieces joined), which is what the render cache
+    /// stores. The callback runs on the engine's worker thread and must not block for long.
+    /// </summary>
+    async Task<SynthesisResult> SynthesizeStreamingAsync(
+        SynthesisRequest request,
+        Action<ReadOnlyMemory<float>> onSamples,
+        CancellationToken cancellationToken)
+    {
+        var whole = await this.SynthesizeAsync(request, cancellationToken).ConfigureAwait(false);
+        onSamples(whole.Samples);
+        return whole;
+    }
+
+    /// <summary>
     /// Snapshot of readiness and device use, cheap enough to poll every frame. Engines that
     /// never touch the GPU keep this default (ready or not installed, always on the CPU).
     /// </summary>

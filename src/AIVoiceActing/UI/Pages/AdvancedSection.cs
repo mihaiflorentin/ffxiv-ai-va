@@ -120,7 +120,7 @@ internal sealed class AdvancedSection
             v => { c.KeepTempoWhenPitched = v; save(); });
         SettingsParts.Toggle(
             "Start long lines sooner",
-            "Long lines are made sentence by sentence, so the first sentence plays while the rest is still being made.",
+            "Long lines are made sentence by sentence, so the first sentence plays while the rest is still being made. Expressive voices on a graphics card also start speaking before a sentence is finished.",
             () => c.StreamSentences,
             v => { c.StreamSentences = v; save(); });
         SettingsParts.Toggle(

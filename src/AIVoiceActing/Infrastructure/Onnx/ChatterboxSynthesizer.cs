@@ -19,6 +19,7 @@ using Microsoft.ML.OnnxRuntime.Tensors;
 public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 {
     private const int SampleRate = 24000;
+    private const int SamplesPerToken = 960; // 25 speech tokens per second at 24 kHz
     private const int TurboSilenceToken = 4299; // Turbo reference: 3 appended before decode
     private const int SilenceSuffixCount = 3;
     private const int Layers = 24; // config.json text_config.n_layer
@@ -310,11 +311,11 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     /// <summary>First blocking reason for readiness, or null when the engine can synthesize.</summary>
     private string? FindNotReadyReason()
     {
-        // The base fp32 set (graphs, weights, tokenizer, default voice) is always required: it is the CPU
-        // choice and the fallback when a smaller precision set is missing. The default voice is
-        // existence-checked below via the resolver: the bundled clip is a PCM16 conversion of the pinned
-        // HF download, so its byte size legitimately differs from the catalog pin.
-        foreach (var asset in ModelCatalog.TurboRequiredAssets)
+        // The base files (tokenizer, default voice) are always required, plus ONE complete precision set:
+        // the full-size fp32 files (the CPU choice), fp16, or the small q4f16 build a graphics card needs. The
+        // default voice is existence-checked below via the resolver: the bundled clip is a PCM16 conversion of
+        // the pinned HF download, so its byte size legitimately differs from the catalog pin.
+        foreach (var asset in ModelCatalog.TurboBaseAssets)
         {
             if (asset.FileName == ModelCatalog.TurboDefaultVoiceFileName)
             {
@@ -325,6 +326,18 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             {
                 return $"Missing model {asset.FileName} — Models tab → Download all missing.";
             }
+        }
+
+        if (!this.AnySetInstalled())
+        {
+            // Name a file of the set this machine should have, so the hint points at the right download.
+            var wanted = this.devices is { } services && (this.ModeOverride ?? services.Planner.Preferences.Mode) != DeviceMode.Cpu
+                ? TurboPrecision.Q4F16
+                : TurboPrecision.Fp32;
+            var set = TurboFiles.For(wanted);
+            var missing = ModelCatalog.GroupAssets(set.CatalogGroup)
+                .FirstOrDefault(a => !this.AssetPresent(a.FileName, a.SizeBytes));
+            return $"Missing model {missing?.FileName ?? set.Lm} — Models tab → Download all missing.";
         }
 
         // The default reference voice must exist on disk — no clip, no synthesis.
@@ -338,6 +351,10 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             ? $"Tokenizer failed to load: {this.tokenizerFailure ?? "unknown error"}."
             : null;
     }
+
+    private bool AnySetInstalled() =>
+        new[] { TurboPrecision.Fp32, TurboPrecision.Fp16, TurboPrecision.Q4F16 }
+            .Any(precision => TurboFiles.For(precision).IsInstalled(this.modelsDir));
 
     // Model-presence concern split (review round 3): FileModelStore.IsDownloaded is the
     // single existence+size check the Models tab and provisioner go through; this
@@ -526,6 +543,198 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         return new SynthesisResult(samples, SampleRate);
     }
 
+    // ---- chunked (streaming) synthesis ----------------------------------------------------------
+
+    /// <summary>
+    /// Forces streaming on or off (tools and tests); null follows the engine: streaming pays off when the
+    /// language model runs on the GPU, because only then do tokens arrive faster than they play. On the CPU
+    /// the model is slower than real time and the whole-line path wastes less.
+    /// </summary>
+    public bool? StreamingOverride { get; set; }
+
+    /// <summary>Chunk sizes, context and prompt length of the streaming decode.</summary>
+    public StreamingOptions Streaming { get; set; } = StreamingOptions.Default;
+
+    /// <summary>What the last streamed line cost (null until one was streamed); for tools and the log.</summary>
+    public StreamingStats? LastStreamingStats { get; private set; }
+
+    public bool SupportsStreaming => this.StreamingOverride
+        ?? (this.engine.IsValueCreated && this.engine.Value.LmEp != DeviceEp.Cpu);
+
+    public int StreamingSampleRate => SampleRate;
+
+    public async Task<SynthesisResult> SynthesizeStreamingAsync(
+        SynthesisRequest request,
+        Action<ReadOnlyMemory<float>> onSamples,
+        CancellationToken cancellationToken)
+    {
+        return await Task.Run(
+            async () =>
+            {
+                this.ThrowIfDisposed();
+                await this.synthesisGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    this.ThrowIfDisposed();
+                    var started = Environment.TickCount64;
+                    var result = this.StreamCore(request, onSamples, cancellationToken);
+                    this.log?.Info(
+                        $"Chatterbox streamed synthesis complete: {result.Samples.Length} samples @ {result.SampleRate} Hz " +
+                        $"({Environment.TickCount64 - started} ms, voice \"{request.ReferenceVoiceId}\").");
+                    return result;
+                }
+                finally
+                {
+                    this.synthesisGate.Release();
+                }
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private SynthesisResult StreamCore(SynthesisRequest request, Action<ReadOnlyMemory<float>> onSamples, CancellationToken ct)
+    {
+        this.ThrowIfDisposed();
+        var eng = this.engine.Value;
+        var tokenizer = this.EnsureTokenizer()
+            ?? throw new SpeechSynthesisException("Tokenizer is unavailable (failed to load).");
+        var referencePath = this.voicePathResolver(request.ReferenceVoiceId)
+            ?? throw new SpeechSynthesisException(
+                $"No reference wav resolves for voice id \"{request.ReferenceVoiceId}\".");
+        this.log?.Info($"Chatterbox streamed synthesis start: voice \"{request.ReferenceVoiceId}\" → clip {referencePath}.");
+        ct.ThrowIfCancellationRequested();
+
+        var textIds = tokenizer.Encode(BuildPromptText(request.Tags, request.Text)).Select(id => (long)id).ToArray();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var reference = this.ReferenceFor(referencePath, eng);
+
+        var whole = new List<float>();
+        long firstAudioMs = -1;
+        void Emit(float[] pcm)
+        {
+            if (pcm.Length == 0)
+            {
+                return;
+            }
+
+            whole.AddRange(pcm);
+            if (firstAudioMs < 0)
+            {
+                firstAudioMs = clock.ElapsedMilliseconds;
+            }
+
+            onSamples(pcm);
+        }
+
+        StreamingStats stats;
+        try
+        {
+            stats = this.RunStreaming(eng, reference, textIds, Emit, ct);
+        }
+        catch (Exception ex) when (whole.Count == 0 && this.IsGpuFailure(eng, ex, ct))
+        {
+            // Nothing was heard yet, so the line can start over on the CPU like a whole-line render.
+            eng = this.FallBackToCpu(eng, ex);
+            reference = this.ReferenceFor(referencePath, eng);
+            stats = this.RunStreaming(eng, reference, textIds, Emit, ct);
+        }
+
+        this.LastStreamingStats = stats with { FirstAudioMs = firstAudioMs, TotalMs = clock.ElapsedMilliseconds };
+        this.log?.Info(
+            $"Turbo streaming: first audio {firstAudioMs} ms, {stats.Chunks} chunks, language model {stats.LanguageModelMs} ms " +
+            $"for {stats.SpeechTokens} tokens, decoder {stats.DecoderMs} ms ({eng.Files.Label} on {eng.LmEp}).");
+        return new SynthesisResult([.. whole], SampleRate);
+    }
+
+    /// <summary>
+    /// The language model fills a <see cref="SpeechTokenFeed"/> on a worker while this thread decodes
+    /// windows of it as the <see cref="ChunkSchedule"/> releases them and hands the stitched audio to
+    /// <paramref name="emit"/>. The worker is always finished (or cancelled) before this returns, so the
+    /// sessions are idle when the synthesis gate opens again.
+    /// </summary>
+    private StreamingStats RunStreaming(Engine eng, ReferenceEmbeddings reference, long[] textIds, Action<float[]> emit, CancellationToken ct)
+    {
+        var options = this.Streaming;
+        var feed = new SpeechTokenFeed();
+        var schedule = new ChunkSchedule(options.Chunks);
+        var stitcher = new ChunkStitcher(SamplesPerToken, options.HalfFadeSamples);
+        var prompt = reference.Trimmed(options.PromptTokens);
+        long lmMs = 0;
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var producer = Task.Run(
+            () =>
+            {
+                try
+                {
+                    var timer = System.Diagnostics.Stopwatch.StartNew();
+                    eng.Loop.Run(
+                        new TurboDecodeInput(reference.CondEmb, reference.CondShape[1], textIds),
+                        stop.Token,
+                        feed.Add);
+                    lmMs = timer.ElapsedMilliseconds;
+                    eng.LmGuard?.Succeeded();
+                    this.lastTokens = feed.SpeechTokens();
+                    feed.Finish(Enumerable.Repeat((long)TurboSilenceToken, SilenceSuffixCount));
+                }
+                catch (Exception ex)
+                {
+                    feed.Fail(ex);
+                }
+            },
+            CancellationToken.None);
+
+        long decoderMs = 0;
+        var chunks = 0;
+        try
+        {
+            while (feed.WaitForPlan(schedule, ct) is { } plan)
+            {
+                var timer = System.Diagnostics.Stopwatch.StartNew();
+                var window = feed.Slice(plan.WindowStart, plan.WindowEnd);
+                var audio = this.DecodeWindow(eng, prompt, window);
+                decoderMs += timer.ElapsedMilliseconds;
+                chunks++;
+                emit(stitcher.Add(plan, audio));
+            }
+        }
+        finally
+        {
+            stop.Cancel();
+            producer.Wait();
+        }
+
+        return new StreamingStats(0, 0, chunks, feed.SpeechTokens().Length, lmMs, decoderMs, stitcher.LengthMismatches);
+    }
+
+    private float[] DecodeWindow(Engine eng, ReferenceEmbeddings prompt, long[] window)
+    {
+        var speechTokens = new DenseTensor<long>([1, prompt.PromptToken.Length + window.Length]);
+        for (var i = 0; i < prompt.PromptToken.Length; i++)
+        {
+            speechTokens[0, i] = prompt.PromptToken[i];
+        }
+
+        for (var i = 0; i < window.Length; i++)
+        {
+            speechTokens[0, prompt.PromptToken.Length + i] = window[i];
+        }
+
+        var inputs = new List<NamedOnnxValue>
+        {
+            NamedOnnxValue.CreateFromTensor("speech_tokens", speechTokens),
+            NamedOnnxValue.CreateFromTensor("speaker_embeddings", prompt.RefXVector),
+            NamedOnnxValue.CreateFromTensor("speaker_features", prompt.PromptFeat),
+        };
+
+        using var outputs = RunSession(eng.Decoder, inputs);
+        var wav = TensorSpan(unwrap<float>(outputs[0])).ToArray();
+        for (var i = 0; i < wav.Length; i++)
+        {
+            wav[i] = Math.Clamp(wav[i], -1f, 1f);
+        }
+
+        return wav;
+    }
+
     private ReferenceEmbeddings ReferenceFor(string referencePath, Engine eng) =>
         this.referenceCache.GetOrAdd($"{eng.Files.Label}|{referencePath}", _ => this.EncodeReference(referencePath, eng));
 
@@ -655,9 +864,13 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         foreach (var precision in TurboModelSet.Candidates(request))
         {
             var files = TurboFiles.For(precision);
-            if (precision != TurboPrecision.Fp32 && !files.IsInstalled(this.modelsDir))
+            if (!files.IsInstalled(this.modelsDir))
             {
-                note = $"The {files.Label} voice files are not downloaded, so full precision is used.";
+                if (precision != TurboPrecision.Fp32)
+                {
+                    note = $"The {files.Label} voice files are not downloaded, so another set is used.";
+                }
+
                 continue;
             }
 
@@ -687,7 +900,13 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             first ??= candidate;
         }
 
-        // Unreachable while the fp32 set terminates every candidate list; keep the compiler and a bad catalog honest.
+        // No set the plan wanted is installed. A smaller set that only got a CPU plan still speaks (a GPU install
+        // whose graphics card is switched off); with nothing installed readiness reports the missing files.
+        if (first is not null)
+        {
+            return first;
+        }
+
         var fallback = TurboFiles.For(TurboPrecision.Fp32);
         return new Resolution(fallback, DevicePlan.OnCpu("Running on the CPU."), note);
     }
@@ -765,7 +984,8 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     private TurboFiles CpuFilesFor(TurboFiles chosen)
     {
         var request = this.devices is { } services ? TurboModelSet.Parse(services.Precision?.Invoke()) : TurboPrecisionRequest.Auto;
-        return request == TurboPrecisionRequest.Auto ? TurboFiles.For(TurboPrecision.Fp32) : chosen;
+        var full = TurboFiles.For(TurboPrecision.Fp32);
+        return request == TurboPrecisionRequest.Auto && full.IsInstalled(this.modelsDir) ? full : chosen;
     }
 
     private Engine BuildSessions(TurboDeviceServices services, DevicePlan plan, TurboFiles files)
@@ -906,7 +1126,19 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         int[] CondShape,
         long[] PromptToken,
         DenseTensor<float> RefXVector,
-        DenseTensor<float> PromptFeat);
+        DenseTensor<float> PromptFeat)
+    {
+        /// <summary>
+        /// The last <paramref name="tokens"/> prompt tokens with their mel frames (two per token), the part of
+        /// the reference closest to where the new speech continues. The decoder pays for every prompt token on
+        /// every call, so chunked decoding keeps only a short prompt; the speaker embedding is unchanged.
+        /// </summary>
+        public ReferenceEmbeddings Trimmed(int tokens)
+        {
+            var (kept, feat) = PromptTrim.Tail(this.PromptToken, this.PromptFeat, tokens);
+            return ReferenceEquals(kept, this.PromptToken) ? this : this with { PromptToken = kept, PromptFeat = feat };
+        }
+    }
 
     private sealed class Engine(
         InferenceSession encoder,

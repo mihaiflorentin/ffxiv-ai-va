@@ -21,8 +21,9 @@ public sealed record EngineDownload(string EngineId, string DisplayName, long To
 /// <summary>What the recommendation is computed from.</summary>
 /// <param name="CurrentTier">The tier the saved settings already describe; null for a custom setup.</param>
 /// <param name="PrecisionGroups">
-/// Status of the optional precision groups (the Turbo q4f16 build); null when the caller does not track them,
-/// which counts them as already present and free.
+/// Status of the Turbo download groups (base files, full-size set, q4f16 set); a group listed here replaces what
+/// <paramref name="Engines"/> says about it. Null when the caller does not track them: the q4f16 and base groups
+/// then count as already present and free.
 /// </param>
 public sealed record SetupInputs(
     bool HasUsableGpu,
@@ -49,7 +50,20 @@ public sealed record SetupInputs(
             }
         }
 
-        groups.AddRange(this.PrecisionGroups ?? [new GroupStatus(SetupAdvisor.TurboQ4F16Group, 0, 0)]);
+        foreach (var status in this.PrecisionGroups ?? [])
+        {
+            groups.RemoveAll(g => g.Group == status.Group);
+            groups.Add(status);
+        }
+
+        foreach (var untracked in new[] { SetupAdvisor.TurboQ4F16Group, SetupAdvisor.TurboBaseGroup })
+        {
+            if (groups.All(g => g.Group != untracked))
+            {
+                groups.Add(new GroupStatus(untracked, 0, 0));
+            }
+        }
+
         return new SetupAdvisorInput(this.HasUsableGpu, this.FreeDiskBytes, groups, this.CurrentTier);
     }
 }
@@ -165,9 +179,13 @@ public sealed class SetupFlowModel
         foreach (var id in QualityTierModel.EnginesFor(tier))
         {
             var engine = inputs.Engines.FirstOrDefault(e => string.Equals(e.EngineId, id, StringComparison.OrdinalIgnoreCase));
-            if (engine is { Installed: false })
+            // The advisor knows which Turbo set this machine should have (q4f16 with a graphics card), so an
+            // engine whose files are all there still needs a download when that set is not.
+            var advisorNeeds = id == SetupAdvisor.TurboEngine
+                && advice.ToDownload.Any(g => TurboInstall.AllGroups.Contains(g.Group));
+            if (engine is { } found && (!found.Installed || advisorNeeds))
             {
-                toDownload.Add(engine);
+                toDownload.Add(found);
             }
         }
 

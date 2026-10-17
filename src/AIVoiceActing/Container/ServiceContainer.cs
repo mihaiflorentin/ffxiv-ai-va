@@ -579,13 +579,24 @@ public sealed class ServiceContainer : IDisposable
         }
     }
 
-    /// <summary>True when every required file of the expressive engine is on disk.</summary>
+    /// <summary>
+    /// True when the expressive engine can speak from what is on disk: every required file, and for Turbo its
+    /// base files plus any one complete precision set (a graphics card needs only the small q4f16 build).
+    /// </summary>
     public bool ExpressiveEngineInstalled =>
         this.modelsDirFactory is not null
         && this.EngineCatalog.Find(this.ExpressiveEngineId) is { } engine
-        && Infrastructure.Onnx.ModelCatalog.Assets
-            .Where(a => engine.AssetGroups.Contains(a.Group) && !a.Asset.Optional)
-            .All(a => File.Exists(Path.Combine(this.ModelsDir, a.Asset.FileName)));
+        && (engine.AssetGroups.Contains(TurboInstall.BaseGroup)
+            ? TurboInstall.IsInstalled(this.GroupOnDisk)
+            : Infrastructure.Onnx.ModelCatalog.Assets
+                .Where(a => engine.AssetGroups.Contains(a.Group) && !a.Asset.Optional)
+                .All(a => File.Exists(Path.Combine(this.ModelsDir, a.Asset.FileName))));
+
+    private bool GroupOnDisk(string group)
+    {
+        var files = Infrastructure.Onnx.ModelCatalog.Assets.Where(a => a.Group == group).ToList();
+        return files.Count > 0 && files.All(a => File.Exists(Path.Combine(this.ModelsDir, a.Asset.FileName)));
+    }
 
     /// <summary>
     /// Expressive routing applies: switched on, installed, and the main engine is a different one
