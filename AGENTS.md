@@ -89,9 +89,9 @@ csproj carries the runtime packages (OnnxRuntime, DirectML, NAudio, Tokenizers.D
 Standart.Hash.xxHash, KokoroSharp, the WebGPU EP pinned to 0.2.1). NuGet packages are added in the csproj that owns
 their runtime use, never transitively "while convenient".
 
-# Dev install (no GitHub releases): unzip latest.zip into
-# ~/.xlcore/installedPlugins/AIVoiceActing/<version>/ (boot scan) and
-# ~/.xlcore/devPlugins/AIVoiceActing/ ("Scan Dev Plugins" in the installer).
+# Dev install (no GitHub releases): unzip latest.zip into ~/.xlcore/devPlugins/AIVoiceActing/ ONLY
+# ("Scan Dev Plugins" in the installer). Never also unpack it into installedPlugins: Dalamud then loads two
+# copies (duplicate commands, two GPU runtimes in one process).
 
 ## Architecture in brief
 

@@ -25,18 +25,35 @@ public sealed class WineSupportTests : IDisposable
         {
             asked = (module, export);
             return true;
-        });
+        }, NoEnvironment);
 
         Assert.True(wine);
         Assert.Equal(("ntdll.dll", "wine_get_version"), asked);
-        Assert.False(RuntimeHost.DetectWine((_, _) => false));
+        Assert.False(RuntimeHost.DetectWine((_, _) => false, NoEnvironment));
     }
 
     [Fact]
     public void DetectWine_NeverThrows()
     {
-        Assert.False(RuntimeHost.DetectWine((_, _) => throw new DllNotFoundException()));
+        Assert.False(RuntimeHost.DetectWine((_, _) => throw new DllNotFoundException(), NoEnvironment));
     }
+
+    [Theory]
+    [InlineData("XL_WINEONLINUX", "true")]
+    [InlineData("WINEPREFIX", "/home/player/.xlcore/wineprefix")]
+    [InlineData("WINELOADERNOEXEC", "1")]
+    public void DetectWine_TrustsTheLauncherEnvironmentWhenTheExportIsHidden(string name, string value)
+    {
+        Assert.True(RuntimeHost.DetectWine((_, _) => false, n => n == name ? value : null));
+    }
+
+    [Fact]
+    public void DetectWine_IgnoresAFalseLauncherFlag()
+    {
+        Assert.False(RuntimeHost.DetectWine((_, _) => false, n => n == "XL_WINEONLINUX" ? "false" : null));
+    }
+
+    private static string? NoEnvironment(string name) => null;
 
     [Fact]
     public void PlatformOf_WineWinsOverWindows()
