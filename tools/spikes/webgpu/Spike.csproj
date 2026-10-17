@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Scratch harness for the GPU spikes (docs/plans/2026-10-gpu-spike-results.md). Not part of the solution.
+       dotnet build tools/spikes/webgpu/Spike.csproj -c Release -p:EpVer=0.2.1 -p:OrtVer=1.24.4
+       Win-x64 run under Wine: add -p:RuntimeIdentifier=win-x64 -p:SelfContained=true -p:UseAppHost=true and publish. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UseAppHost>false</UseAppHost>
+    <IsPackable>false</IsPackable>
+    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
+    <OrtVer Condition="'$(OrtVer)'==''">1.24.4</OrtVer>
+    <EpVer Condition="'$(EpVer)'==''">0.4.0</EpVer>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="$(OrtVer)" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.EP.WebGpu" Version="$(EpVer)" />
+  </ItemGroup>
+</Project>
