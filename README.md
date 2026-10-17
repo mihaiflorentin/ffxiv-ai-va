@@ -102,7 +102,7 @@ The game ships real voice acting for main-story cutscenes and some quest dialogu
 | `/enabletts` / `/disabletts` | Enable/disable explicitly |
 | `/aivapreset <name>` | Apply a named channel preset |
 | `/aivavolume <0-200>` | Set master volume; `+N` / `-N` adjust relatively |
-| `/aivastyles` | Open the style-tags window |
+| `/aivastyles` | Open the style tag settings (What's read, More options) |
 
 ## Configuration
 
@@ -114,6 +114,6 @@ The game ships real voice acting for main-story cutscenes and some quest dialogu
 5. **Chat** — master enable, keybinds, capture sources, channel presets, and triggers/exclusions.
 6. **Test** — free-text synthesis with speaker picker, emotion dropdown, forced-emotion audition, and rules-vs-context director buttons; failures surface in an in-window status line.
 
-Every capture source, filter, and courtesy behavior can be toggled individually; defaults follow TextToTalk where options are shared. `/aivastyles` opens the style-tag editor (custom styles, tag delimiter, style regex).
+Every capture source, filter, and courtesy behavior can be toggled individually; defaults follow TextToTalk where options are shared. `/aivastyles` opens the style tag settings under What's read, More options (on/off, marker character, a line tester).
 
 Voice assignments persist in `ConfigDirectory/voice-assignments.json`; delete a row there (or via the UI) to re-roll a character.

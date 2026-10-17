@@ -19,17 +19,30 @@ Tabs: Home, Voices, What's read, Settings. Settings sections are collapsing head
 | race/gender rows, beast tribes, model-id bindings | Casting defaults: row sections, "Beast tribes" |
 | per-character overrides (`IProfileStore`) | NPC voices, Player voices: table, add form, Clear all, Export, Import |
 
-## What's read
+## What's read (ticket #17)
+Four cards, then a collapsed "More options". The styles command (`/aivastyles`) opens this tab with More options open, scrolled to Style tags (`NavModel.OpenStyleTags`, anchor `ReadingAnchors.Styles`). The separate Styles window is gone.
+
 | Property | Control |
 |---|---|
-| `ReadFromQuestTalkAddon`, `CancelSpeechOnTextAdvance`, `SkipVoicedQuestText` | General > Quest dialogue |
-| `ReadFromBattleTalkAddon`, `SkipVoicedBattleText` | General > Battle dialogue |
-| `ReadCutsceneSubtitles` | General > Cutscenes |
-| `SkipMessagesFromYou`, `OnlyMessagesFromYou` | General > Chat |
-| `EnableNameWithSay`, `NameNpcWithSay`, `SayPlayerWorldName`, `DisallowMultipleSay`, `SayPartialName`, `OnlySayFirstOrLastName` | General > Name lines with "say" |
-| `UsePlayerRateLimiter`, `MessagesPerSecond` | General > Rate limiting |
-| `EnabledChatTypesPresets`, `CurrentPresetId`, preset `Name`, `EnableAllChatTypes`, `UseKeybind`, `ModifierKey`, `MajorKey`, `EnabledChatTypes` | Channel Settings |
-| `Triggers`, `Exclusions` | Triggers/Exclusions |
+| `ReadFromQuestTalkAddon` | Story & dialogue > "Read story dialogue" |
+| `CancelSpeechOnTextAdvance` | Story & dialogue > "Stop the voice when I advance the text" |
+| `SkipVoicedQuestText` | Story & dialogue > "Leave out lines the game already voices" |
+| `ReadCutsceneSubtitles` | Story & dialogue > "Read cutscene subtitles" |
+| `EnableNameWithSay` | Story & dialogue > "Say the speaker's name before each line" |
+| `ReadFromBattleTalkAddon` | Battle > "Read battle talk" |
+| `SkipVoicedBattleText` | Battle > "Leave out lines the game already voices" |
+| `SkipMessagesFromYou`, `OnlyMessagesFromYou` | Chat > "Skip my own messages", "Only read my own messages" |
+| `EnabledChatTypesPresets`, `CurrentPresetId` | Chat > Preset picker, "New preset", "Delete preset" |
+| preset `EnableAllChatTypes` | Chat > "Read every channel" |
+| preset `EnabledChatTypes` | Chat > Channels: search, per-category "Select all" / "Clear all", "N of M on" |
+| `Exclusions` | "Skip lines matching..." card (empty state "Everything is read."); pattern checkbox needs `ShowAdvanced` |
+| `NameNpcWithSay`, `SayPlayerWorldName`, `DisallowMultipleSay`, `SayPartialName`, `OnlySayFirstOrLastName` | More options > Speaker names (greyed out while the name option is off) |
+| `UsePlayerRateLimiter`, `MessagesPerSecond` | More options > Pace |
+| preset `Name`, `UseKeybind`, `ModifierKey`, `MajorKey` | More options > Chat preset |
+| `Triggers` | More options > "Only read lines matching..." (pattern checkbox needs `ShowAdvanced`) |
+| `AdHocStyleTagsEnabled`, `StyleTag` | More options > Style tags: "Allow style tags in text", "Marker", line tester ("Copy with markers") |
+| `StyleRegex` (derived, read-only) | More options > Style tags, shown as "Match pattern" when `ShowAdvanced` is on |
+| `ShowAdvanced` | More options > Technical details > "Show advanced details" |
 
 ## Settings
 | Property | Control |
@@ -50,7 +63,7 @@ Tabs: Home, Voices, What's read, Settings. Settings sections are collapsing head
 | `RemoveStutter` | Experimental |
 
 ## Not exposed in the old window either (unchanged)
-`DefaultExaggeration`, `Lexicons`, `AdHocStyleTagsEnabled`, `StyleTag` (the Styles window / config file),
+`DefaultExaggeration`, `Lexicons`,
 `SelectedAudioDeviceIndex`, `Voices.*`, `Device.Mode/AdapterId/Backend/Api/GpuImpact/FallbackToCpu`,
 `Engine.PerEngine`, migration and onboarding fields. Later tickets (#15-#18) surface the ones that matter.
 
