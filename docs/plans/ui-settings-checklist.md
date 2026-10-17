@@ -1,7 +1,7 @@
-# Settings reachability checklist (four-tab shell, ticket #7)
+# Settings reachability checklist (four-tab shell, ticket #7; Settings tab redone in #18)
 
 Every `Configuration` property the old six-tab window exposed, and where it lives now.
-Tabs: Home, Voices, What's read, Settings. Settings sections are collapsing headers.
+Tabs: Home, Voices, What's read, Settings. Settings is Voice quality, Processor, Downloads and Keybinds cards, then a collapsed Advanced section.
 
 ## Home
 | Property | Control |
@@ -22,7 +22,7 @@ Library on top, "Who sounds like who" below. The old segmented control (Casting 
 | `Voices.ExtraPackDirs` | Still config-file only |
 | `UseRaceVoicePresets` | Who sounds like who: "Choose voices automatically by race and gender" |
 | `AgeAwareCasting` | Who sounds like who: "Make children and elders sound their age" |
-| casting presets (`ICastingPresetStore`) | Settings > Casting presets (`CastingPresetPanel`; ticket #18 folds it into Advanced): Use this casting, Duplicate, New, Delete (asks first), Export, Import. Voices links to it ("Manage casting presets in Settings") |
+| casting presets (`ICastingPresetStore`) | Settings > Advanced > Casting presets (`CastingPresetsCard`, rules in `CastingDraftGuard`): Use this casting, Duplicate, New, Delete (asks first), Export, Import (asks before replacing a casting with the same name). Voices links to it ("Manage casting presets in Settings > Advanced", anchor `casting-presets`) |
 | unsaved casting edits | Voices: Save / Discard bar. Saving on the built-in casting keeps the edits as a new casting ("My casting") and switches to it |
 | race/gender rows (17 + Anyone else) | Race and gender: fingerprints and names per row, "Edit" opens the editor (add, change, remove, preview) |
 | per-slot pitch, speed, volume, expressiveness (`VoiceSlotDto`) | Editor: "Tune" popover; chips appear only when a knob is not at its default |
@@ -56,30 +56,43 @@ Four cards, then a collapsed "More options". The styles command (`/aivastyles`) 
 | `StyleRegex` (derived, read-only) | More options > Style tags, shown as "Match pattern" when `ShowAdvanced` is on |
 | `ShowAdvanced` | More options > Technical details > "Show advanced details" |
 
-## Settings
-| Property | Control |
-|---|---|
-| `Engine.Primary` | Engine > engine card "Set active" (retired engines are not offered) |
-| `Engine.Expressive.Enabled` | Engine > "Expressive voices" card |
-| `DirectorEnabled` | Engine > "Emotion detection" card |
-| `Device` provider (`ToExecutionProvider` / `ApplyExecutionProvider`) | Engine > active card, "Execution provider" (GPU-capable engines) |
-| `Device.CpuImpact` | Engine > active card, "CPU impact" |
-| `StaleLineSeconds` | Engine > active card, "Drop lines older than" |
-| `KeepTempoWhenPitched` | Engine > active card, "Keep speaking pace on pitched voices" |
-| `LevelVoiceLoudness` | Engine > active card, "Even out voice loudness" |
-| `StreamSentences` | Engine > active card, "Start long lines sooner" |
-| `ShowNowSpeaking` | Engine > active card, "Show the now-speaking panel" |
-| model assets (download, remove, open folders, load engine) | Engine > buttons and asset tables |
-| test bench (`TestBenchModel`) | Test |
-| `UseKeybind`, `ModifierKey`, `MajorKey` | Keybinds |
-| `RemoveStutter` | Experimental |
+## Settings (ticket #18)
+Order: Voice quality, Processor, Downloads, Keybinds, Advanced (collapsed). Nav anchors (`SettingsAnchors`): `quality`, `processor`, `downloads`, `keybinds` scroll to their card; `advanced`, `engine`, `test`, `casting-presets`, `diagnostics`, `experimental` open Advanced and the part they name.
 
-## Not exposed in the old window either (unchanged)
-`DefaultExaggeration`, `Lexicons`,
-`SelectedAudioDeviceIndex`, `Voices.ExtraPackDirs`, `Device.Mode/AdapterId/Backend/Api/GpuImpact/FallbackToCpu`,
-`Engine.PerEngine`, migration and onboarding fields. Later tickets (#15-#18) surface the ones that matter.
+| Property / data | Control |
+|---|---|
+| `Engine.Primary`, `Engine.Expressive.Enabled`, `Engine.Expressive.EngineId` (as a tier) | Voice quality: Fast / Balanced / Most expressive (`QualityTierModel`). "Most expressive" is greyed out with the reason shown when there is no usable graphics card. A tier whose files are missing waits (`QualityChoiceModel`): "Download N GB and switch", the voices switch when the download ends. A setup that matches no tier reads "Custom setup" |
+| engine state (`ISpeechSynthesizer.Status`) | Voice quality: state pill (icon + word) and one detail line (`EngineViewModel`) |
+| `DirectorEnabled` | Voice quality > "Emotion detection" (greyed out until the emotion reader is downloaded) |
+| `LevelVoiceLoudness` | Voice quality > "Even out loudness" |
+| `StaleLineSeconds` | Voice quality > "Skip lines that arrive late" (on = default 20 s, off = 0); the seconds are under Advanced > Delivery details |
+| `ShowNowSpeaking` | Voice quality > "Show the now-speaking panel" |
+| `Device.Mode` | Processor > Automatic / Graphics card / CPU (`DeviceViewModel`); the graphics card choice is greyed out with the probe's reason when no adapter is usable |
+| `Device.GpuPreference` | Processor > "Graphics card to prefer": Performance / Low power (only with more than one adapter) |
+| `Device.CpuImpact` | Processor > "Background load": Light / Balanced / Fast (2 / 4 / 8 threads) |
+| `IDeviceProbe.LastReport.Adapters` | Processor > "Graphics cards reported by the system" (display only; Wine/Proton note), "Check again" |
+| `Device.GpuDisabledByCrashGuard`, `EngineStatus` FellBack / Failed | Processor banner: "Graphics card was turned off after a crash" / "Voices are running on your processor" / "The voices could not start", with the port's reason verbatim and Retry on GPU (`RetryAsync(Gpu)`), Use CPU (`Device.Mode = cpu`), Copy details |
+| model assets (download, resume, cancel, remove) | Downloads: one row per group (`DownloadsModel`) with size, state, Download/Resume, Remove (optional groups, or groups of an engine not in use), progress with Cancel, failure banner with Retry, free disk, Open models folder, Open voices folder |
+| `UseKeybind`, `ModifierKey`, `MajorKey` | Keybinds |
+| `Engine.PerEngine[id].Precision` | Advanced > Engines > Precision (engines with more than one precision, sizes shown; config only until the engine reads it) |
+| `Engine.PerEngine["remote"].Extra` (`url`, `allowNonLoopback`, `timeoutSeconds`, `model`) | Advanced > Engines > Remote server (`RemoteEndpointModel`: address check, warning for servers on another computer) |
+| `Engine.Primary` (raw), `Engine.Expressive.Enabled` (raw) | Advanced > Engines: "Use as main engine", "Send emotional lines to the expressive engine" |
+| `KeepTempoWhenPitched`, `StreamSentences`, `RemoveStutter` | Advanced > Delivery details |
+| `Device.Backend`, `Device.Api` | Advanced > Delivery details > Graphics runtime |
+| casting presets | Advanced > Casting presets |
+| test bench (`TestBenchModel`) | Advanced > Test a line |
+| diagnostics report | Advanced > Diagnostics > Copy report (`DiagnosticsReport`; no paths, names or line text); also Processor banner > Copy details |
+| `ShowAdvanced` | Advanced > This window and setup > "Show advanced details" |
+| `ReduceMotion` | Advanced > This window and setup > "Reduce motion" |
+| `OnboardingCompletedVersion`, `OnboardingStep` | Advanced > This window and setup > "Run setup again" (resets both, goes to Home, restarts the setup card) |
+| reset | Advanced > This window and setup > "Reset settings to defaults" (asks first; `SettingsReset`) |
+
+## Not exposed (unchanged)
+`DefaultExaggeration`, `Lexicons`, `SelectedAudioDeviceIndex`, `Voices.ExtraPackDirs`, `Device.GpuImpact`, `Device.FallbackToCpu` (no engine reads these two yet),
+`Engine.PerEngine[id].Device` (the device policy does not read it), `LastPage`, `MigrationNoticeAckedVersion` and the migration report (Home banner).
 
 ## Behaviour notes
-- Engine cards now come from `IEngineCatalog` (non-retired engines that own a download group), so Chatterbox Turbo is offered as a selectable engine; before, only Kokoro was visible.
-- The Fork, New and Import (preset and assignments) dialogs run through `ModalHost`.
+- Engine cards (Advanced > Engines) come from `IEngineCatalog` (non-retired engines, including Remote server); Downloads rows come from the engine catalog's download groups plus the emotion reader.
+- Wording: "Execution provider" is "Processor", "CPU impact" is "Background load", "Fork" is "Duplicate" (`Labels`). Engine names, precisions, runtime and API names appear only under Advanced.
+- The Duplicate, New and Import (preset and assignments) dialogs run through `ModalHost`.
 - Status messages go to the footer through `StatusCenter`; errors stay until dismissed.

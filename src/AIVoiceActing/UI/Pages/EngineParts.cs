@@ -1,14 +1,10 @@
 namespace AIVoiceActing.UI.Pages;
 
 using AIVoiceActing.Ports;
-using AIVoiceActing.UI.Components;
-using AIVoiceActing.UI.State;
-using Dalamud.Bindings.ImGui;
 
 /// <summary>
-/// Engine drawing shared by Home (setup flow) and Settings (engine cards): the status strip, the
-/// download progress row, and the asset-group helpers. Group keys come from the engine catalog
-/// port, not from string literals per engine.
+/// Asset-group helpers shared by Home (setup flow) and Settings (quality, downloads). Group keys
+/// come from the engine catalog port, not from string literals per engine.
 /// </summary>
 internal static class EngineParts
 {
@@ -31,39 +27,4 @@ internal static class EngineParts
     /// <summary>Required assets of the selected engine that are not downloaded yet.</summary>
     public static List<ModelAsset> MissingRequired(UiContext ctx) =>
         [.. RequiredAssets(ctx, ctx.ActiveEngine).Where(a => !ctx.Probes.IsDownloaded(a))];
-
-    public static void StartDownloads(UiContext ctx, IReadOnlyList<ModelAsset> assets) => ctx.Downloads.Start(assets);
-
-    /// <summary>Status strip: cached fields only, never per-frame probes.</summary>
-    public static void DrawStatusStrip(UiContext ctx)
-    {
-        var ready = ctx.Synth.IsReady;
-        ImGui.TextUnformatted(
-            $"Engine: {ctx.Config.Engine.Primary} — " +
-            (ctx.EngineSession.Warming ? "loading…"
-                : ready ? "ready"
-                : $"NOT ready — {ctx.EngineReason()}"));
-        ImGui.TextDisabled(
-            $"Queue: {ctx.Queue.Depth}   Models folder: {ctx.Probes.ModelsFolderBytes / (1024.0 * 1024.0):0} MB   " +
-            $"Process memory: {ctx.Probes.ProcessWorkingSetBytes / (1024.0 * 1024.0):0} MB");
-    }
-
-    /// <summary>Progress bar + Cancel while a download queue runs.</summary>
-    public static void DrawDownloadProgress(UiContext ctx)
-    {
-        if (!ctx.Downloads.Active)
-        {
-            return;
-        }
-
-        ImGui.ProgressBar(
-            (float)ctx.Downloads.Fraction,
-            new System.Numerics.Vector2(Ui.Fill() - Ui.Em(8), 0f),
-            ctx.Downloads.Caption);
-        ImGui.SameLine();
-        if (Controls.Button("Cancel download", enabled: true, null))
-        {
-            ctx.Downloads.Cancel();
-        }
-    }
 }

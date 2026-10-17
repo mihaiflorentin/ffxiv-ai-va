@@ -92,17 +92,20 @@ public sealed class CastingDraft
     }
 
     /// <summary>"My casting", then "My casting 2", "My casting 3"... skipping names already taken.</summary>
-    public static string UniqueName(IEnumerable<string> existing)
+    public static string UniqueName(IEnumerable<string> existing) => UniqueName(existing, FirstCopyName);
+
+    /// <summary><paramref name="baseName"/>, then "baseName 2", "baseName 3"... skipping names already taken.</summary>
+    public static string UniqueName(IEnumerable<string> existing, string baseName)
     {
         var taken = new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase);
-        if (!taken.Contains(FirstCopyName))
+        if (!taken.Contains(baseName))
         {
-            return FirstCopyName;
+            return baseName;
         }
 
         for (var n = 2; ; n++)
         {
-            var candidate = $"{FirstCopyName} {n}";
+            var candidate = $"{baseName} {n}";
             if (!taken.Contains(candidate))
             {
                 return candidate;

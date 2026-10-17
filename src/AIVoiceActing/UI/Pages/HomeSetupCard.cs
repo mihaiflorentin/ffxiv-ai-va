@@ -46,7 +46,21 @@ internal sealed class HomeSetupCard
     }
 
     /// <summary>True while the card belongs on Home.</summary>
-    public bool Visible => this.flow.Visible(this.ctx.Synth.IsReady);
+    public bool Visible
+    {
+        get
+        {
+            // Asked for from Settings: start the flow over before deciding whether the card shows.
+            if (this.ctx.SetupRerun.Take())
+            {
+                this.before = null;
+                this.warmUp = null;
+                this.flow.Restart();
+            }
+
+            return this.flow.Visible(this.ctx.Synth.IsReady);
+        }
+    }
 
     /// <summary>Errors this card shows itself, so Home does not repeat them as banners.</summary>
     public bool Handles(string statusKey) =>

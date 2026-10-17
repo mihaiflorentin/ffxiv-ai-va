@@ -15,7 +15,7 @@ internal sealed class WhoSoundsSection
 {
     private const float WhoColumnEm = 12f;
     private const float EditColumnEm = 5f;
-    private const string PresetsAnchor = "casting-presets";
+    private const string PresetsAnchor = SettingsAnchors.Presets;
 
     private readonly UiContext ctx;
     private readonly SlotEditor editor;
@@ -55,7 +55,7 @@ internal sealed class WhoSoundsSection
         }
 
         Ui.Gap(Ui.Space2);
-        if (ImGui.Button("Manage casting presets in Settings##who-presets"))
+        if (ImGui.Button("Manage casting presets in Settings > Advanced##who-presets"))
         {
             this.ctx.Nav.OpenAt(NavTab.Settings, PresetsAnchor);
         }
