@@ -11,6 +11,7 @@ public static class Labels
     public const string ProcessorLabel = "Processor";
     public const string Expressiveness = "Expressiveness";
     public const string AnyGender = "Any gender";
+    public const string BackgroundLoadLabel = "Background load";
     public const string Duplicate = "Duplicate";
     public const string CreatureModels = "Creature models";
     public const string Pitch = "Pitch";
@@ -20,6 +21,7 @@ public static class Labels
     private static readonly Dictionary<string, string> Map = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Execution provider"] = ProcessorLabel,
+        ["CPU impact"] = BackgroundLoadLabel,
         ["Exaggeration"] = Expressiveness,
         ["Bias"] = Expressiveness,
         ["Pool (unknown gender)"] = AnyGender,

@@ -108,6 +108,9 @@ public sealed record UiContext
 
     public required WorldDirectory Worlds { get; init; }
 
+    /// <summary>Settings > "Run setup again" asks Home's setup card to start over; the card answers on its next frame.</summary>
+    public SetupRerunSignal SetupRerun { get; } = new();
+
     // ---- derived views ----
 
     private ConfirmDialog? confirm;

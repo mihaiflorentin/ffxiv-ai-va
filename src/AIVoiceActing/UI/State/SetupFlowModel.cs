@@ -252,6 +252,22 @@ public sealed class SetupFlowModel
         this.Go(SetupStep.Recommend);
     }
 
+    /// <summary>
+    /// "Run setup again" from Settings: show the choice as on a first run, even though the engine
+    /// already works. Whatever was running is dropped; files already downloaded stay on disk.
+    /// </summary>
+    public void Restart()
+    {
+        this.completed = false;
+        this.AwaitingResume = false;
+        this.Failure = null;
+        this.Notice = null;
+        this.Customizing = false;
+        this.Chosen = null;
+        this.ResetWork();
+        this.Go(SetupStep.Recommend);
+    }
+
     /// <summary>Stop during download or warm-up and return to the choice; downloaded files stay on disk.</summary>
     public void Cancel()
     {
