@@ -53,7 +53,8 @@ internal sealed class SettingsInputs(UiContext ctx)
             ctx.DeviceInfo().HasUsableGpu,
             free,
             engines,
-            QualityTierModel.FromConfig(ctx.Config.Engine, ctx.EngineCatalog));
+            QualityTierModel.FromConfig(ctx.Config.Engine, ctx.EngineCatalog),
+            EngineParts.TurboGroupStatuses(ctx));
         this.Rows = DownloadsModel.Rows(
             ctx.EngineCatalog.List(),
             ctx.ModelAssets(),

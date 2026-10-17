@@ -68,9 +68,10 @@ public static class DownloadsModel
     public static string GroupName(string group, string engineName) => group switch
     {
         "kokoro" => "Fast voices (Kokoro)",
+        "turbo-base" => "Expressive voices, basics",
         "turbo" => "Expressive voices (Chatterbox Turbo)",
         "turbo-fp16" => "Expressive voices, lighter version",
-        "turbo-q4f16" => "Expressive voices, lightest version",
+        "turbo-q4f16" => "Expressive voices, graphics card version",
         EmotionGroup => "Emotion reader",
         _ => $"{engineName} ({group})",
     };
@@ -78,9 +79,10 @@ public static class DownloadsModel
     public static string GroupBlurb(string group) => group switch
     {
         "kokoro" => "The everyday narrator. Used by Fast and Balanced.",
-        "turbo" => "The expressive voices. Used by Balanced and Most expressive.",
+        "turbo-base" => "The small word list and starter voice every expressive voice needs.",
+        "turbo" => "The full-size expressive voices, for computers without a supported graphics card. Used by Balanced and Most expressive.",
         "turbo-fp16" => "A lighter version of the expressive voices for graphics cards with less memory. Optional.",
-        "turbo-q4f16" => "The lightest version, for small graphics cards. A little less lifelike. Optional.",
+        "turbo-q4f16" => "The small version for graphics cards, about a sixth of the full size. Starts speaking sooner, and is what Balanced and Most expressive use with a graphics card.",
         EmotionGroup => "Reads what each line means so delivery fits the scene. Optional.",
         _ => string.Empty,
     };

@@ -18,6 +18,8 @@ public sealed class SetupAdvisorTests
     private static readonly GroupStatus TurboDone = new("turbo", 3300 * Mb, 0);
     private static readonly GroupStatus Q4Missing = new("turbo-q4f16", 536 * Mb, 536 * Mb);
     private static readonly GroupStatus Q4Done = new("turbo-q4f16", 536 * Mb, 0);
+    private static readonly GroupStatus BaseMissing = new("turbo-base", 4 * Mb, 4 * Mb);
+    private static readonly GroupStatus BaseDone = new("turbo-base", 4 * Mb, 0);
 
     private static SetupAdvisorInput Input(
         bool gpu,
@@ -26,8 +28,9 @@ public sealed class SetupAdvisorTests
         GroupStatus? turbo = null,
         GroupStatus? q4 = null,
         QualityTier? current = null,
-        long? vram = null) =>
-        new(gpu, free, [kokoro ?? KokoroMissing, turbo ?? TurboMissing, q4 ?? Q4Missing], current, vram);
+        long? vram = null,
+        GroupStatus? baseGroup = null) =>
+        new(gpu, free, [kokoro ?? KokoroMissing, baseGroup ?? BaseMissing, turbo ?? TurboMissing, q4 ?? Q4Missing], current, vram);
 
     [Fact]
     public void GroupNames_MatchTheModelCatalog()
@@ -35,6 +38,8 @@ public sealed class SetupAdvisorTests
         Assert.Equal(ModelCatalog.KokoroGroup, SetupAdvisor.KokoroGroup);
         Assert.Equal(ModelCatalog.TurboGroup, SetupAdvisor.TurboGroup);
         Assert.Equal(ModelCatalog.TurboQ4F16Group, SetupAdvisor.TurboQ4F16Group);
+        Assert.Equal(ModelCatalog.TurboBaseGroup, SetupAdvisor.TurboBaseGroup);
+        Assert.Equal(ModelCatalog.TurboFp16Group, TurboInstall.Fp16Group);
         Assert.Equal(DeviceModePolicy.TurboEngineId, SetupAdvisor.TurboEngine);
     }
 
@@ -43,10 +48,10 @@ public sealed class SetupAdvisorTests
     {
         { QualityTier.Fast, false, "kokoro", null, null, ["kokoro"] },
         { QualityTier.Fast, true, "kokoro", null, null, ["kokoro"] },
-        { QualityTier.Balanced, false, "kokoro", "chatterbox-turbo", "fp32", ["kokoro", "turbo"] },
-        { QualityTier.Balanced, true, "kokoro", "chatterbox-turbo", "q4f16", ["kokoro", "turbo", "turbo-q4f16"] },
-        { QualityTier.MostExpressive, true, "chatterbox-turbo", null, "q4f16", ["turbo", "turbo-q4f16"] },
-        { QualityTier.MostExpressive, false, "chatterbox-turbo", null, "fp32", ["turbo"] },
+        { QualityTier.Balanced, false, "kokoro", "chatterbox-turbo", "fp32", ["kokoro", "turbo-base", "turbo"] },
+        { QualityTier.Balanced, true, "kokoro", "chatterbox-turbo", "q4f16", ["kokoro", "turbo-base", "turbo-q4f16"] },
+        { QualityTier.MostExpressive, true, "chatterbox-turbo", null, "q4f16", ["turbo-base", "turbo-q4f16"] },
+        { QualityTier.MostExpressive, false, "chatterbox-turbo", null, "fp32", ["turbo-base", "turbo"] },
     };
 
     [Theory]
@@ -63,20 +68,39 @@ public sealed class SetupAdvisorTests
     }
 
     [Fact]
-    public void ABalancedGpuPlan_AsksForTheQ4f16BuildOnTopOfTheRequiredBaseGroup()
+    public void ABalancedGpuPlan_AsksForTheSmallQ4f16BuildAndTheBaseFiles_NeverTheFullSizeFiles()
     {
         var plan = SetupAdvisor.Plan(QualityTier.Balanced, Input(gpu: true));
 
-        Assert.Equal(["kokoro", "turbo", "turbo-q4f16"], plan.ToDownload.Select(g => g.Group));
-        Assert.Equal((326 + 3300 + 536) * Mb, plan.BytesToDownload);
+        Assert.Equal(["kokoro", "turbo-base", "turbo-q4f16"], plan.ToDownload.Select(g => g.Group));
+        Assert.Equal((326 + 4 + 536) * Mb, plan.BytesToDownload);
         Assert.Null(plan.Blocked);
+    }
+
+    [Fact]
+    public void ACpuPlan_AsksForTheBaseFilesAndTheFullSizeSet_NeverTheQ4f16Build()
+    {
+        var plan = SetupAdvisor.Plan(QualityTier.MostExpressive, Input(gpu: false));
+
+        // MostExpressive needs a graphics card, but the groups it would ask for on the CPU are still the full-size ones.
+        Assert.Equal(["turbo-base", "turbo"], plan.Groups);
+        Assert.Equal((4 + 3300) * Mb, plan.BytesToDownload);
+    }
+
+    [Fact]
+    public void AGpuInstall_IsTheSmallDownload_FarBelowTheOldFullSizeRequirement()
+    {
+        var plan = SetupAdvisor.Plan(QualityTier.MostExpressive, Input(gpu: true, free: 2 * Gb));
+
+        Assert.Null(plan.Blocked); // 540 MB plus headroom fits where 3.9 GB never would
+        Assert.True(plan.BytesToDownload < 600 * Mb);
     }
 
     [Fact]
     public void DownloadedGroups_AreNotCountedAgain()
     {
         var plan = SetupAdvisor.Plan(
-            QualityTier.Balanced, Input(gpu: true, kokoro: KokoroDone, turbo: TurboDone));
+            QualityTier.Balanced, Input(gpu: true, kokoro: KokoroDone, baseGroup: BaseDone));
 
         Assert.Equal("turbo-q4f16", Assert.Single(plan.ToDownload).Group);
         Assert.Equal(536 * Mb, plan.BytesToDownload);
@@ -88,7 +112,7 @@ public sealed class SetupAdvisorTests
         var partial = new GroupStatus("turbo-q4f16", 536 * Mb, 100 * Mb);
 
         var plan = SetupAdvisor.Plan(
-            QualityTier.MostExpressive, Input(gpu: true, turbo: TurboDone, q4: partial));
+            QualityTier.MostExpressive, Input(gpu: true, baseGroup: BaseDone, q4: partial));
 
         Assert.Equal(100 * Mb, plan.BytesToDownload);
     }
@@ -117,7 +141,7 @@ public sealed class SetupAdvisorTests
     {
         var plan = SetupAdvisor.Plan(
             QualityTier.Balanced,
-            Input(gpu: true, free: 10 * Mb, kokoro: KokoroDone, turbo: TurboDone, q4: Q4Done));
+            Input(gpu: true, free: 10 * Mb, kokoro: KokoroDone, baseGroup: BaseDone, q4: Q4Done));
 
         Assert.Empty(plan.ToDownload);
         Assert.Null(plan.Blocked);
@@ -140,6 +164,7 @@ public sealed class SetupAdvisorTests
 
         Assert.Equal("fp32", tiny.Precision);
         Assert.DoesNotContain("turbo-q4f16", tiny.Groups);
+        Assert.Contains("turbo", tiny.Groups);
         Assert.Equal("q4f16", unknown.Precision);
         Assert.Equal("q4f16", roomy.Precision);
     }
@@ -153,7 +178,7 @@ public sealed class SetupAdvisorTests
     [Fact]
     public void Recommend_AGpuWithoutRoomForTurbo_FallsBackToFast()
     {
-        var advice = SetupAdvisor.Recommend(Input(gpu: true, free: 2 * Gb));
+        var advice = SetupAdvisor.Recommend(Input(gpu: true, free: 1 * Gb));
 
         Assert.Equal(QualityTier.Fast, advice.Tier);
         Assert.Null(advice.Blocked);
@@ -163,7 +188,7 @@ public sealed class SetupAdvisorTests
     public void Recommend_KeepsADownloadedCurrentTier_EvenWithoutAGpu()
     {
         var advice = SetupAdvisor.Recommend(
-            Input(gpu: false, kokoro: KokoroDone, turbo: TurboDone, current: QualityTier.Balanced));
+            Input(gpu: false, kokoro: KokoroDone, baseGroup: BaseDone, turbo: TurboDone, current: QualityTier.Balanced));
 
         Assert.Equal(QualityTier.Balanced, advice.Tier);
     }
@@ -195,16 +220,17 @@ public sealed class SetupAdvisorTests
         var inputs = new SetupInputs(
             true,
             100 * Gb,
-            [new EngineDownload("kokoro", "Kokoro", 326 * Mb, 326 * Mb), new EngineDownload("chatterbox-turbo", "Chatterbox Turbo", 3300 * Mb, 3300 * Mb)],
-            PrecisionGroups: [Q4Missing]);
+            [new EngineDownload("kokoro", "Kokoro", 326 * Mb, 326 * Mb), new EngineDownload("chatterbox-turbo", "Chatterbox Turbo", 540 * Mb, 540 * Mb)],
+            PrecisionGroups: [BaseMissing, Q4Missing]);
 
         var plan = SetupFlowModel.Recommend(inputs);
 
         Assert.Equal(QualityTier.Balanced, plan.Tier);
-        Assert.Equal((326 + 3300 + 536) * Mb, plan.BytesToDownload);
+        Assert.Equal((326 + 4 + 536) * Mb, plan.BytesToDownload);
         Assert.Equal("q4f16", plan.Recommendation!.Precision);
-        Assert.Contains("turbo", plan.Recommendation.Groups);
+        Assert.Contains("turbo-base", plan.Recommendation.Groups);
         Assert.Contains("turbo-q4f16", plan.Recommendation.Groups);
+        Assert.DoesNotContain("turbo", plan.Recommendation.Groups);
     }
 
     [Fact]
@@ -213,13 +239,13 @@ public sealed class SetupAdvisorTests
         var inputs = new SetupInputs(
             true,
             100 * Gb,
-            [new EngineDownload("kokoro", "Kokoro", 326 * Mb, 0), new EngineDownload("chatterbox-turbo", "Chatterbox Turbo", 3300 * Mb, 3300 * Mb)],
-            PrecisionGroups: [Q4Missing]);
+            [new EngineDownload("kokoro", "Kokoro", 326 * Mb, 0), new EngineDownload("chatterbox-turbo", "Chatterbox Turbo", 540 * Mb, 540 * Mb)],
+            PrecisionGroups: [BaseMissing, Q4Missing]);
 
         var plan = SetupFlowModel.PlanFor(QualityTier.MostExpressive, inputs);
 
-        Assert.Equal(["turbo", "turbo-q4f16"], plan.Recommendation!.Groups);
-        Assert.Equal((3300 + 536) * Mb, plan.BytesToDownload);
+        Assert.Equal(["turbo-base", "turbo-q4f16"], plan.Recommendation!.Groups);
+        Assert.Equal((4 + 536) * Mb, plan.BytesToDownload);
         Assert.Null(plan.Blocked);
     }
 
@@ -230,11 +256,11 @@ public sealed class SetupAdvisorTests
             false,
             100 * Gb,
             [new EngineDownload("kokoro", "Kokoro", 326 * Mb, 0), new EngineDownload("chatterbox-turbo", "Chatterbox Turbo", 3300 * Mb, 3300 * Mb)],
-            PrecisionGroups: [Q4Missing]);
+            PrecisionGroups: [BaseMissing, Q4Missing]);
 
         var plan = SetupFlowModel.PlanFor(QualityTier.Balanced, inputs);
 
-        Assert.Equal(3300 * Mb, plan.BytesToDownload);
+        Assert.Equal((4 + 3300) * Mb, plan.BytesToDownload);
         Assert.DoesNotContain("turbo-q4f16", plan.Recommendation!.Groups);
     }
 }

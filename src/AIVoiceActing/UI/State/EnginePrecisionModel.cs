@@ -53,7 +53,9 @@ public static class EnginePrecisionModel
         var groups = engine.AssetGroups.Where(g => g != DownloadsModel.EmotionGroup).ToList();
         if (precision == Order[0])
         {
-            return groups.FirstOrDefault();
+            // The full-size set is the one group with no precision suffix and no "-base" tail.
+            return groups.FirstOrDefault(g => !g.EndsWith("-base", StringComparison.OrdinalIgnoreCase)
+                && !Order.Skip(1).Any(p => g.EndsWith("-" + p, StringComparison.OrdinalIgnoreCase)));
         }
 
         return groups.FirstOrDefault(g => g.EndsWith("-" + precision, StringComparison.OrdinalIgnoreCase));

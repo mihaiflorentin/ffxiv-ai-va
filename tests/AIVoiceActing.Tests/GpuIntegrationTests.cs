@@ -21,8 +21,9 @@ public sealed class GpuFactAttribute : FactAttribute
 }
 
 /// <summary>
-/// Needs AIVA_GPU_TESTS=1 and AIVA_TURBO_MODELS=&lt;folder with the Turbo fp32 base set and the q4f16 set&gt;
-/// (local file names as the plugin's Models tab writes them).
+/// Needs AIVA_GPU_TESTS=1 and AIVA_TURBO_MODELS=&lt;folder with the Turbo base files and the q4f16 set&gt;
+/// (local file names as the plugin's Models tab writes them): the small graphics card install. The one test that
+/// runs the full-size fp32 files on the CPU uses <see cref="GpuTurboFp32FactAttribute"/> and skips without them.
 /// </summary>
 public sealed class GpuTurboFactAttribute : FactAttribute
 {
@@ -36,6 +37,23 @@ public sealed class GpuTurboFactAttribute : FactAttribute
         else if (string.IsNullOrWhiteSpace(models) || !TurboFiles.For(TurboPrecision.Q4F16).IsInstalled(models))
         {
             this.Skip = "Set AIVA_TURBO_MODELS to a folder holding the Turbo base set and the q4f16 set.";
+        }
+    }
+}
+
+/// <summary>As <see cref="GpuTurboFactAttribute"/>, and the folder also holds the full-size fp32 files.</summary>
+public sealed class GpuTurboFp32FactAttribute : FactAttribute
+{
+    public GpuTurboFp32FactAttribute()
+    {
+        var models = Environment.GetEnvironmentVariable("AIVA_TURBO_MODELS");
+        if (Environment.GetEnvironmentVariable("AIVA_GPU_TESTS") != "1")
+        {
+            this.Skip = "Set AIVA_GPU_TESTS=1 to run the GPU integration tests.";
+        }
+        else if (string.IsNullOrWhiteSpace(models) || !TurboFiles.For(TurboPrecision.Fp32).IsInstalled(models))
+        {
+            this.Skip = "Set AIVA_TURBO_MODELS to a folder that also holds the full-size (fp32) Turbo files.";
         }
     }
 }
@@ -151,7 +169,7 @@ public sealed class GpuIntegrationTests : IDisposable
         Assert.True(cpuAudio.Samples.Length > 24000);
     }
 
-    [GpuTurboFact]
+    [GpuTurboFp32Fact]
     public async Task Turbo_OnTheCpu_RunsTheSameLoop_WithFullPrecision()
     {
         var models = Environment.GetEnvironmentVariable("AIVA_TURBO_MODELS")!;
@@ -163,5 +181,34 @@ public sealed class GpuIntegrationTests : IDisposable
         Assert.Equal("fp32/cpu", cpu.RenderVariant);
         Assert.NotEmpty(cpu.LastSpeechTokens);
         Assert.True(audio.Samples.Length > 12000);
+    }
+
+    [GpuTurboFact]
+    public async Task Turbo_Q4f16_Streamed_OnTheGpu_IsTheSameLine_InSeveralPieces()
+    {
+        var models = Environment.GetEnvironmentVariable("AIVA_TURBO_MODELS")!;
+        Directory.CreateDirectory(this.dir);
+        var request = new SynthesisRequest("default", "The Warriors of Light have returned.", 0.5f, []);
+
+        using var gpu = this.NewTurbo(models, DeviceMode.Gpu, "q4f16", "stream", out var guard);
+        var whole = await gpu.SynthesizeAsync(request, CancellationToken.None);
+        var wholeTokens = gpu.LastSpeechTokens.ToArray();
+        Assert.True(gpu.SupportsStreaming); // the language model is on the GPU
+
+        var pieces = new List<float[]>();
+        var streamed = await gpu.SynthesizeStreamingAsync(request, samples => pieces.Add(samples.ToArray()), CancellationToken.None);
+
+        Assert.Equal(wholeTokens, gpu.LastSpeechTokens.ToArray()); // same greedy tokens, chunking only changes the decoder
+        Assert.Equal(whole.Samples.Length, streamed.Samples.Length);
+        Assert.Equal(streamed.Samples, pieces.SelectMany(p => p).ToArray());
+        Assert.True(pieces.Count >= 2, $"expected several pieces, got {pieces.Count}");
+        Assert.False(File.Exists(guard.MarkerPath));
+        var stats = gpu.LastStreamingStats!;
+        Assert.Equal(0, stats.LengthMismatches);
+        Assert.InRange(stats.FirstAudioMs, 0, stats.TotalMs);
+
+        // Same loudness: no seam swallows or doubles a stretch of speech.
+        var ratio = AudioPolish.Rms(streamed.Samples) / AudioPolish.Rms(whole.Samples);
+        Assert.InRange(ratio, 0.8, 1.25);
     }
 }

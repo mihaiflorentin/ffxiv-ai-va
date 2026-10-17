@@ -51,6 +51,7 @@ public sealed class ModelCatalogTests
     {
         Assert.Equal(10, ModelCatalog.ChatterboxRequiredAssets.Count);
         Assert.Equal(29 + 16, ModelCatalog.Assets.Count);
+        Assert.Equal(2, ModelCatalog.TurboBaseAssets.Count);
 
         var emotion = ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.EmotionGroup).ToArray();
         Assert.Equal(2, emotion.Length);
@@ -78,8 +79,9 @@ public sealed class ModelCatalogTests
             ModelCatalog.F5RepoBaseUrl + "F5_Transformer.onnx",
             ModelCatalog.UrlFor(f5.Single(a => a.Asset.FileName == ModelCatalog.F5TransformerFileName).Asset));
 
-        var turbo = ModelCatalog.Assets.Where(a => a.Group == ModelCatalog.TurboGroup).ToArray();
+        var turbo = ModelCatalog.Assets.Where(a => a.Group is ModelCatalog.TurboGroup or ModelCatalog.TurboBaseGroup).ToArray();
         Assert.Equal(10, turbo.Length);
+        Assert.Equal(8, ModelCatalog.Assets.Count(a => a.Group == ModelCatalog.TurboGroup));
         Assert.All(turbo, a => Assert.False(a.Asset.Optional));
         Assert.Equal(
             ModelCatalog.TurboRepoBaseUrl + "onnx/language_model.onnx",
@@ -117,6 +119,8 @@ public sealed class ModelCatalogTests
         ("f5", "f5-transformer.onnx"),
         ("f5", "f5-decode.onnx"),
         ("f5", "f5-vocab.txt"),
+        ("turbo-base", "turbo-tokenizer.json"), // split out of "turbo": a graphics card needs these without the 3.3 GB fp32 files
+        ("turbo-base", "turbo-default-voice.wav"),
         ("turbo", "turbo-speech-encoder.onnx"),
         ("turbo", "speech_encoder.onnx_data"),
         ("turbo", "turbo-embed-tokens.onnx"),
@@ -125,8 +129,6 @@ public sealed class ModelCatalogTests
         ("turbo", "language_model.onnx_data"),
         ("turbo", "turbo-conditional-decoder.onnx"),
         ("turbo", "conditional_decoder.onnx_data"),
-        ("turbo", "turbo-tokenizer.json"),
-        ("turbo", "turbo-default-voice.wav"),
         ("emotion", "emotion-classifier.onnx"),
         ("emotion", "emotion-tokenizer.json"),
     ];
@@ -167,7 +169,8 @@ public sealed class ModelCatalogTests
     [Fact]
     public void TurboPrecisionGroups_ArePresent_WithPinnedTotals()
     {
-        Assert.Equal(3_323_391_436, Total(ModelCatalog.TurboGroup));
+        Assert.Equal(3_323_391_436, Total(ModelCatalog.TurboGroup) + Total(ModelCatalog.TurboBaseGroup));
+        Assert.Equal(3_562_272 + 714_320, Total(ModelCatalog.TurboBaseGroup));
         Assert.Equal(1_661_100_256, Total(ModelCatalog.TurboFp16Group));
         Assert.Equal(561_806_478, Total(ModelCatalog.TurboQ4F16Group));
 

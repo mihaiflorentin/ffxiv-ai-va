@@ -16,6 +16,7 @@ Machine: CachyOS, Ryzen 7 9800X3D (16 threads) with its Raphael iGPU (0x13c0), R
 | LM on CPU as the split option | Not worth it: 100 to 117 ms per token, no better than today. |
 | Custom Kokoro voice language | Decided purely by the voice **name**: character 0 picks the G2P, character 1 is only a gender label. Rule in section S3. |
 | DirectML under Wine | Fails at provider creation, HRESULT `0x887A0002`. |
+| Turbo decoder on the CPU is the limit | Fixed by **chunked decoding** (issue #23, last section): first audio after about 1.4 s median instead of the whole line (10.8 s), measured on a 4x oversubscribed machine; the GPU install shrinks from 3.62 GiB to 540 MiB. |
 
 Biggest finding for ticket #12: the failure mode is a **native process abort** (SIGABRT, or `0xC0000005` under Wine), not a managed exception. Inside Dalamud that kills the game. A small self-test graph passes while the real graph aborts, so the plan's in-process `DeviceProbe.SelfTest` cannot protect anyone; the crash marker and a pinned, hash-checked list of known-good (EP version, graph) pairs have to do that job.
 
@@ -285,3 +286,112 @@ Use the S3 rule: internal registry name `{a|b}{gender}__{slug}`, derived from th
 * `forceCpuNodeNames` accepts only 8192 characters, so bisecting large graphs needs several runs.
 * Not tested: in-process inside Dalamud (S4), VRAM use, frame time impact on the game, a second Vulkan instance next to DXVK in the same process, and a cold shader cache.
 * Timings are from a busy machine; treat ratios, not absolute values.
+
+## Chunked Turbo decode and the small GPU install (issue #23)
+
+Date: 2026-10-17. Follow-up to #13. Code: `Domain/ChunkSchedule`, `Domain/ChunkStitcher`, `Domain/SpeechAudioStream`, `Domain/PolishedPcmSource`, `Domain/TurboInstall`, `Infrastructure/Onnx/ChatterboxSynthesizer` (`SynthesizeStreamingAsync`), `SpeechTokenFeed`, `PromptTrim`, `StreamingOptions`. Harness: `tools/SmokeSynth` (`--stream`, `--bench`, `--lines`, and the chunk knobs). A/B audio: `models/turbo-ab/chunked-*.wav` (gitignored).
+
+**Measurement conditions, read this first.** The machine was saturated by other agents for the whole session: load average 57 to 65 on 16 logical CPUs, all 16 cores at 100 percent, 55 GB of swap in use. Every wall-clock number below is therefore 3 to 4 times worse than an idle machine would give, and noisy (run-to-run spread of 2x). Where a number is robust against load I use CPU seconds of a single-thread run (`process_time`), and I say so. Numbers marked "projection" are arithmetic on those CPU seconds, not measurements. Re-run `SmokeSynth --stream --bench` on a quiet machine before quoting the absolute values.
+
+### What the decoder graph offers
+
+`conditional_decoder` (fp32, fp16 and q4f16 alike) takes `speech_tokens [1, n]`, `speaker_embeddings [1, 192]` and `speaker_features [1, frames, 80]` and returns `waveform [1, samples]`. There are **no state or context inputs**, so it cannot be told what came before. What it does have is the reference prompt: the first `frames / 2` tokens of `speech_tokens` are the prompt tokens of the reference clip, `speaker_features` is the mel of the same audio, and the output holds audio only for the tokens after the prompt, exactly 960 samples per token (25 tokens per second at 24 kHz; checked on 214 tokens, 205 440 samples). So the prompt is the decoder's only "context mechanism", and it is fixed to the reference clip: continuing from the audio just generated would need a mel extractor for it (not built).
+
+The decoder attends over all its tokens in both directions, so audio near either edge of a window is worse than in the middle. The chunker therefore decodes each chunk with 12 tokens of already-known context before it and up to 6 tokens of lookahead after it, keeps only the middle, and cross-fades the overlap into the neighbouring chunk's audio with an equal-power sine/cosine fade of 80 ms (960 samples either side of the boundary). Chunks are 32, 48, 72, 108, 120, 120 ... tokens (1.3 s, 1.9 s, 2.9 s, 4.3 s, 4.8 s ...); a tail shorter than 16 tokens joins the last chunk. A chunk is released once its 6 lookahead tokens exist, so on a GPU language model (about 100 tokens per second) the first window is ready after about 38 tokens.
+
+### Decoder cost on the CPU
+
+CPU seconds, one thread, one decoder call, prompt tokens kept (rows) against new tokens decoded (columns). Machine load made wall time useless, CPU time is stable to about 15 percent.
+
+| Variant | prompt 186: 30 / 60 / 120 new | prompt 100: 30 / 60 / 120 | prompt 50: 30 / 60 / 120 | prompt 25: 30 / 60 / 120 |
+|---|---|---|---|---|
+| fp32 | 1.37 / 2.00 / 3.30 | 0.99 / 1.57 / 1.99 | 0.52 / 1.01 / 1.71 | 0.46 / 0.79 / 1.68 |
+| fp16 | 1.56 / 1.94 / 2.82 | 0.99 / 1.35 / 2.32 | 0.74 / 0.94 / 1.86 | 0.69 / 1.14 / 1.74 |
+| q4f16 | 1.53 / 2.06 / 3.49 | 0.95 / 1.25 / 2.27 | 0.58 / 0.94 / 2.17 | 0.56 / 0.99 / 1.75 |
+
+* **The prompt is most of the cost of a small chunk.** The full 186-token prompt makes a 30-token call cost 1.4 to 1.5 s; trimming it to 100 cuts that by about a third, to 50 by about two thirds. The cost is roughly linear in prompt plus new tokens.
+* **fp16 and q4f16 are not faster than fp32 on the CPU** (no half-precision or 4-bit hardware path in the CPU kernels): the same call costs 0.71 s (fp32), 0.73 s (fp16), 0.76 s (q4f16) on one thread for a 60-token prompt plus 40 new tokens. The precision choice for the CPU graphs is about disk size and accuracy, not speed.
+* **Threads.** Same call, CPU seconds / wall seconds (wall is inflated by the load): fp32 1 thread 0.71 / 1.17, 2 threads 1.17 / 0.97, 4 threads 1.89 / 1.04, 8 threads 3.45 / 1.50; fp16 and q4f16 follow the same pattern (q4f16: 0.76, 1.43, 2.69, 5.54 CPU seconds). More threads burn CPU spinning for a small gain, and a streamed line is a series of short calls. A one-thread chunk already decodes faster than real time (0.98 CPU seconds for the first 1.5 s of audio), so the **decoder now defaults to 2 intra-op threads** (`OnnxSessionFactory.DecoderDefaultMaxThreads`); an explicit CPU impact setting is still respected. The language model session and the other CPU sessions keep the old default.
+* **Session options do not matter.** fp32, 4 threads, CPU seconds / wall: graph optimization disabled 2.54 / 1.57, basic 2.61 / 1.29, extended 2.48 / 2.04, all (default) 2.43 / 1.55; memory pattern off 2.52 / 2.07; parallel execution mode 2.55 / 1.56. All inside the noise, so the defaults stay.
+
+### Which precision for the CPU graphs
+
+Ten FFXIV-style lines (`models/turbo-ab/chunked-lines.txt`), tokens from the real q4f16 LM on the GPU, decoded on the CPU with each combination of encoder (reference prompt) and decoder precision, transcribed with faster-whisper `small.en`, word error rate against the text, speaker likeness as the cosine between the speech-encoder x-vector of the output and of the reference clip.
+
+| Encoder / decoder | Mean word error rate | Speaker cosine |
+|---|---|---|
+| q4f16 / q4f16 (what ships) | 0.028 | 0.9141 |
+| fp32 / fp32 | 0.028 | 0.9169 |
+| fp32 prompt / q4f16 decoder | 0.028 | 0.9151 |
+| fp16 / fp16 | 0.028 | 0.9099 |
+| q4f16 prompt / fp32 decoder | 0.044 (one line, one word) | 0.9187 |
+
+The per-line word error rates of the first four rows are identical, and the spread in speaker cosine (0.910 to 0.919) is the noise of the metric. The q4f16 encoder does change the prompt (only 42 percent of its prompt tokens equal the fp32 encoder's, x-vector cosine 1.000, prompt mel cosine 0.9992), and the decoder is deterministic for equal inputs, but the speech does not get less intelligible or less like the voice. **Decision: the CPU graphs (encoder, embedding, decoder) are the q4f16 ones, 374 MB instead of 2.0 GB.** They already were what the GPU path loaded; what changes is that the fp32 files are no longer required next to them.
+
+### Prompt length in the chunked path
+
+Same ten lines, q4f16 everywhere, the prompt tail kept for the decoder:
+
+| Prompt tokens kept | 186 (all) | 120 | 100 | 80 | 60 | 40 |
+|---|---|---|---|---|---|---|
+| Mean word error rate | 0.028 | 0.028 | 0.028 | 0.028 | 0.034 | 0.021 |
+| Speaker cosine | 0.9141 | 0.9126 | 0.9120 | 0.8998 | 0.9048 | 0.8865 |
+
+Likeness holds down to 100 tokens and falls from there; with 40 the log-mel distance to the full-prompt decode doubles (1.26 against 0.93 at 60) and the level drops by up to 43 percent on one line. **The streaming path keeps the last 100 prompt tokens** (`StreamingOptions.PromptTokens`); the whole-line path is unchanged and keeps all 186.
+
+### Do chunks match the whole decode?
+
+Final defaults (first chunk 32, growth 1.5, cap 120, context 12 and 6, 80 ms fade, 100 prompt tokens), the same ten lines, streamed by `SmokeSynth --stream --lines` against the whole-line decode:
+
+* The speech tokens are identical for all ten lines (chunking only changes the decoder, not the greedy loop), and the audio length is identical to the sample.
+* Word error rate: whole 0.034, streamed 0.029 (line 6 lost a word, line 2 gained back more).
+* Sample-level edge near the seams (largest second difference within 20 ms of a seam over the line's 99.9th percentile): worst 0.63 streamed, 0.81 for the undisturbed whole decode, so the seams are not sharper than the speech. The energy at a seam relative to its surroundings equals the whole decode's wherever there is speech (the 0.01 worst case is a pause that both versions have).
+* Waveforms differ between the two decodes (the vocoder's harmonic phases are random per call), which is why the fade is equal-power; the log-mel distance between the two versions is 0.91 on average, against 0.82 for the same comparison with the full prompt (a Python re-implementation of the chunker with a 40 ms fade), i.e. much of it is the prompt trim, not the seams.
+* Other fade/context choices tried on the same lines: 40 ms with 8 and 4 tokens, 20 ms with 8 and 4. All keep the word error rate; one 40 ms seam had a sharper edge (1.41 against 0.77 for the control), the 80 ms setting did not. Not a listening test: the A/B files need a human ear (`models/turbo-ab/chunked-whole.wav` against `chunked-stream.wav`, and `chunked-whole-lineN.wav` against `chunked-stream-lineN.wav` for the ten lines).
+
+### Time to first audio
+
+Line: "The Echo stirs again, doesn't it? I have seen that look before. Come, let us find shelter before the storm." 189 speech tokens, 7.68 s of audio, q4f16 on the GPU (WebGPU, Vulkan, performance preference), five runs after the warm-up run, load average 57 to 62 on 16 CPUs.
+
+| Path | First audio min / median / max | Time to end of line, RTF min / median / max |
+|---|---|---|
+| Whole line, decoder on 8 threads (as shipped in #13) | 7.6 / 10.8 / 13.1 s (the end of the line) | 0.99 / 1.41 / 1.70 |
+| Whole line, decoder on 2 threads | 9.4 / 10.1 / 12.9 s | 1.23 / 1.32 / 1.67 |
+| **Chunked, decoder on 2 threads, final defaults** | **1.2 / 1.4 / 3.5 s** | 0.93 / 1.42 / 2.09 |
+
+Two earlier chunked runs of nearly the same settings gave first-audio medians of 1.55 s and 1.72 s (max 2.6 s and 2.5 s). The same ten lines streamed one by one gave a median of 2.2 s (1.6 to 4.0 s, the first includes the warm-up) against 4.4 to 7.6 s before any sound for the whole-line decode of those lines. The very first line after a start is slower in both modes (13 to 22 s here: session creation, the GPU shader compile and encoding the reference clip); that is what `WarmUpAsync` is for.
+
+Total time barely moves: the language model took 1.4 to 2.8 s for the 189 tokens in every variant and the decoder 7 to 16 s in all of them. Chunking is not free, though: the four windows of this line cost **5.0 CPU seconds** on one thread against **3.9** for the single whole-line call (+28 percent, the prompt is read four times), 0.98 of them for the first window.
+
+**Projection for an idle machine (not measured):** first window 0.98 CPU seconds, about 0.6 s of wall time on two threads at a 1.6x speed-up, plus about 0.3 s for the language model to produce 38 tokens at 5 to 10 ms each, so about 1 s to first audio, comfortably under the 2 s target; the whole line at roughly the language model time plus the last window, i.e. an RTF around 0.3 to 0.4. Under the 4x oversubscription measured here the 2 s target was met by the median and missed by single runs (max 3.5 s).
+
+### Install sizes
+
+Before this change the engine required the whole `turbo` group (fp32 graphs, 3.1 GiB) next to the q4f16 build, so a graphics card needed 3.62 GiB. Now a Turbo install is the base group plus ONE precision set (`Domain/TurboInstall`):
+
+| Group | Contents | Size |
+|---|---|---|
+| `turbo-base` (new) | tokenizer, default reference voice | 4 276 592 B (4.1 MiB) |
+| `turbo` | fp32 encoder, embedding, language model, decoder | 3 319 114 844 B (3.09 GiB) |
+| `turbo-fp16` | the four fp16 graphs | 1 661 100 256 B (1.55 GiB) |
+| `turbo-q4f16` | the four q4f16 graphs: encoder 178.5 MB, embedding 33.7 MB, language model 184.3 MB, decoder 165.4 MB | 561 806 478 B (535.8 MiB) |
+
+* **Graphics card install: `turbo-base` + `turbo-q4f16` = 566 083 070 B (539.9 MiB), 85 percent smaller than the old 3 885 197 914 B (3.62 GiB).**
+* CPU install: `turbo-base` + `turbo` = 3 323 391 436 B (3.10 GiB), same files as before (the same local names; two catalog entries just moved to `turbo-base`, so existing installs stay "downloaded").
+* `SetupAdvisor.GroupsFor`: Balanced is Kokoro + `turbo-base` + (`turbo-q4f16` with a GPU, `turbo` without); Most expressive is `turbo-base` + the same set. The Home card and the Settings quality card plan from per-group statuses (`EngineParts.TurboGroupStatuses`); what the UI treats as required for Turbo is the base group plus the set the machine already has, else the one it should download (`TurboInstall.RequiredGroups`).
+* Readiness: the engine is ready with the base files and any complete set. With only q4f16 present and the GPU switched off (crash guard) it speaks from q4f16 on the CPU instead of demanding the fp32 files; `ExpressiveEngineInstalled` uses the same rule.
+* `EngineCatalog`: the Turbo engine owns `turbo-base`, `turbo`, `turbo-fp16`, `turbo-q4f16` (every catalog group still has exactly one owner, enforced by `TurboInstallTests`).
+
+### Streaming path in the plugin
+
+`ISpeechSynthesizer` gained `SupportsStreaming`, `SupportsStreamingFor(request)`, `StreamingSampleRate` and `SynthesizeStreamingAsync(request, onSamples, ct)`; Turbo streams when its language model runs on the GPU (the CPU model is slower than real time, so the whole-line path wastes less there). The handler queues a `SpeechItem` carrying a `SpeechAudioStream` as soon as the first piece exists, so lines keep the order they started rendering in, and caches the joined line afterwards (the render cache is filled with what was streamed; the whole-line path and its cache key are untouched, and `RenderVariant` keeps GPU and CPU renders apart). `PlaybackSpeechQueue` plays the stream through `IAudioSink.PlayStream` (`NAudioSink` feeds the device from a live source and fills a synthesizer stall with silence; a sink that cannot stream gets the whole line once it is complete), applying gain, soft limiter and the 6 ms edge fades on the way out; loudness levelling measures the first half second. Skipping the line cancels the stream, which cancels the synthesizer (language model loop and decoder), and the rest of that line's sentences are dropped as before. The expressive router streams its expressive engine's lines too (a calm Kokoro line still renders whole). The toggle is the existing "Start long lines sooner" setting.
+
+### Risks and follow-ups
+
+* Every absolute timing here comes from an oversubscribed machine; the idle numbers are projections.
+* The seams passed objective checks (identical tokens, word error rate, edge and level metrics); nobody has listened to them. Listen to the A/B files before shipping.
+* `NAudioSink.PlayStream` compiles and is covered through the fake sink and the queue tests, but was not run on Windows or under Wine. Check in game: start of the stream, an underrun on a loaded machine, Skip during a stream.
+* Chunking costs about 28 percent more decoder CPU per line. On a machine that cannot keep up it turns "slow but silent until the end" into "audible early with gaps"; turning "Start long lines sooner" off restores the old behaviour.
+* A mid-stream GPU failure after audio has started ends the line (nothing can re-voice it); before the first audio it restarts the line on the CPU as before.
+* The gated test `Turbo_Q4f16_OnTheGpu_StartsLikeTheCpuStream_AndEndsAboutAsLong` fails on this machine (GPU and CPU greedy streams diverge at token 53 of 135 and 180). It exercises only the whole-line path, which this change does not touch, but I did not run it on the base commit to prove it fails there too.
+* Not done: continuing from the previously generated audio (needs a mel front end for the decoder prompt), an adaptive first-chunk size from measured decoder speed, a Windows/Wine measurement.

@@ -89,6 +89,76 @@ public sealed class ExpressiveRouter : ISpeechSynthesizer
 
     public Task WarmUpAsync(CancellationToken cancellationToken) => this.primary().WarmUpAsync(cancellationToken);
 
+    // ---- streaming: the line goes to whichever engine the request is routed to ----------------------------
+
+    /// <summary>True when either engine can stream; whether a given line does is <see cref="SupportsStreamingFor"/>.</summary>
+    public bool SupportsStreaming => this.primary().SupportsStreaming || this.expressive()?.SupportsStreaming == true;
+
+    public bool SupportsStreamingFor(SynthesisRequest request) =>
+        this.ExpressiveEngineFor(request) is { } engine
+            ? engine.SupportsStreamingFor(request)
+            : this.primary().SupportsStreamingFor(request);
+
+    private ISpeechSynthesizer? ExpressiveEngineFor(SynthesisRequest request) =>
+        WantsExpressive(request)
+        && this.clockMs() >= Interlocked.Read(ref this.expressiveDownUntilMs)
+        && this.expressive() is { IsReady: true } engine
+            ? engine
+            : null;
+
+    public async Task<SynthesisResult> SynthesizeStreamingAsync(
+        SynthesisRequest request,
+        Action<ReadOnlyMemory<float>> onSamples,
+        CancellationToken cancellationToken)
+    {
+        if (this.ExpressiveEngineFor(request) is { } engine)
+        {
+            var started = false;
+            try
+            {
+                if (await this.prepareVoice(request, cancellationToken) is { } clip)
+                {
+                    var audio = await engine.SynthesizeStreamingAsync(
+                        request with { ReferenceVoiceId = clip },
+                        samples =>
+                        {
+                            started = true;
+                            onSamples(samples);
+                        },
+                        cancellationToken);
+                    this.log?.Info($"Expressive engine streamed \"{request.ReferenceVoiceId}\" ({audio.Samples.Length} samples).");
+                    return audio;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Interlocked.Exchange(ref this.expressiveDownUntilMs, this.clockMs() + (long)FailureCooldown.TotalMilliseconds);
+                if (started)
+                {
+                    // Part of the line was already heard in the expressive voice; the main engine cannot finish it.
+                    this.log?.Warn($"Expressive engine failed mid-line ({ex.Message}).");
+                    throw;
+                }
+
+                this.log?.Warn($"Expressive engine failed ({ex.Message}); using the main engine for this line.");
+            }
+        }
+
+        var main = this.primary();
+        if (main.SupportsStreamingFor(request))
+        {
+            return await main.SynthesizeStreamingAsync(request, onSamples, cancellationToken);
+        }
+
+        var whole = await main.SynthesizeAsync(request, cancellationToken);
+        onSamples(whole.Samples);
+        return whole;
+    }
+
     public async Task<SynthesisResult> SynthesizeAsync(SynthesisRequest request, CancellationToken cancellationToken)
     {
         if (WantsExpressive(request)

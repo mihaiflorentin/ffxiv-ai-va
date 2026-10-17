@@ -55,6 +55,44 @@ public sealed class FakeSpeechSynthesizer : ISpeechSynthesizer
         return Task.FromResult(new SynthesisResult([0f, 0.5f, -0.5f], 24000));
     }
 
+    // ---- streaming ------------------------------------------------------------------------------------
+
+    public bool SupportsStreaming { get; set; }
+
+    public int StreamingSampleRate { get; set; } = 24000;
+
+    /// <summary>The pieces a streamed line is delivered in; defaults to three short pieces.</summary>
+    public Func<SynthesisRequest, IEnumerable<float[]>>? StreamPieces { get; set; }
+
+    /// <summary>Runs between pieces (after each is delivered), to let a test interleave playback or cancellation.</summary>
+    public Action<int>? AfterPiece { get; set; }
+
+    public List<SynthesisRequest> StreamingCalls { get; } = [];
+
+    public Task<SynthesisResult> SynthesizeStreamingAsync(
+        SynthesisRequest request,
+        Action<ReadOnlyMemory<float>> onSamples,
+        CancellationToken cancellationToken)
+    {
+        this.StreamingCalls.Add(request);
+        if (this.Throw is { } failure)
+        {
+            return Task.FromException<SynthesisResult>(failure);
+        }
+
+        var all = new List<float>();
+        var index = 0;
+        foreach (var piece in this.StreamPieces?.Invoke(request) ?? [[0.1f, 0.2f], [0.3f, 0.4f], [0.5f]])
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            all.AddRange(piece);
+            onSamples(piece);
+            this.AfterPiece?.Invoke(index++);
+        }
+
+        return Task.FromResult(new SynthesisResult([.. all], this.StreamingSampleRate));
+    }
+
     public Task WarmUpAsync(CancellationToken cancellationToken)
     {
         this.WarmUpCalls++;

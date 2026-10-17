@@ -53,6 +53,11 @@ dotnet publish src/AIVoiceActing/AIVoiceActing.csproj -c Release -p:AllowMissing
 dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMissingPrunePackageData=true -- \
   --engine kokoro --text "Life is but a dream." --ref af_heart \
   --models "$HOME/.cache/aiva-kokoro" --out /tmp/aiva-test.wav --rtf
+# Turbo on the GPU (outside the sandbox: it hides /dev/dri). --stream uses the chunked decode and
+# reports time to first audio; --bench repeats it five times (see docs/plans/2026-10-gpu-spike-results.md).
+dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMissingPrunePackageData=true -- \
+  --engine turbo --device gpu --precision q4f16 --stream --bench --models <dir with the turbo files> \
+  --text "..." --out /tmp/aiva-turbo.wav
 ```
 
 # Turbo device plan: --engine turbo --device cpu|gpu [--api vulkan|d3d12] [--power high|low] [--bench]
@@ -73,6 +78,7 @@ their runtime use, never transitively "while convenient".
 
 - Port file anatomy (census style): sentinel exceptions → DTO records → interface last; one port per file.
 - Fakes live in `tests/AIVoiceActing.Tests/Mock/`, record their calls, and assert conformance via assignment (`ILogSink _ = new FakeLogSink();` style intent).
+- Turbo downloads are the base group (`turbo-base`: tokenizer, default voice) plus ONE precision set (`turbo` fp32 for the CPU, `turbo-fp16`, or `turbo-q4f16`, the 0.56 GB graphics card install); `Domain/TurboInstall` is the single rule for what counts as installed, and every catalog group has exactly one owning engine in `EngineCatalog`.
 - Plugin manifest fields `Name`, `Author`, `Description`, `Punchline` are mandatory (DalamudPackager hard-fails otherwise).
 - `obj/`, `bin/`, `.dalamud/`, `.omp/`, `.superpowers/`, `ConfigDirectory/`, `models/` are never committed.
 

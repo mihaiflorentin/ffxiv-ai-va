@@ -49,15 +49,17 @@ public sealed record SetupRecommendation(
 /// <summary>
 /// Pure hardware to setup mapping: which tier to suggest on this machine, which engine and precision it
 /// uses, which download groups it needs and how many bytes are still missing. A verified GPU turns the
-/// expressive engine (Turbo) into its q4f16 build, 0.56 GB on top of the always-required base group;
-/// without one Turbo stays on the CPU at full precision, usable only for the occasional emotional line.
+/// expressive engine (Turbo) into its q4f16 build, 0.56 GB plus the 4 MB base files, and never asks for the
+/// 3.3 GB full-size files; without one Turbo stays on the CPU at full precision (base files plus the
+/// full-size group), usable only for the occasional emotional line.
 /// "Most expressive" (Turbo for every line) needs the GPU. Disk space is checked against the bytes still missing.
 /// </summary>
 public static class SetupAdvisor
 {
     public const string KokoroGroup = "kokoro";
-    public const string TurboGroup = "turbo";
-    public const string TurboQ4F16Group = "turbo-q4f16";
+    public const string TurboGroup = TurboInstall.Fp32Group;
+    public const string TurboQ4F16Group = TurboInstall.Q4F16Group;
+    public const string TurboBaseGroup = TurboInstall.BaseGroup;
     public const string KokoroEngine = "kokoro";
     public const string TurboEngine = "chatterbox-turbo";
     public const string Q4F16 = "q4f16";
@@ -87,8 +89,8 @@ public static class SetupAdvisor
     public static IReadOnlyList<string> GroupsFor(QualityTier tier, bool gpu) => tier switch
     {
         QualityTier.Fast => [KokoroGroup],
-        QualityTier.Balanced => gpu ? [KokoroGroup, TurboGroup, TurboQ4F16Group] : [KokoroGroup, TurboGroup],
-        _ => gpu ? [TurboGroup, TurboQ4F16Group] : [TurboGroup],
+        QualityTier.Balanced => gpu ? [KokoroGroup, TurboBaseGroup, TurboQ4F16Group] : [KokoroGroup, TurboBaseGroup, TurboGroup],
+        _ => gpu ? [TurboBaseGroup, TurboQ4F16Group] : [TurboBaseGroup, TurboGroup],
     };
 
     /// <summary>Whether the GPU build of Turbo applies: a usable GPU, and enough video memory when that is known.</summary>

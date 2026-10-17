@@ -29,7 +29,7 @@ public sealed class DownloadsModelTests
     {
         var groups = Rows().Select(r => r.Group).ToList();
 
-        Assert.Equal(["kokoro", "turbo", "turbo-fp16", "turbo-q4f16", "emotion"], groups);
+        Assert.Equal(["kokoro", "turbo-base", "turbo", "turbo-fp16", "turbo-q4f16", "emotion"], groups);
     }
 
     [Fact]
@@ -51,6 +51,7 @@ public sealed class DownloadsModelTests
         var rows = Rows();
 
         Assert.False(Row(rows, "kokoro").Optional);
+        Assert.False(Row(rows, "turbo-base").Optional);
         Assert.False(Row(rows, "turbo").Optional);
         Assert.True(Row(rows, "turbo-fp16").Optional);
         Assert.True(Row(rows, "turbo-q4f16").Optional);

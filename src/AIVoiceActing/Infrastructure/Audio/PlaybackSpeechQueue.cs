@@ -63,16 +63,22 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
 
     public int Depth => Volatile.Read(ref this.depth);
 
+    /// <summary>Items with a live stream play while they fill; the sink falls back to whole-line playback if it cannot stream.</summary>
+    public bool SupportsStreaming => true;
+
 
     /// <summary>Stops the item currently being spoken; queued items are kept, except the
     /// remaining chunks of the same streamed line.</summary>
     public void CancelCurrent()
     {
-        if (this.nowPlaying is { LineId: not 0 } current)
+        var current = this.nowPlaying;
+        if (current is { LineId: not 0 })
         {
             Volatile.Write(ref this.skipLineId, current.LineId);
         }
 
+        // Tell a synthesizer still feeding this line to stop; nobody will hear the rest.
+        current?.Stream?.Cancel();
         this.sink.Cancel();
     }
 
@@ -90,11 +96,13 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
     /// </summary>
     public void Clear()
     {
-        while (this.channel.Reader.TryRead(out _))
+        while (this.channel.Reader.TryRead(out var dropped))
         {
             Interlocked.Decrement(ref this.depth);
+            dropped.Stream?.Cancel();
         }
 
+        this.nowPlaying?.Stream?.Cancel();
         this.sink.Cancel();
     }
 
@@ -121,6 +129,7 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
     {
         if (item.LineId != 0 && item.LineId == Volatile.Read(ref this.skipLineId))
         {
+            item.Stream?.Cancel();
             return; // the rest of a line the player skipped
         }
 
@@ -132,6 +141,7 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
             {
                 this.log?.Info(
                     $"Dropping stale line for \"{item.Speaker.Key}\" ({ageMs / 1000.0:0}s old; limit {staleAfterMs / 1000.0:0}s).");
+                item.Stream?.Cancel();
                 return;
             }
         }
@@ -139,6 +149,7 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
         if (!this.sink.IsSupported)
         {
             // mac / no output device: dequeue without audio so the pipeline keeps flowing.
+            item.Stream?.Cancel();
             return;
         }
 
@@ -147,6 +158,24 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
             // Gain, levelling, limiting and fades happen here so the device sees unity gain
             // and a volume above 100% compresses instead of clipping.
             var gain = Math.Clamp(this.volume() * item.Request.Volume, 0f, 2f);
+            if (item.Stream is { } stream)
+            {
+                this.nowPlaying = item;
+                try
+                {
+                    // Polishing happens on the way out of the stream; the device sees unity gain, as above.
+                    this.sink.PlayStream(
+                        new PolishedPcmSource(stream, gain, this.levelLoudnessFactory?.Invoke() ?? false), 1f);
+                }
+                finally
+                {
+                    this.nowPlaying = null;
+                    stream.Cancel(); // the line is over; a producer still running has nothing left to feed
+                }
+
+                return;
+            }
+
             var shaped = AudioPolish.Finish(
                 item.Audio.Samples, item.Audio.SampleRate, gain, this.levelLoudnessFactory?.Invoke() ?? false);
             this.nowPlaying = item;

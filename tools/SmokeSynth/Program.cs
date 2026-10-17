@@ -34,6 +34,15 @@ internal static class Program
         string api = "auto";
         string power = "high";
         bool bench = false;
+        string? benchOut = null;
+        string? linesFile = null;
+        var stream = false;
+        int? promptTokens = null;
+        int? firstChunk = null;
+        int? maxChunk = null;
+        int? leftContext = null;
+        int? lookahead = null;
+        int? halfFade = null;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -142,6 +151,39 @@ internal static class Program
                 case "--bench":
                     bench = true;
                     break;
+                case "--bench-out" when i + 1 < args.Length:
+                    benchOut = args[++i];
+                    break;
+                case "--lines" when i + 1 < args.Length:
+                    linesFile = args[++i];
+                    break;
+                case "--stream":
+                    stream = true;
+                    break;
+                case "--prompt-tokens" when i + 1 < args.Length && int.TryParse(args[i + 1], out var pt):
+                    promptTokens = pt;
+                    i++;
+                    break;
+                case "--first-chunk" when i + 1 < args.Length && int.TryParse(args[i + 1], out var fc):
+                    firstChunk = fc;
+                    i++;
+                    break;
+                case "--max-chunk" when i + 1 < args.Length && int.TryParse(args[i + 1], out var mc):
+                    maxChunk = mc;
+                    i++;
+                    break;
+                case "--left" when i + 1 < args.Length && int.TryParse(args[i + 1], out var lc):
+                    leftContext = lc;
+                    i++;
+                    break;
+                case "--lookahead" when i + 1 < args.Length && int.TryParse(args[i + 1], out var la):
+                    lookahead = la;
+                    i++;
+                    break;
+                case "--half-fade" when i + 1 < args.Length && int.TryParse(args[i + 1], out var hf):
+                    halfFade = hf;
+                    i++;
+                    break;
                 default:
                     Console.Error.WriteLine($"Unknown or malformed argument: {args[i]}");
                     PrintUsage();
@@ -208,6 +250,26 @@ internal static class Program
                     log);
             }
 
+            if (synthesizer is ChatterboxSynthesizer tuned)
+            {
+                if (stream)
+                {
+                    tuned.StreamingOverride = true;
+                }
+
+                var defaults = StreamingOptions.Default;
+                tuned.Streaming = new StreamingOptions(
+                    defaults.Chunks with
+                    {
+                        FirstTokens = firstChunk ?? defaults.Chunks.FirstTokens,
+                        MaxTokens = maxChunk ?? defaults.Chunks.MaxTokens,
+                        LeftContextTokens = leftContext ?? defaults.Chunks.LeftContextTokens,
+                        LookaheadTokens = lookahead ?? defaults.Chunks.LookaheadTokens,
+                    },
+                    promptTokens ?? defaults.PromptTokens,
+                    halfFade ?? defaults.HalfFadeSamples);
+            }
+
             var request = new SynthesisRequest(
                 ReferenceVoiceId: engine == "kokoro" ? reference ?? "af_heart" : "default",
                 Text: text,
@@ -216,10 +278,34 @@ internal static class Program
                 Pitch: (float)pitch,
                 Speed: (float)speed);
 
+            if (linesFile is not null)
+            {
+                // Batch mode: one line of text per file line, written to <out>-<n>.wav and <out>-<n>.tokens.
+                var lineNumber = 0;
+                foreach (var line in File.ReadAllLines(linesFile).Where(l => !string.IsNullOrWhiteSpace(l)))
+                {
+                    lineNumber++;
+                    var each = stream
+                        ? RunStreaming(synthesizer, request with { Text = line }, out _)
+                        : synthesizer.SynthesizeAsync(request with { Text = line }, CancellationToken.None).GetAwaiter().GetResult();
+                    var stem = Path.Combine(Path.GetDirectoryName(output) ?? ".", Path.GetFileNameWithoutExtension(output));
+                    WavCodec.WriteMono24k($"{stem}-{lineNumber}.wav", each.Samples);
+                    if (synthesizer is ChatterboxSynthesizer batchTurbo)
+                    {
+                        File.WriteAllText($"{stem}-{lineNumber}.tokens", string.Join(',', batchTurbo.LastSpeechTokens));
+                    }
+
+                    Console.WriteLine($"line {lineNumber}: {each.Samples.Length / (double)each.SampleRate:0.00} s");
+                }
+
+                return 0;
+            }
+
             var clock = Stopwatch.StartNew();
-            var result = synthesizer.SynthesizeAsync(request, CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
+            double firstAudio = -1;
+            var result = stream
+                ? RunStreaming(synthesizer, request, out firstAudio)
+                : synthesizer.SynthesizeAsync(request, CancellationToken.None).GetAwaiter().GetResult();
             clock.Stop();
 
             WavCodec.WriteMono24k(output, result.Samples);
@@ -245,19 +331,39 @@ internal static class Program
                 Console.WriteLine($"RTF:         {synthSeconds / durationSeconds:0.000}");
             }
 
+            if (stream)
+            {
+                Console.WriteLine($"first audio: {firstAudio:0.00} s");
+            }
+
             if (bench)
             {
                 // The first line above paid session creation; time the steady state.
                 var runs = new List<double>();
+                var firsts = new List<double>();
                 for (var run = 0; run < 5; run++)
                 {
                     var timer = Stopwatch.StartNew();
-                    var again = synthesizer.SynthesizeAsync(request, CancellationToken.None).GetAwaiter().GetResult();
+                    double first = -1;
+                    var again = stream
+                        ? RunStreaming(synthesizer, request, out first)
+                        : synthesizer.SynthesizeAsync(request, CancellationToken.None).GetAwaiter().GetResult();
                     timer.Stop();
                     runs.Add(timer.Elapsed.TotalSeconds / (again.Samples.Length / (double)again.SampleRate));
-                    Console.WriteLine($"bench {run + 1}/5:   {timer.Elapsed.TotalSeconds:0.00} s, RTF {runs[^1]:0.000}");
+                    firsts.Add(stream ? first : timer.Elapsed.TotalSeconds);
+                    Console.WriteLine(
+                        $"bench {run + 1}/5:   {timer.Elapsed.TotalSeconds:0.00} s, RTF {runs[^1]:0.000}, first audio {firsts[^1]:0.00} s" +
+                        (synthesizer is ChatterboxSynthesizer { LastStreamingStats: { } st } && stream
+                            ? $" (chunks {st.Chunks}, lm {st.LanguageModelMs} ms, decoder {st.DecoderMs} ms)"
+                            : string.Empty));
+                    if (run == 0 && benchOut is not null)
+                    {
+                        WavCodec.WriteMono24k(benchOut, again.Samples);
+                    }
                 }
 
+                firsts.Sort();
+                Console.WriteLine($"bench first audio: min {firsts[0]:0.00} s, median {firsts[firsts.Count / 2]:0.00} s, max {firsts[^1]:0.00} s");
                 runs.Sort();
                 Console.WriteLine($"bench RTF:   min {runs[0]:0.000}, median {runs[runs.Count / 2]:0.000}, max {runs[^1]:0.000}");
             }
@@ -319,6 +425,27 @@ internal static class Program
             Precision: () => precision);
     }
 
+    private static SynthesisResult RunStreaming(ISpeechSynthesizer synthesizer, SynthesisRequest request, out double firstAudioSeconds)
+    {
+        var clock = Stopwatch.StartNew();
+        var first = -1.0;
+        var result = synthesizer
+            .SynthesizeStreamingAsync(
+                request,
+                _ =>
+                {
+                    if (first < 0)
+                    {
+                        first = clock.Elapsed.TotalSeconds;
+                    }
+                },
+                CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+        firstAudioSeconds = first;
+        return result;
+    }
+
     private static string? FindWebGpuLibrary()
     {
         var rid = OperatingSystem.IsWindows() ? "win-x64"
@@ -356,7 +483,11 @@ internal static class Program
                                      Kokoro never uses the GPU. The GPU also needs a verified model (fp16/q4f16).
               --api <vulkan|d3d12>   WebGPU graphics API (default: vulkan off Windows, d3d12 on Windows).
               --power <high|low>     Adapter class: discrete (high) or integrated (low).
-              --bench                Time 5 more runs after the first and print min/median/max RTF.
+              --bench                Time 5 more runs after the first and print min/median/max RTF and time to first audio.
+              --bench-out <file>     With --bench: also write the first benchmark run's audio.
+              --stream               Turbo: use the chunked streaming decode (first audio while the line renders).
+              --first-chunk/--max-chunk <tokens>, --left/--lookahead <tokens>, --half-fade <samples>, --prompt-tokens <n>
+                                     Streaming knobs (defaults in StreamingOptions).
               --help                 Show this help.
             """);
     }

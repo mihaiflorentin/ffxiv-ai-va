@@ -53,12 +53,18 @@ public sealed class TurboPlacementTests : IDisposable
         string precision = "auto",
         bool base_ = true,
         bool q4f16 = false,
+        bool tokenizerAndVoice = true,
         bool fp16 = false,
         Func<string, SessionOptions, InferenceSession>? open = null)
     {
         var dir = Path.Combine(Path.GetTempPath(), "aiva-placement", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         this.dirs.Add(dir);
+        if (tokenizerAndVoice)
+        {
+            Stub(dir, ModelCatalog.GroupAssets(ModelCatalog.TurboBaseGroup));
+        }
+
         if (base_)
         {
             Stub(dir, ModelCatalog.GroupAssets(ModelCatalog.TurboGroup));
@@ -274,6 +280,7 @@ public sealed class TurboPlacementTests : IDisposable
         var dir = Path.Combine(Path.GetTempPath(), "aiva-placement", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         this.dirs.Add(dir);
+        Stub(dir, ModelCatalog.GroupAssets(ModelCatalog.TurboBaseGroup));
         Stub(dir, ModelCatalog.GroupAssets(ModelCatalog.TurboGroup));
         var runtime = new FakeWebGpuRuntime();
         var services = new TurboDeviceServices(
@@ -308,5 +315,77 @@ public sealed class TurboPlacementTests : IDisposable
         Assert.Equal("fp16/gpu", c.RenderVariant);
         Assert.Equal(a.RenderVariant, d.RenderVariant);
         Assert.Equal(4, new[] { a.RenderVariant, b.RenderVariant, c.RenderVariant }.Append("fp32/cpu").Distinct().Count());
+    }
+
+    // ---- the small graphics card install: base files + q4f16 set, no full-size files ---------------------
+
+    [Fact]
+    public async Task AGpuInstall_WithoutTheFullSizeFiles_IsReady_AndRunsTheQ4f16SetOnTheGpu()
+    {
+        var rig = this.NewRig("auto", base_: false, q4f16: true);
+        using var synth = rig.Synth;
+
+        Assert.True(synth.IsReady);
+        await synth.WarmUpAsync(CancellationToken.None);
+
+        Assert.Equal("q4f16/gpu", synth.RenderVariant);
+        Assert.Equal(
+            [
+                "turbo-speech-encoder-q4f16.onnx",
+                "turbo-embed-tokens-q4f16.onnx",
+                "turbo-language-model-q4f16.onnx",
+                "turbo-conditional-decoder-q4f16.onnx",
+            ],
+            rig.Opened);
+        Assert.False(File.Exists(Path.Combine(rig.Dir, ModelCatalog.TurboLanguageModelFileName)));
+    }
+
+    [Fact]
+    public async Task AGpuInstall_WhenTheGpuIsNotUsed_StillSpeaksFromTheQ4f16SetOnTheCpu()
+    {
+        // The crash guard switched the graphics card off; the full-size files were never downloaded.
+        var rig = this.NewRig("auto", base_: false, q4f16: true);
+        using var synth = rig.Synth;
+        rig.Planner.Plan = DevicePlan.OnCpu("The graphics card was switched off after a crash.", wantedGpu: true);
+
+        Assert.True(synth.IsReady);
+        await synth.WarmUpAsync(CancellationToken.None);
+
+        Assert.Equal("q4f16/cpu", synth.RenderVariant);
+        Assert.Empty(rig.Runtime.Appended);
+        Assert.Equal(EngineState.FellBack, synth.Status.State);
+    }
+
+    [Fact]
+    public void OnlyTheBaseFiles_IsNotReady_AndTheHintNamesTheSmallSetOnAGpuMachine()
+    {
+        var rig = this.NewRig("auto", base_: false);
+        using var synth = rig.Synth;
+        rig.Planner.Preferences = DevicePreferences.Default with { Mode = DeviceMode.Gpu };
+
+        Assert.False(synth.IsReady);
+        Assert.Contains("q4f16", synth.NotReadyReason);
+        Assert.Contains("Models tab", synth.NotReadyReason);
+    }
+
+    [Fact]
+    public void OnlyTheBaseFiles_OnACpuMachine_AsksForTheFullSizeSet()
+    {
+        var rig = this.NewRig("auto", base_: false);
+        using var synth = rig.Synth;
+        rig.Planner.Preferences = DevicePreferences.Default with { Mode = DeviceMode.Cpu };
+
+        Assert.False(synth.IsReady);
+        Assert.Contains(ModelCatalog.TurboSpeechEncoderFileName, synth.NotReadyReason);
+    }
+
+    [Fact]
+    public void FullSizeFilesWithoutTheTokenizerAndVoice_AreNotEnough()
+    {
+        var rig = this.NewRig("auto", tokenizerAndVoice: false);
+        using var synth = rig.Synth;
+
+        Assert.False(synth.IsReady);
+        Assert.Contains(ModelCatalog.TurboTokenizerJsonFileName, synth.NotReadyReason);
     }
 }

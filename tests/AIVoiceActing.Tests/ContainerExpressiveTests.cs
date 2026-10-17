@@ -177,4 +177,33 @@ public sealed class ContainerExpressiveTests : IDisposable
 
         Assert.Equal("KokoroSynthesizer", container.SpeechSynthesizer.GetType().Name);
     }
+
+    [Fact]
+    public void Routing_IsActive_OnTheSmallGpuInstall_WithoutTheFullSizeFiles()
+    {
+        foreach (var asset in ModelCatalog.TurboBaseAssets.Concat(ModelCatalog.GroupAssets(ModelCatalog.TurboQ4F16Group)))
+        {
+            using var file = File.Create(Path.Combine(this.dir, asset.FileName));
+            file.SetLength(asset.SizeBytes ?? 1024);
+        }
+
+        using var container = this.Container();
+
+        Assert.True(container.ExpressiveEngineInstalled);
+        Assert.True(container.ExpressiveRoutingActive);
+    }
+
+    [Fact]
+    public void Routing_IsOff_WhenOnlyAGraphsSetIsThere_WithoutTheBaseFiles()
+    {
+        foreach (var asset in ModelCatalog.GroupAssets(ModelCatalog.TurboQ4F16Group))
+        {
+            using var file = File.Create(Path.Combine(this.dir, asset.FileName));
+            file.SetLength(asset.SizeBytes ?? 1024);
+        }
+
+        using var container = this.Container();
+
+        Assert.False(container.ExpressiveEngineInstalled);
+    }
 }

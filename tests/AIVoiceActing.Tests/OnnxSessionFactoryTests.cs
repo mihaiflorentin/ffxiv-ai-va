@@ -112,4 +112,32 @@ public sealed class OnnxSessionFactoryTests : IDisposable
         Assert.Empty(runtime.Appended);
         Assert.Contains("safety marker", build.FallbackReason);
     }
+
+    [Fact]
+    public void TheDecoder_DefaultsToAtMostTwoThreads_ButAnExplicitSettingIsRespected()
+    {
+        var factory = Factory(new FakeWebGpuRuntime());
+
+        using var byDefault = factory.Create(SessionRole.Decoder, GpuPlan).Options;
+        using var explicitEight = factory.Create(SessionRole.Decoder, GpuPlan, intraOpThreads: 8).Options;
+        using var explicitTwo = factory.Create(SessionRole.Decoder, GpuPlan, intraOpThreads: 2).Options;
+        using var encoder = factory.Create(SessionRole.Encoder, GpuPlan).Options;
+
+        Assert.InRange(byDefault.IntraOpNumThreads, 2, OnnxSessionFactory.DecoderDefaultMaxThreads);
+        Assert.Equal(8, explicitEight.IntraOpNumThreads);
+        Assert.Equal(2, explicitTwo.IntraOpNumThreads);
+        Assert.Equal(Math.Max(2, Environment.ProcessorCount / 2), encoder.IntraOpNumThreads); // other roles keep the old default
+    }
+
+    [Theory]
+    [InlineData(null, 2)]
+    [InlineData(0, 2)]
+    [InlineData(1, 1)]
+    [InlineData(16, 16)]
+    public void DecoderThreads_FollowsTheRule(int? explicitThreads, int expected)
+    {
+        var threads = OnnxSessionFactory.DecoderThreads(explicitThreads);
+
+        Assert.Equal(expected, threads);
+    }
 }

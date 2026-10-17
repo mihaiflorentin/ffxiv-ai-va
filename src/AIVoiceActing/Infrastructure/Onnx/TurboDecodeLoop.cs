@@ -71,8 +71,10 @@ public sealed class TurboDecodeLoop
     /// <summary>
     /// Generates speech tokens. The result starts with the seeded START token and ends with STOP when the model
     /// stopped by itself (the same shape the reference recipe slices from).
+    /// <paramref name="onToken"/>, when given, hears every speech token the moment it is picked (never the
+    /// seeded START or the closing STOP), so a decoder can start on the first tokens while the loop goes on.
     /// </summary>
-    public List<long> Run(TurboDecodeInput input, CancellationToken ct)
+    public List<long> Run(TurboDecodeInput input, CancellationToken ct, Action<long>? onToken = null)
     {
         var generated = new List<long> { StartSpeechToken };
         var seen = new HashSet<long> { StartSpeechToken };
@@ -136,6 +138,8 @@ public sealed class TurboDecodeLoop
                 {
                     break;
                 }
+
+                onToken?.Invoke(next);
 
                 ids = [next];
             }

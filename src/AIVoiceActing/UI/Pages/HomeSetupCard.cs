@@ -128,19 +128,8 @@ internal sealed class HomeSetupCard
                 missing.Count == 0 ? 0 : provisioner.BytesNeeded(missing)));
         }
 
-        // The Turbo q4f16 build (graphs and weights only; the base group above stays required): the GPU choice.
-        var q4f16 = this.ctx.ModelAssets()
-            .Where(a => a.Group == SetupAdvisor.TurboQ4F16Group)
-            .Select(a => a.Asset)
-            .ToList();
-        var q4f16Missing = q4f16.Where(a => !this.ctx.Probes.IsDownloaded(a)).ToList();
-        var precisionGroups = new List<GroupStatus>
-        {
-            new(
-                SetupAdvisor.TurboQ4F16Group,
-                q4f16.Sum(a => a.SizeBytes ?? 0),
-                q4f16Missing.Count == 0 ? 0 : provisioner.BytesNeeded(q4f16Missing)),
-        };
+        // The Turbo groups the advisor plans with: base files, the full-size set and the q4f16 set.
+        var precisionGroups = EngineParts.TurboGroupStatuses(this.ctx);
 
         this.inputs = new SetupInputs(
             device.HasUsableGpu,
