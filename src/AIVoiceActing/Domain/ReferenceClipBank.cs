@@ -15,11 +15,12 @@ public static class ReferenceClipBank
     public const string DefaultFemaleClipId = "uk_female_soft";
 
     /// <summary>
-    /// The clip for a voice id: the explicit alias, else by the sex letter of the id (Kokoro ids are
-    /// <c>{region}{f|m}_{name}</c>, generated blends keep that prefix), so an id the table does not list
-    /// never turns a woman's line into the male default.
+    /// The clip for a voice id: the explicit alias, else by sex (the library's <paramref name="sex"/> when
+    /// known, else read from the id: Kokoro ids are <c>{region}{f|m}_{name}</c>, generated blends keep that
+    /// prefix, pack ids carry an <c>_f_</c> / <c>_m_</c> token such as <c>isles.sth_f_01</c>), so an id the
+    /// table does not list never turns a woman's line into the male default.
     /// </summary>
-    public static string ClipIdFor(string? voiceId)
+    public static string ClipIdFor(string? voiceId, string? sex = null)
     {
         if (voiceId is null)
         {
@@ -31,7 +32,30 @@ public static class ReferenceClipBank
             return clip;
         }
 
-        return voiceId.Length > 2 && voiceId[1] == 'f' && voiceId[2] == '_' ? DefaultFemaleClipId : DefaultClipId;
+        var known = sex is "female" or "male" ? sex : SexFromId(voiceId);
+        return known == "female" ? DefaultFemaleClipId : DefaultClipId;
+    }
+
+    /// <summary>
+    /// The sex an id spells out, or null: a stock/generated prefix (<c>af_</c>, <c>bm_gen_</c>) or a lone
+    /// <c>f</c> / <c>m</c> token in a pack id (<c>accented.es_f_dora</c>). Conflicting tokens give null.
+    /// </summary>
+    public static string? SexFromId(string? voiceId)
+    {
+        if (string.IsNullOrEmpty(voiceId))
+        {
+            return null;
+        }
+
+        if (voiceId.Length > 2 && voiceId[2] == '_' && voiceId[1] is 'f' or 'm' && char.IsAsciiLetterLower(voiceId[0]))
+        {
+            return voiceId[1] == 'f' ? "female" : "male";
+        }
+
+        var tokens = voiceId.Split(['.', '_', '-']);
+        var female = tokens.Contains("f", StringComparer.OrdinalIgnoreCase);
+        var male = tokens.Contains("m", StringComparer.OrdinalIgnoreCase);
+        return female == male ? null : female ? "female" : "male";
     }
 
     private static readonly Dictionary<string, string> Aliases = new(StringComparer.Ordinal)
