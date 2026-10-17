@@ -12,6 +12,8 @@
     <!-- Core ORT (osx-arm64 native: CPU + CoreML EPs) — the plugin keeps its
          Managed+DirectML 1.24.4 pins; the engine sources compile against both. -->
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.29.0" />
+    <!-- GPU device on the Turbo path: the WebGPU provider natives (linux-x64 .so here, pinned like the plugin). -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.EP.WebGpu" Version="[0.2.1]" ExcludeAssets="compile;runtime" />
     <PackageReference Include="KokoroSharp" Version="0.8.4" />
     <PackageReference Include="Horus.F5Tts.Onnx" Version="0.3.1" />
     <PackageReference Include="Tokenizers.DotNet" Version="1.4.1" />

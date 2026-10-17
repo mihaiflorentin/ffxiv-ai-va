@@ -221,7 +221,32 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             emotionClassifierEnabledFactory: () => config.DirectorEnabled,
             useRaceVoicePresetsFactory: () => config.UseRaceVoicePresets,
             adHocStyleTagsFactory: () => config.AdHocStyleTagsEnabled,
-            styleTagRegexFactory: () => config.StyleRegex);
+            styleTagRegexFactory: () => config.StyleRegex,
+            devicePreferencesFactory: () => config.Device.ToPreferences(),
+            clearGpuCrashFlag: () =>
+            {
+                config.Device.GpuDisabledByCrashGuard = false;
+                this.SaveConfig();
+            },
+            pluginDirectoryFactory: () => PluginInterface.AssemblyLocation.Directory?.FullName,
+            isWineFactory: DetectWine,
+            gpuMarkerPathFactory: () => Path.Combine(configDir, "gpu-session.pending"));
+        // A marker left by a previous process means it died inside native GPU code: keep the GPU off
+        // until the user retries. Flag first, then clear the marker (see GpuCrashGuard.TripIfLeftover).
+        try
+        {
+            this.services.GpuCrashGuard.TripIfLeftover(detail =>
+            {
+                config.Device.GpuDisabledByCrashGuard = true;
+                this.SaveConfig();
+                PluginLog.Warning("[AIVoiceActing] GPU turned off after a crash: {Detail}", detail);
+            });
+        }
+        catch (Exception ex)
+        {
+            PluginLog.Warning($"[AIVoiceActing] GPU crash-guard startup check failed: {ex.Message}");
+        }
+
         this.npcSheets = new NpcSheetIndexLoader(DataManager, PluginLog);
         _ = this.npcSheets.StartAsync();
         this.hints = new ObjectTableHintProvider(ObjectTable, npcSheets: () => this.npcSheets.Index);
@@ -338,6 +363,10 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
                 "voices")),
             UnboundModels = this.services.UnboundModels,
+            DeviceProbe = this.services.DeviceProbe,
+            DeviceInfo = () => SetupDeviceInfo.From(
+                this.services.DeviceReportOrStartProbe(), config.Device.GpuDisabledByCrashGuard),
+            ExpressiveSynthesizer = () => this.services.ExpressiveSynthesizer,
             EngineCatalog = this.services.EngineCatalog,
             VoiceLibrary = this.services.VoiceLibrary,
             Status = status,
@@ -432,18 +461,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     }
 
     /// <summary>Wine exports <c>wine_get_version</c> from ntdll; real Windows does not.</summary>
-    private static bool DetectWine()
-    {
-        try
-        {
-            return NativeLibrary.TryLoad("ntdll.dll", out var ntdll)
-                && NativeLibrary.TryGetExport(ntdll, "wine_get_version", out _);
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    private static bool DetectWine() => RuntimeHost.DetectWine();
 
     /// <summary>
     /// Upgrades a v1 config in place (writing the one-time .v1.bak first). Must never throw:

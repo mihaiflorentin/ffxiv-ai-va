@@ -57,6 +57,18 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<IReadOnlyList<string>>? voicePackRootsFactory;
     private readonly Func<IReadOnlyCollection<string>>? disabledVoicePacksFactory;
     private readonly Func<IVoiceLibrary>? voiceLibraryFactory;
+    private readonly Func<DevicePreferences>? devicePreferencesFactory;
+    private readonly Action? clearGpuCrashFlag;
+    private readonly Func<string?>? pluginDirectoryFactory;
+    private readonly Func<bool>? isWineFactory;
+    private readonly Func<string>? gpuMarkerPathFactory;
+    private readonly Func<IWebGpuRuntime>? webGpuRuntimeFactory;
+    private IWebGpuRuntime? webGpuRuntime;
+    private IDeviceProbe? deviceProbe;
+    private GpuCrashGuard? gpuCrashGuard;
+    private OnnxSessionFactory? sessionFactory;
+    private IDevicePlanner? devicePlanner;
+    private int deviceProbeStarted;
     private IVoiceLibrary? voiceLibrary;
     private IEngineCatalog? engineCatalog;
     private ISpeechSynthesizer? expressiveSynthesizer;
@@ -159,8 +171,20 @@ public sealed class ServiceContainer : IDisposable
         Func<IReadOnlyDictionary<string, string>>? remoteExtraFactory = null,
         Func<IReadOnlyList<string>>? voicePackRootsFactory = null,
         Func<IReadOnlyCollection<string>>? disabledVoicePacksFactory = null,
-        Func<IVoiceLibrary>? voiceLibraryFactory = null)
+        Func<IVoiceLibrary>? voiceLibraryFactory = null,
+        Func<DevicePreferences>? devicePreferencesFactory = null,
+        Action? clearGpuCrashFlag = null,
+        Func<string?>? pluginDirectoryFactory = null,
+        Func<bool>? isWineFactory = null,
+        Func<string>? gpuMarkerPathFactory = null,
+        Func<IWebGpuRuntime>? webGpuRuntimeFactory = null)
     {
+        this.devicePreferencesFactory = devicePreferencesFactory;
+        this.clearGpuCrashFlag = clearGpuCrashFlag;
+        this.pluginDirectoryFactory = pluginDirectoryFactory;
+        this.isWineFactory = isWineFactory;
+        this.gpuMarkerPathFactory = gpuMarkerPathFactory;
+        this.webGpuRuntimeFactory = webGpuRuntimeFactory;
         this.voicePackRootsFactory = voicePackRootsFactory;
         this.disabledVoicePacksFactory = disabledVoicePacksFactory;
         this.voiceLibraryFactory = voiceLibraryFactory;
@@ -281,6 +305,106 @@ public sealed class ServiceContainer : IDisposable
     }
 
     /// <summary>
+    /// GPU capability probe (WebGPU runtime + adapters). Creating it loads nothing; the runtime
+    /// loads on the first <see cref="IDeviceProbe.Detect"/>.
+    /// </summary>
+    public IDeviceProbe DeviceProbe
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.DeviceProbeUnlocked();
+            }
+        }
+    }
+
+    private IDeviceProbe DeviceProbeUnlocked() =>
+        this.deviceProbe ??= new Infrastructure.Onnx.DeviceProbe(
+            this.WebGpuRuntimeUnlocked(),
+            this.isWineFactory ?? (() => RuntimeHost.DetectWine()),
+            directMlPresent: null,
+            log: this.LogSinkUnlocked());
+
+    private IWebGpuRuntime WebGpuRuntimeUnlocked() =>
+        this.webGpuRuntime ??= this.webGpuRuntimeFactory?.Invoke()
+            ?? new WebGpuRuntime(
+                this.pluginDirectoryFactory?.Invoke(),
+                this.isWineFactory?.Invoke() ?? RuntimeHost.DetectWine(),
+                this.LogSinkUnlocked());
+
+    /// <summary>
+    /// The last probe result for the UI, or null while detection has not finished. The first call starts
+    /// detection on a worker thread (it loads the GPU runtime), so polling this per frame is safe.
+    /// </summary>
+    public DeviceReport? DeviceReportOrStartProbe()
+    {
+        var probe = this.DeviceProbe;
+        if (probe.LastReport is { } report)
+        {
+            return report;
+        }
+
+        if (Interlocked.Exchange(ref this.deviceProbeStarted, 1) == 0)
+        {
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    probe.Detect();
+                }
+                catch (Exception ex)
+                {
+                    this.LogSinkOptional?.Warn($"Device probe failed: {ex.Message}");
+                }
+            });
+        }
+
+        return null;
+    }
+
+    /// <summary>Crash marker for native GPU aborts (see <see cref="GpuCrashGuard"/>).</summary>
+    public GpuCrashGuard GpuCrashGuard
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.GpuCrashGuardUnlocked();
+            }
+        }
+    }
+
+    private GpuCrashGuard GpuCrashGuardUnlocked() =>
+        this.gpuCrashGuard ??= new GpuCrashGuard(
+            this.gpuMarkerPathFactory?.Invoke() ?? Path.Combine(this.ModelsDir, "gpu-session.pending"),
+            this.LogSinkUnlocked());
+
+    /// <summary>Decides, per engine and model, where a session may run (settings x probe x allowlist).</summary>
+    public IDevicePlanner DevicePlanner
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.DevicePlannerUnlocked();
+            }
+        }
+    }
+
+    private IDevicePlanner DevicePlannerUnlocked() =>
+        this.devicePlanner ??= new DevicePlanner(
+            this.devicePreferencesFactory ?? (() => DevicePreferences.Default),
+            this.DeviceProbeUnlocked());
+
+    private TurboDeviceServices TurboDevicesUnlocked()
+    {
+        this.sessionFactory ??= new OnnxSessionFactory(
+            this.WebGpuRuntimeUnlocked(), this.GpuCrashGuardUnlocked(), this.LogSinkUnlocked());
+        return new TurboDeviceServices(this.DevicePlannerUnlocked(), this.sessionFactory, this.clearGpuCrashFlag);
+    }
+
+    /// <summary>
     /// Drops the cached synthesizer so the next access rebuilds it from the current
     /// engine/EP selection. The retired instance is disposed on the thread pool, NOT
     /// here: a synchronous dispose while a background line is inside native inference
@@ -350,7 +474,8 @@ public sealed class ServiceContainer : IDisposable
                         voicePathResolver: this.ClippingResolver("turbo-default-voice.wav"),
                         executionProvider: this.selectedEpFactory?.Invoke() ?? "cpu",
                         intraOpThreads: threads,
-                        log: this.LogSinkUnlocked()),
+                        log: this.LogSinkUnlocked(),
+                        devices: this.TurboDevicesUnlocked()),
                     "f5" => new Infrastructure.F5.F5Synthesizer(
                         () => this.ModelsDir,
                         () => Math.Max(1, threads ?? 4),
@@ -446,7 +571,8 @@ public sealed class ServiceContainer : IDisposable
                             voicePathResolver: id => Path.IsPathRooted(id) && File.Exists(id) ? id : fallbackClips(id),
                             executionProvider: "cpu",
                             intraOpThreads: this.cpuThreadsFactory?.Invoke(),
-                            log: this.LogSinkUnlocked());
+                            log: this.LogSinkUnlocked(),
+                            devices: this.TurboDevicesUnlocked());
                         this.LogSinkUnlocked().Info("Expressive engine instance created (Turbo, CPU).");
                     }
 

@@ -53,6 +53,11 @@ dotnet run --project tools/SmokeSynth -c Release -p:UseAppHost=false -p:AllowMis
   --models "$HOME/.cache/aiva-kokoro" --out /tmp/aiva-test.wav --rtf
 ```
 
+# Turbo device plan: --engine turbo --device cpu|gpu [--api vulkan|d3d12] [--power high|low] [--bench]
+# prints the probe (platform, adapters), the plan and the engine status. The GPU runtime is the
+# WebGPU EP pinned to exactly 0.2.1 (0.3.0/0.4.0 abort the process on the Turbo graphs); GPU
+# integration tests run only with AIVA_GPU_TESTS=1 (they need a real GPU, so not in the sandbox).
+
 The tests project and the SmokeSynth tool must NOT reference Dalamud; the plugin project's
 csproj carries the runtime packages (OnnxRuntime, DirectML, NAudio, Tokenizers.DotNet,
 Standart.Hash.xxHash, KokoroSharp). NuGet packages are added in the csproj that owns

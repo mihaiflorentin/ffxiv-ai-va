@@ -1,5 +1,7 @@
 namespace AIVoiceActing;
 
+using AIVoiceActing.Ports;
+
 // Persisted by Newtonsoft with TypeNameHandling ("$type": "AIVoiceActing.EngineSettings, AIVoiceActing"),
 // so these are top-level types and must never be renamed or moved without a migration.
 
@@ -54,8 +56,15 @@ public sealed class DeviceSettings
     /// <summary>auto | gpu | cpu.</summary>
     public string Mode { get; set; } = ModeAuto;
 
-    /// <summary>"" = the probe's default adapter; otherwise a stable adapter id.</summary>
-    public string AdapterId { get; set; } = "";
+    /// <summary>
+    /// performance (the discrete GPU, the default) | lowpower (the integrated GPU, leaves the discrete one
+    /// to the game). The GPU runtime can pick an adapter class but not a specific adapter, so this
+    /// replaces the old per-adapter picker (<c>AdapterId</c>, never exposed; old files carrying it load fine).
+    /// </summary>
+    public string GpuPreference { get; set; } = PreferencePerformance;
+
+    public const string PreferencePerformance = "performance";
+    public const string PreferenceLowPower = "lowpower";
 
     /// <summary>Advanced: auto | webgpu | directml.</summary>
     public string Backend { get; set; } = "auto";
@@ -74,9 +83,34 @@ public sealed class DeviceSettings
     /// <summary>Set by the GPU crash guard; cleared by "Retry on GPU".</summary>
     public bool GpuDisabledByCrashGuard { get; set; }
 
+    /// <summary>The device settings as the policy reads them (unknown strings fall back to the defaults).</summary>
+    public DevicePreferences ToPreferences() => new(
+        this.Mode switch
+        {
+            ModeGpu => DeviceMode.Gpu,
+            ModeCpu => DeviceMode.Cpu,
+            _ => DeviceMode.Auto,
+        },
+        this.GpuPreference == PreferenceLowPower
+            ? Ports.GpuPreference.LowPower
+            : Ports.GpuPreference.Performance,
+        this.Api switch
+        {
+            "vulkan" => GpuApi.Vulkan,
+            "d3d12" => GpuApi.D3D12,
+            _ => GpuApi.Auto,
+        },
+        this.Backend switch
+        {
+            "webgpu" => DeviceBackend.WebGpu,
+            "directml" => DeviceBackend.DirectML,
+            _ => DeviceBackend.Auto,
+        },
+        this.GpuDisabledByCrashGuard);
+
     /// <summary>
-    /// The execution-provider string the current ONNX engines understand (auto/cpu/directml),
-    /// derived from <see cref="Mode"/>. A bridge until the WebGPU runtime lands.
+    /// The execution-provider string the legacy ONNX engines understand (auto/cpu/directml),
+    /// derived from <see cref="Mode"/>. Turbo and Kokoro follow <see cref="ToPreferences"/> instead.
     /// </summary>
     public string ToExecutionProvider() => this.Mode switch
     {

@@ -26,6 +26,15 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.24.4" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
+    <!-- WebGPU plugin execution provider (Turbo language model on any vendor's GPU). The package
+         has NO onnxruntime native of its own (no dependencies), only the provider dll plus
+         dxcompiler.dll/dxil.dll, which PreparePackOutput flattens next to the plugin dll like the
+         other natives. Its managed helper is excluded: it locates the library through
+         Assembly.Location, which is empty under Dalamud; WebGpuRuntime loads it by absolute path.
+         PINNED to exactly 0.2.1: 0.3.0 and 0.4.0 abort the whole process on the Turbo graphs
+         (docs/plans/2026-10-gpu-spike-results.md). VerifiedGpuCombos.WebGpuEpVersion must match,
+         and the allowlist hashes were verified against this release only. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.EP.WebGpu" Version="[0.2.1]" ExcludeAssets="compile;runtime" />
     <!-- MUST ship with the plugin: Dalamud's ManagedLoadContext has no deferral entry
          for System.Numerics.Tensors (verified against Dalamud.dll 15.0.3.4 strings:
          System.Numerics and System.Numerics.Vectors are listed, Tensors is not), the
@@ -69,7 +78,8 @@
        dylib) next to the DirectML package's debug pdb/dll junk. Flatten the natives the
        game actually loads to the output root and delete the rest before packing, so
        latest.zip holds exactly: plugin dll/pdb/deps/manifest, managed deps, required
-       natives (onnxruntime, DirectML, providers_shared, hf_tokenizers), icon.png and
+       natives (onnxruntime, DirectML, providers_shared, hf_tokenizers, and the WebGPU
+       provider with dxcompiler/dxil), icon.png and
        voices/. The RemoveDir also clears stale publish/ folders left by the old
        in-OutputPath PublishDir layout. -->
   <Target Name="PreparePackOutput" BeforeTargets="DefaultDalamudPackagerRelease;DefaultDalamudPackagerDebug">

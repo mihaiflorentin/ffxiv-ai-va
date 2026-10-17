@@ -38,6 +38,12 @@ public sealed class ExpressiveRouter : ISpeechSynthesizer
 
     public string NotReadyReason => this.primary().NotReadyReason;
 
+    /// <summary>The main engine's status; the expressive engine reports its own through the container.</summary>
+    public EngineStatus Status => this.primary().Status;
+
+    public Task RetryAsync(DeviceMode mode, CancellationToken cancellationToken = default) =>
+        this.primary().RetryAsync(mode, cancellationToken);
+
     public Task WarmUpAsync(CancellationToken cancellationToken) => this.primary().WarmUpAsync(cancellationToken);
 
     public async Task<SynthesisResult> SynthesizeAsync(SynthesisRequest request, CancellationToken cancellationToken)

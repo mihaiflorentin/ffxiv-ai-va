@@ -1,6 +1,7 @@
 namespace AIVoiceActing.Infrastructure.Onnx;
 
 using System.Collections.Concurrent;
+using AIVoiceActing.Domain;
 using AIVoiceActing.Infrastructure.Storage;
 using AIVoiceActing.Ports;
 using Microsoft.ML.OnnxRuntime;
@@ -80,7 +81,12 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     private readonly Variant variant;
     private readonly ILogSink? log;
     private readonly int? intraOpThreads;
-    private readonly Lazy<Engine> engine;
+    private readonly TurboDeviceServices? devices;
+    private readonly object statusGate = new();
+    private volatile Lazy<Engine> engine;
+    private DeviceMode? modeOverride;
+    private volatile string? loadFailure;
+    private volatile bool loading;
     // Unbounded by design: one entry is a few MB (condition embedding + prompt tokens +
     // speaker tensors) and the voice population per session is small (tens — race/gender
     // slots plus overrides), so the cache stays in the low MBs for the process lifetime;
@@ -107,18 +113,23 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         ILogSink? log = null,
         string? languageModelOverride = null,
         int? intraOpThreads = null)
-        : this(LegacyVariant, modelsDir, voicePathResolver, tokenizerFactory, executionProvider, log, languageModelOverride, intraOpThreads)
+        : this(LegacyVariant, modelsDir, voicePathResolver, tokenizerFactory, executionProvider, log, languageModelOverride, intraOpThreads, null)
     {
     }
 
-    /// <summary>Chatterbox Turbo variant (official ResembleAI ONNX export).</summary>
+    /// <summary>
+    /// Chatterbox Turbo variant (official ResembleAI ONNX export). With <paramref name="devices"/> the
+    /// sessions follow the device plan (language model only; see <see cref="TurboDeviceServices.LmGpuLoopReady"/>);
+    /// without it the legacy <paramref name="executionProvider"/> string applies to all four.
+    /// </summary>
     public static ChatterboxSynthesizer CreateTurbo(
         string modelsDir,
         Func<string, string?> voicePathResolver,
         string executionProvider = "auto",
         ILogSink? log = null,
         int? intraOpThreads = null,
-        Func<ITextTokenizer>? tokenizerFactory = null) =>
+        Func<ITextTokenizer>? tokenizerFactory = null,
+        TurboDeviceServices? devices = null) =>
         new(
             TurboVariant,
             modelsDir,
@@ -127,7 +138,9 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             executionProvider,
             log,
             null,
-            intraOpThreads);
+            intraOpThreads,
+            devices);
+
 
     private static Func<ITextTokenizer> TurboTokenizerFactory(string modelsDir) =>
         () => new TokenizersDotNetTokenizer(Path.Combine(modelsDir, ModelCatalog.TurboTokenizerJsonFileName));
@@ -143,8 +156,10 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         string executionProvider,
         ILogSink? log,
         string? languageModelOverride,
-        int? intraOpThreads)
+        int? intraOpThreads,
+        TurboDeviceServices? devices)
     {
+        this.devices = variant == TurboVariant ? devices : null;
         this.variant = variant;
         this.modelsDir = modelsDir;
         this.voicePathResolver = voicePathResolver;
@@ -182,6 +197,149 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
     /// <summary>Human-readable reason IsReady is false; empty when ready.</summary>
     public string NotReadyReason => this.FindNotReadyReason() ?? string.Empty;
+
+    /// <summary>
+    /// Device state for the UI. Turbo with device services reports where the language model really
+    /// runs and why; everything else is plain ready / not installed on the CPU. Cheap enough to
+    /// poll per frame: it never hashes files or touches the GPU runtime.
+    /// </summary>
+    public EngineStatus Status
+    {
+        get
+        {
+            if (this.devices is not { } services)
+            {
+                return EngineStatus.FromReadiness(this.IsReady, this.NotReadyReason);
+            }
+
+            DeviceMode requested;
+            lock (this.statusGate)
+            {
+                requested = this.modeOverride ?? services.Planner.Preferences.Mode;
+            }
+
+            if (this.loading)
+            {
+                return new EngineStatus(EngineState.Loading, requested, ActiveDevice.Cpu, "Loading Chatterbox Turbo…", false);
+            }
+
+            if (this.loadFailure is { } failure)
+            {
+                return new EngineStatus(EngineState.Failed, requested, ActiveDevice.Cpu, failure, false);
+            }
+
+            if (this.FindNotReadyReason() is { } missing)
+            {
+                return new EngineStatus(EngineState.NotInstalled, requested, ActiveDevice.Cpu, missing, false);
+            }
+
+            var current = this.engine;
+            if (current.IsValueCreated && current.Value.DeviceStatus is { } built)
+            {
+                return built with { RequestedDevice = requested };
+            }
+
+            // Not loaded yet: preview the plan without hashing or loading anything.
+            var lmFile = this.languageModelOverride ?? this.variant.LmFile;
+            var plan = services.Planner.PlanFor(
+                DeviceModePolicy.TurboEngineId, this.modelsDir, lmFile, cheap: true, this.ModeOverride);
+            return StatusFor(requested, plan, services, services.Planner.Preferences.GpuDisabledByCrashGuard, gpuFailed: false);
+        }
+    }
+
+    private DeviceMode? ModeOverride
+    {
+        get
+        {
+            lock (this.statusGate)
+            {
+                return this.modeOverride;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Maps a plan to a user-facing status. Until the decode loop supports it (see
+    /// <see cref="TurboDeviceServices.LmGpuLoopReady"/>) a GPU plan is reported as a CPU run.
+    /// </summary>
+    private static EngineStatus StatusFor(
+        DeviceMode requested,
+        DevicePlan plan,
+        TurboDeviceServices services,
+        bool crashGuardTripped,
+        bool gpuFailed)
+    {
+        if (plan.IsGpu && !services.LmGpuLoopReady)
+        {
+            return new EngineStatus(
+                EngineState.FellBack,
+                requested,
+                ActiveDevice.Cpu,
+                "Chatterbox Turbo runs on the CPU for now; GPU speech for it is coming in a later update.",
+                false);
+        }
+
+        if (plan.IsGpu)
+        {
+            // Dawn picks the adapter class from the power preference; the name is display only.
+            var adapters = services.Planner.LastReport?.Adapters ?? [];
+            var adapter = adapters.Count == 0
+                ? string.Empty
+                : (plan.PowerPreference == GpuPreference.LowPower ? adapters[^1] : adapters[0]).Name;
+            return new EngineStatus(EngineState.Ready, requested, new ActiveDevice(plan.Ep, adapter, plan.Api), plan.Reason, false);
+        }
+
+        return plan.WantedGpu
+            ? new EngineStatus(EngineState.FellBack, requested, ActiveDevice.Cpu, plan.Reason, crashGuardTripped || gpuFailed)
+            : new EngineStatus(EngineState.Ready, requested, ActiveDevice.Cpu, plan.Reason, false);
+    }
+
+    /// <summary>
+    /// Rebuilds the sessions for <paramref name="mode"/>. A GPU retry first clears the crash-guard
+    /// flag. Waits for the line in flight (single-flight gate), then loads again, so it is safe to
+    /// call from a button.
+    /// </summary>
+    public async Task RetryAsync(DeviceMode mode, CancellationToken cancellationToken = default)
+    {
+        if (this.devices is not { } services)
+        {
+            return;
+        }
+
+        await this.synthesisGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            this.ThrowIfDisposed();
+            if (mode != DeviceMode.Cpu)
+            {
+                services.ClearCrashFlag?.Invoke();
+            }
+
+            var old = this.engine;
+            lock (this.statusGate)
+            {
+                this.modeOverride = mode;
+                this.loadFailure = null;
+                this.engine = new Lazy<Engine>(this.CreateEngine, LazyThreadSafetyMode.ExecutionAndPublication);
+            }
+
+            if (old.IsValueCreated)
+            {
+                old.Value.Dispose();
+            }
+
+            _ = await Task.Run(() => this.engine.Value, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not SpeechSynthesisException)
+        {
+            // CreateEngine already recorded the failure for Status.
+            this.log?.Warn($"Retry could not load Chatterbox Turbo: {ex.Message}");
+        }
+        finally
+        {
+            this.synthesisGate.Release();
+        }
+    }
 
     /// <summary>Test hook: the instance has begun its drain-and-teardown sequence.</summary>
     public bool IsDisposed => this.disposed;
@@ -635,6 +793,119 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
     private Engine CreateEngine()
     {
+        this.loading = true;
+        try
+        {
+            return this.devices is { } services ? this.CreateTurboEngine(services) : this.CreateLegacyEngine();
+        }
+        catch (Exception ex)
+        {
+            this.loadFailure = $"Chatterbox Turbo could not load: {ex.Message}";
+            throw;
+        }
+        finally
+        {
+            this.loading = false;
+        }
+    }
+
+    /// <summary>
+    /// Turbo sessions from the device plan: only the language model may leave the CPU, and only
+    /// when the plan allows it and the decode loop supports it. A managed GPU failure rebuilds the
+    /// whole set on the CPU; a native abort is the crash guard's business.
+    /// </summary>
+    private Engine CreateTurboEngine(TurboDeviceServices services)
+    {
+        var lmFile = this.languageModelOverride ?? this.variant.LmFile;
+        var requested = this.ModeOverride ?? services.Planner.Preferences.Mode;
+        var crashFlag = services.Planner.Preferences.GpuDisabledByCrashGuard;
+        var plan = services.Planner.PlanFor(DeviceModePolicy.TurboEngineId, this.modelsDir, lmFile, cheap: false, this.ModeOverride);
+        this.log?.Info($"Chatterbox Turbo device plan: {plan.Ep} ({plan.Reason})");
+
+        var gpuFailed = false;
+        if (plan.IsGpu && services.LmGpuLoopReady)
+        {
+            try
+            {
+                var engine = this.BuildSessions(services, plan, lmFile);
+                engine.DeviceStatus = engine.LmEp == DeviceEp.Cpu
+                    ? StatusFor(requested, DevicePlan.OnCpu(engine.FallbackReason, wantedGpu: true), services, crashFlag, gpuFailed: true)
+                    : StatusFor(requested, plan, services, crashFlag, gpuFailed: false);
+                return engine;
+            }
+            catch (Exception ex)
+            {
+                this.log?.Warn($"Turbo sessions failed on the GPU ({ex.Message}); retrying everything on the CPU.");
+                gpuFailed = true;
+            }
+        }
+
+        // CPU build: the plan said so, the decode loop is not GPU-ready yet, or the GPU build failed.
+        var cpuPlan = plan.IsGpu
+            ? DevicePlan.OnCpu(plan.Reason, wantedGpu: true, plan.PowerPreference)
+            : plan;
+        var cpuEngine = this.BuildSessions(services, cpuPlan, lmFile);
+        cpuEngine.DeviceStatus = gpuFailed
+            ? new EngineStatus(
+                EngineState.FellBack,
+                requested,
+                ActiveDevice.Cpu,
+                "The GPU could not be started, so Chatterbox Turbo runs on the CPU.",
+                CanRetryGpu: true)
+            : StatusFor(requested, plan, services, crashFlag, gpuFailed: false);
+        return cpuEngine;
+    }
+
+    private Engine BuildSessions(TurboDeviceServices services, DevicePlan plan, string lmFile)
+    {
+        var builds = new List<SessionBuild>();
+        var sessions = new List<InferenceSession>();
+        try
+        {
+            SessionBuild Build(SessionRole role)
+            {
+                var build = services.Sessions.Create(role, plan, this.intraOpThreads);
+                builds.Add(build);
+                return build;
+            }
+
+            var encoder = this.CreateSession(this.variant.EncoderFile, Build(SessionRole.Encoder).Options);
+            sessions.Add(encoder);
+            var embed = this.CreateSession(this.variant.EmbedFile, Build(SessionRole.Embedding).Options);
+            sessions.Add(embed);
+            var lmBuild = Build(SessionRole.Lm);
+            var lm = this.CreateSession(lmFile, lmBuild.Options);
+            sessions.Add(lm);
+            var decoder = this.CreateSession(this.variant.DecoderFile, Build(SessionRole.Decoder).Options);
+            sessions.Add(decoder);
+            this.log?.Info($"Chatterbox Turbo sessions initialized (language model on {lmBuild.Ep}).");
+            return new Engine(
+                encoder, embed, lm, decoder, lmBuild.Ep.ToString().ToLowerInvariant(), builds.Select(b => b.Options).ToArray())
+            {
+                LmEp = lmBuild.Ep,
+                FallbackReason = lmBuild.FallbackReason,
+                LmGuard = lmBuild.Guard,
+            };
+        }
+        catch (Exception)
+        {
+            foreach (var session in sessions)
+            {
+                session.Dispose();
+            }
+
+            foreach (var build in builds)
+            {
+                build.Options.Dispose();
+                build.Guard?.FailedSafely();
+            }
+
+            throw;
+        }
+    }
+
+    private Engine CreateLegacyEngine()
+    {
         SessionOptions? options = null;
         InferenceSession encoder, embed, lm, decoder;
         var created = new List<InferenceSession>(); // disposed if a later session fails
@@ -654,7 +925,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             decoder = this.CreateSession(this.variant.DecoderFile, epOptions);
             created.Add(decoder);
             this.log?.Info($"Chatterbox sessions initialized on EP '{ep}'.");
-            return new Engine(encoder, embed, lm, decoder, ep, options);
+            return new Engine(encoder, embed, lm, decoder, ep, [options]);
         }
         catch (Exception) when (this.executionProvider != "cpu")
         {
@@ -672,7 +943,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             embed = this.CreateSession(this.variant.EmbedFile, cpuOptions);
             lm = this.CreateSession(this.languageModelOverride ?? this.variant.LmFile, cpuOptions);
             decoder = this.CreateSession(this.variant.DecoderFile, cpuOptions);
-            return new Engine(encoder, embed, lm, decoder, "cpu", cpuOptions);
+            return new Engine(encoder, embed, lm, decoder, "cpu", [cpuOptions]);
         }
     }
 
@@ -798,14 +1069,30 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         InferenceSession languageModel,
         InferenceSession decoder,
         string ep,
-        SessionOptions options) : IDisposable
+        IReadOnlyList<SessionOptions> options) : IDisposable
     {
         public InferenceSession Encoder { get; } = encoder;
         public InferenceSession EmbedTokens { get; } = embedTokens;
         public InferenceSession LanguageModel { get; } = languageModel;
         public InferenceSession Decoder { get; } = decoder;
         public string Ep { get; } = ep;
-        private SessionOptions Options { get; } = options;
+        private IReadOnlyList<SessionOptions> Options { get; } = options;
+
+        /// <summary>Turbo with device services only: what the UI shows for this build.</summary>
+        public EngineStatus? DeviceStatus { get; set; }
+
+        /// <summary>Provider the language model session got.</summary>
+        public DeviceEp LmEp { get; init; } = DeviceEp.Cpu;
+
+        /// <summary>Why a wanted GPU session became a CPU one; empty otherwise.</summary>
+        public string FallbackReason { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Crash-guard scope of a GPU language model session. The decode loop completes it after the
+        /// first successful inference (and fails it on a managed exception); until then the marker
+        /// stays on disk. Null on the CPU.
+        /// </summary>
+        public GpuCrashGuard.Scope? LmGuard { get; init; }
 
         public void Dispose()
         {
@@ -813,7 +1100,14 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             this.EmbedTokens.Dispose();
             this.LanguageModel.Dispose();
             this.Decoder.Dispose();
-            this.Options.Dispose();
+            foreach (var options in this.Options)
+            {
+                options.Dispose();
+            }
+
+            // A scope still open here never saw its first inference; the process is alive, so
+            // nothing crashed and the marker must not condemn the next start.
+            this.LmGuard?.FailedSafely();
         }
     }
 }
