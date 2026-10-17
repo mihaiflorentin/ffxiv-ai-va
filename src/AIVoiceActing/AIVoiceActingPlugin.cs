@@ -156,6 +156,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             keepTempoWhenPitchedFactory: () => config.KeepTempoWhenPitched,
             ageAwareCastingFactory: () => config.AgeAwareCasting,
             streamSentencesFactory: () => config.StreamSentences,
+            expressiveEngineFactory: () => config.ExpressiveEngine,
             modelsDirFactory: () => Path.Combine(configDir, "models"),
             voicesManifestFactory: () => ExtractVoicesManifest(configDir),
             // Re-read on first use and whenever the processor sees changed files; the

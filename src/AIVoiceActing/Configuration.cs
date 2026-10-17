@@ -127,6 +127,10 @@ public class Configuration
     /// <summary>Shows the small now-speaking panel (speaker, voice, mood, Replay/Skip/Stop).</summary>
     public bool ShowNowSpeaking { get; set; }
 
+    /// <summary>Strongly emotional lines use the expressive engine (Turbo) when it is
+    /// downloaded and Kokoro is the main engine. Off by default: ~3.2 GB, slower on CPU.</summary>
+    public bool ExpressiveEngine { get; set; }
+
     /// <summary>Lines older than this are dropped at playback instead of played late. 0 keeps everything.</summary>
     public int StaleLineSeconds { get; set; } = 20;
 

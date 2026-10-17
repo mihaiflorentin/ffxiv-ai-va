@@ -52,6 +52,9 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<bool>? useFp32LanguageModelFactory;
     private readonly Func<string>? selectedEngineFactory;
     private readonly Func<bool>? streamSentencesFactory;
+    private readonly Func<bool>? expressiveEngineFactory;
+    private ISpeechSynthesizer? expressiveSynthesizer;
+    private ExpressiveRouter? expressiveRouter;
     private readonly Func<int>? cpuThreadsFactory;
     private readonly Func<string?>? kokoroVoicesDirFactory;
     private readonly Func<string?>? f5VoicesDirFactory;
@@ -145,8 +148,10 @@ public sealed class ServiceContainer : IDisposable
         Func<bool>? keepTempoWhenPitchedFactory = null,
         Func<bool>? ageAwareCastingFactory = null,
         Func<bool>? emotionClassifierEnabledFactory = null,
-        Func<bool>? streamSentencesFactory = null)
+        Func<bool>? streamSentencesFactory = null,
+        Func<bool>? expressiveEngineFactory = null)
     {
+        this.expressiveEngineFactory = expressiveEngineFactory;
         this.streamSentencesFactory = streamSentencesFactory;
         this.emotionClassifierEnabledFactory = emotionClassifierEnabledFactory;
         this.ageAwareCastingFactory = ageAwareCastingFactory;
@@ -333,6 +338,151 @@ public sealed class ServiceContainer : IDisposable
         }
     }
 
+    /// <summary>Kokoro-rendered reference clips the expressive engine clones, one per voice and pitch.</summary>
+    public const string ExpressiveClipsFolder = "voices-kokoro-ref";
+
+    /// <summary>A neutral, varied passage (~10 s): enough for the expressive engine to
+    /// capture a voice's timbre without carrying any particular mood into the clone.</summary>
+    private const string ReferencePassage =
+        "The morning light spilled across the harbor as the ships came in. Merchants called out " +
+        "their wares, and somewhere a bell rang twice. It was, by all accounts, a perfectly ordinary day.";
+
+    /// <summary>True when every required file of the expressive engine (Turbo) is on disk.</summary>
+    public bool ExpressiveEngineInstalled =>
+        this.modelsDirFactory is not null
+        && Infrastructure.Onnx.ModelCatalog.TurboRequiredAssets
+            .Where(a => !a.Optional)
+            .All(a => File.Exists(Path.Combine(this.ModelsDir, a.FileName)));
+
+    /// <summary>Expressive routing applies: switched on, installed, and Kokoro is the main engine.</summary>
+    public bool ExpressiveRoutingActive =>
+        this.expressiveEngineFactory?.Invoke() == true
+        && (this.selectedEngineFactory?.Invoke() ?? "kokoro") == "kokoro"
+        && this.ExpressiveEngineInstalled;
+
+    /// <summary>
+    /// The engine every line goes through: the main engine, or the expressive one for
+    /// strongly emotional lines when expressive routing is active (see <see cref="ExpressiveRouter"/>).
+    /// </summary>
+    public ISpeechSynthesizer RoutedSynthesizer
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.expressiveRouter ??= new ExpressiveRouter(
+                    primary: () => this.SpeechSynthesizer,
+                    expressive: () => this.ExpressiveSynthesizer,
+                    prepareVoice: this.PrepareExpressiveVoiceAsync,
+                    log: this.LogSinkUnlocked());
+            }
+        }
+    }
+
+    /// <summary>
+    /// The secondary expressive engine (fp32 Chatterbox Turbo on CPU), built lazily while
+    /// routing is active; its sessions load on the first expressive line. Switching routing
+    /// off retires the instance in the background so its memory is returned.
+    /// </summary>
+    public ISpeechSynthesizer? ExpressiveSynthesizer
+    {
+        get
+        {
+            var active = this.ExpressiveRoutingActive;
+            ISpeechSynthesizer? retired = null;
+            lock (this.gate)
+            {
+                if (active)
+                {
+                    if (this.expressiveSynthesizer is null)
+                    {
+                        var fallbackClips = this.ClippingResolver(Infrastructure.Onnx.ModelCatalog.TurboDefaultVoiceFileName);
+                        this.expressiveSynthesizer = Infrastructure.Onnx.ChatterboxSynthesizer.CreateTurbo(
+                            this.ModelsDir,
+                            // The router hands over an absolute clip path; anything else
+                            // resolves like the parked Turbo engine does.
+                            voicePathResolver: id => Path.IsPathRooted(id) && File.Exists(id) ? id : fallbackClips(id),
+                            executionProvider: "cpu",
+                            intraOpThreads: this.cpuThreadsFactory?.Invoke(),
+                            log: this.LogSinkUnlocked());
+                        this.LogSinkUnlocked().Info("Expressive engine instance created (Turbo, CPU).");
+                    }
+
+                    return this.expressiveSynthesizer;
+                }
+
+                retired = this.expressiveSynthesizer;
+                this.expressiveSynthesizer = null;
+            }
+
+            if (retired is IDisposable disposable)
+            {
+                _ = Task.Run(() =>
+                {
+                    try
+                    {
+                        disposable.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        this.LogSinkOptional?.Warn($"Expressive engine dispose failed: {ex.Message}");
+                    }
+                });
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The reference clip the expressive engine clones for this request: the user's own clip
+    /// for the voice when there is one, else a clip the main (Kokoro) engine renders once per
+    /// voice and pitch, so the expressive take keeps the speaker's timbre. Null when no clip
+    /// can be made (the line then stays on the main engine).
+    /// </summary>
+    private async Task<string?> PrepareExpressiveVoiceAsync(SynthesisRequest request, CancellationToken cancellationToken)
+    {
+        var voiceId = request.ReferenceVoiceId;
+        if (string.IsNullOrWhiteSpace(voiceId) || voiceId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            return null;
+        }
+
+        var userClip = Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav");
+        if (File.Exists(userClip))
+        {
+            return userClip;
+        }
+
+        var pitchTag = (int)MathF.Round(Math.Clamp(request.Pitch, 0.5f, 1.5f) * 100f);
+        var clip = Path.Combine(this.ModelsDir, ExpressiveClipsFolder, $"{voiceId}_p{pitchTag:000}.wav");
+        if (File.Exists(clip))
+        {
+            return clip;
+        }
+
+        var main = this.SpeechSynthesizer;
+        if (!main.IsReady)
+        {
+            return null;
+        }
+
+        var reference = await main.SynthesizeAsync(
+            new SynthesisRequest(voiceId, ReferencePassage, 0.5f, [], Pitch: pitchTag / 100f),
+            cancellationToken);
+        if (reference.SampleRate != 24000 || reference.Samples.Length < 24000 * 3)
+        {
+            return null; // the clone needs a few seconds of 24 kHz audio
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(clip)!);
+        var partial = clip + ".part";
+        Infrastructure.Onnx.WavCodec.WriteMono24k(partial, reference.Samples);
+        File.Move(partial, clip, overwrite: true);
+        this.LogSinkOptional?.Info($"Rendered expressive reference clip for \"{voiceId}\" (pitch {pitchTag / 100f:0.00}).");
+        return clip;
+    }
+
     /// <summary>Race/voice-group slot manifest (voicesManifestFactory or a hard error).</summary>
     public RaceVoiceMap VoiceMap
     {
@@ -497,7 +647,7 @@ public sealed class ServiceContainer : IDisposable
                 return this.speechHandler ??= new SpeechRequestHandler(
                     lexicon: this.Lexicon,
                     dialogueSessions: this.DialogueSessions,
-                    synthesizer: () => this.SpeechSynthesizer,
+                    synthesizer: () => this.RoutedSynthesizer,
                     queue: this.SpeechQueue,
                     profileLookup: this.ResolveProfile,
                     directorFactory: () => this.EmotionDirector,
@@ -514,7 +664,8 @@ public sealed class ServiceContainer : IDisposable
                     log: this.LogSinkUnlocked(),
                     streamSentences: this.streamSentencesFactory,
                     cache: this.SynthesisCache,
-                    engineKey: () => this.selectedEngineFactory?.Invoke() ?? "kokoro");
+                    engineKey: () => (this.selectedEngineFactory?.Invoke() ?? "kokoro")
+                        + (this.ExpressiveRoutingActive ? "+turbo" : string.Empty));
             }
         }
     }
@@ -960,6 +1111,8 @@ public sealed class ServiceContainer : IDisposable
             }
 
             this.disposables.Clear();
+            (this.expressiveSynthesizer as IDisposable)?.Dispose();
+            this.expressiveSynthesizer = null;
         }
     }
 

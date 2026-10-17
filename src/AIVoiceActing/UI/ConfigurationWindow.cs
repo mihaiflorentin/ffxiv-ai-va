@@ -423,6 +423,7 @@ public sealed class ConfigurationWindow : Window
         }
 
         this.DrawEmotionCard(assets, anyDownload);
+        this.DrawExpressiveCard(assets, anyDownload);
     }
 
     private void DrawEngineCard(string key, string title, string blurb, IReadOnlyList<(ModelAsset Asset, string Group)> assets, bool anyDownload)
@@ -544,6 +545,54 @@ public sealed class ConfigurationWindow : Window
     /// (and the expressive tags), on top of the punctuation rules.
     /// </summary>
     private const string EmotionAssetGroup = "emotion"; // ModelCatalog.EmotionGroup (UI stays port-only)
+    private const string ExpressiveAssetGroup = "turbo"; // ModelCatalog.TurboGroup
+
+    /// <summary>The optional expressive engine (Turbo) for strongly emotional lines.</summary>
+    private void DrawExpressiveCard(IReadOnlyList<(ModelAsset Asset, string Group)> assets, bool anyDownload)
+    {
+        var sectionAssets = assets.Where(a => a.Group == ExpressiveAssetGroup).ToList();
+        if (sectionAssets.Count == 0)
+        {
+            return;
+        }
+
+        var installed = sectionAssets.Where(a => !a.Asset.Optional).All(a => this.IsDownloadedCached(a.Asset));
+        var on = installed && this.config.ExpressiveEngine && this.config.SelectedEngine == "kokoro";
+        if (!ImGui.CollapsingHeader("Expressive voices (experimental)" + (on ? " — ON" : string.Empty) + "##expressive-card"))
+        {
+            return;
+        }
+
+        ImGui.TextWrapped(
+            "Optional second engine (Chatterbox Turbo, ~3.2 GB) for lines with a strong mood or a direction " +
+            "such as a laugh or a sigh. It clones each speaker's Kokoro voice from a short clip made the first " +
+            "time that voice needs it, so characters keep sounding like themselves. Every other line stays on " +
+            "Kokoro. It runs on the CPU and is several times slower than Kokoro, so these lines arrive later; " +
+            "if it fails, the line falls back to Kokoro.");
+        Controls.Checkbox(
+            "Use expressive voices for emotional lines when downloaded",
+            () => this.config.ExpressiveEngine,
+            v => { this.config.ExpressiveEngine = v; this.save(); });
+        ImGui.TextDisabled(
+            !installed ? "State: not downloaded"
+                : this.config.SelectedEngine != "kokoro" ? "State: downloaded (only used with Kokoro as the main engine)"
+                : "State: downloaded");
+        var missing = sectionAssets.Where(a => !this.IsDownloadedCached(a.Asset)).Select(a => a.Asset).ToList();
+        if (missing.Count > 0)
+        {
+            ImGui.SameLine();
+            if (Controls.Button(
+                    ModelsTabModel.DownloadAllLabel(missing.Count) + "##dl-expressive",
+                    ModelsTabModel.CanDownloadAll(anyDownload, missing.Count),
+                    anyDownload ? "A download is already in progress." : null))
+            {
+                this.StartDownloads(missing);
+            }
+        }
+
+        this.DrawAssetTable("expressive", sectionAssets, active: true, anyDownload);
+        ImGui.Spacing();
+    }
 
     private void DrawEmotionCard(IReadOnlyList<(ModelAsset Asset, string Group)> assets, bool anyDownload)
     {
