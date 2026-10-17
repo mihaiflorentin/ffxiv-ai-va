@@ -25,6 +25,8 @@ public sealed class ServiceContainer : IDisposable
     private readonly ILogSink? logSinkOverride;
     private readonly Func<ILogSink>? logSinkFactory;
     private readonly Func<string>? profileStorePathFactory;
+    private readonly TimeSpan? profileSaveDelay;
+    private readonly Func<bool>? keepTempoWhenPitchedFactory;
     private readonly Func<string>? castingPresetsPathFactory;
     private readonly Func<string>? modelsDirFactory;
     private readonly Func<string>? voicesManifestFactory;
@@ -135,8 +137,12 @@ public sealed class ServiceContainer : IDisposable
         Func<bool>? talkVisibleFactory = null,
         Func<bool>? useRaceVoicePresetsFactory = null,
         Func<bool>? adHocStyleTagsFactory = null,
-        Func<string>? styleTagRegexFactory = null)
+        Func<string>? styleTagRegexFactory = null,
+        TimeSpan? profileSaveDelay = null,
+        Func<bool>? keepTempoWhenPitchedFactory = null)
     {
+        this.keepTempoWhenPitchedFactory = keepTempoWhenPitchedFactory;
+        this.profileSaveDelay = profileSaveDelay;
         this.logSinkOverride = logSinkOverride;
         this.logSinkFactory = logSinkFactory;
         this.profileStorePathFactory = profileStorePathFactory;
@@ -214,11 +220,6 @@ public sealed class ServiceContainer : IDisposable
     }
 
     /// <summary>
-    /// The configured speech engine: "f5" (voice-acting quality, default), "kokoro"
-    /// (CPU real-time fallback), or "chatterbox" (legacy cloning). Sessions load lazily
-    /// on first use / warm-up.
-    /// </summary>
-    /// <summary>
     /// Drops the cached synthesizer so the next access rebuilds it from the current
     /// engine/EP selection. The retired instance is disposed on the thread pool, NOT
     /// here: a synchronous dispose while a background line is inside native inference
@@ -252,6 +253,11 @@ public sealed class ServiceContainer : IDisposable
         }
     }
 
+    /// <summary>
+    /// The configured speech engine: "kokoro" (CPU real-time, default and the fallback for
+    /// unknown values), or the parked "f5", "chatterbox" and "turbo". Sessions load lazily
+    /// on first use / warm-up.
+    /// </summary>
     public ISpeechSynthesizer SpeechSynthesizer
     {
         get
@@ -264,7 +270,7 @@ public sealed class ServiceContainer : IDisposable
                 }
 
                 var threads = this.cpuThreadsFactory?.Invoke();
-                var engine = this.selectedEngineFactory?.Invoke() ?? "f5";
+                var engine = this.selectedEngineFactory?.Invoke() ?? "kokoro";
                 ISpeechSynthesizer created = engine switch
                 {
                     "chatterbox" => new ChatterboxSynthesizer(
@@ -288,17 +294,20 @@ public sealed class ServiceContainer : IDisposable
                         executionProvider: this.selectedEpFactory?.Invoke() ?? "cpu",
                         intraOpThreads: threads,
                         log: this.LogSinkUnlocked()),
-                    "kokoro" => new Infrastructure.Kokoro.KokoroSynthesizer(
-                        () => this.ModelsDir,
-                        () => Math.Max(1, threads ?? 4),
-                        this.LogSinkUnlocked(),
-                        voicesDirFactory: this.kokoroVoicesDirFactory),
-                    _ => new Infrastructure.F5.F5Synthesizer(
+                    "f5" => new Infrastructure.F5.F5Synthesizer(
                         () => this.ModelsDir,
                         () => Math.Max(1, threads ?? 4),
                         this.LogSinkUnlocked(),
                         voicesDirFactory: this.f5VoicesDirFactory,
                         executionProviderFactory: this.selectedEpFactory),
+                    // A stale or unknown value (old configs) must never silently pick a
+                    // 1.4 GB parked engine.
+                    _ => new Infrastructure.Kokoro.KokoroSynthesizer(
+                        () => this.ModelsDir,
+                        () => Math.Max(1, threads ?? 4),
+                        this.LogSinkUnlocked(),
+                        voicesDirFactory: this.kokoroVoicesDirFactory,
+                        keepTempoWhenPitched: this.keepTempoWhenPitchedFactory),
                 };
 
                 this.LogSinkUnlocked().Info(
@@ -462,7 +471,7 @@ public sealed class ServiceContainer : IDisposable
                     dialogueSessions: this.DialogueSessions,
                     synthesizer: () => this.SpeechSynthesizer,
                     queue: this.SpeechQueue,
-                    profileLookup: this.ResolveProfileUnlocked,
+                    profileLookup: this.ResolveProfile,
                     directorFactory: () => this.EmotionDirector,
                     removeStutters: this.removeStutterEnabledFactory is null
                         ? null
@@ -962,7 +971,8 @@ public sealed class ServiceContainer : IDisposable
             this.profileStorePathFactory?.Invoke()
             ?? throw new InvalidOperationException(
                 "No profile store path configured: pass a profileStorePathFactory (in-game) or wire a fake store (tests)."),
-            this.LogSinkUnlocked()));
+            this.LogSinkUnlocked(),
+            this.profileSaveDelay));
 
     private T RegisterDisposable<T>(T port) where T : notnull
     {

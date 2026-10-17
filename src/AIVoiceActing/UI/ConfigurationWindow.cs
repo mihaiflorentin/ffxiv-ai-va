@@ -541,10 +541,15 @@ public sealed class ConfigurationWindow : Window
         Controls.HelpMarker(
             "If a line finishes synthesizing after the conversation moved on, skip it instead of playing it late. 0 keeps everything.");
         Controls.Checkbox(
-            "Use LLM emotion director (context-aware delivery)",
-            "Needs the optional director model; the free rules table runs otherwise.",
-            () => c.DirectorEnabled,
-            v => { c.DirectorEnabled = v; save(); });
+            "Keep speaking pace on pitched voices",
+            "Pitch shifting used to slow deep voices and speed up high ones. On keeps every voice at its own pace; off restores the old behaviour.",
+            () => c.KeepTempoWhenPitched,
+            v => { c.KeepTempoWhenPitched = v; save(); });
+        Controls.Checkbox(
+            "Even out voice loudness",
+            "Levels every line to the same loudness, then applies the per-voice volume. Volumes above 100% are softly limited instead of clipping.",
+            () => c.LevelVoiceLoudness,
+            v => { c.LevelVoiceLoudness = v; save(); });
     }
 
     /// <summary>Background warm-up for an engine: resolves the synthesizer once, reports

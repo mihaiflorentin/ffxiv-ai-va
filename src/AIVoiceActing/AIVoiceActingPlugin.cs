@@ -145,6 +145,8 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             logSinkFactory: () => new Infrastructure.Dalamud.HarvestLogSink(
                 new DalamudLogSink(PluginLog), Path.Combine(configDir, "beast-tribe-harvest.log")),
             profileStorePathFactory: () => Path.Combine(configDir, "voice-assignments.json"),
+            profileSaveDelay: TimeSpan.FromSeconds(2),
+            keepTempoWhenPitchedFactory: () => config.KeepTempoWhenPitched,
             modelsDirFactory: () => Path.Combine(configDir, "models"),
             voicesManifestFactory: () => ExtractVoicesManifest(configDir),
             // Re-read on first use and whenever the processor sees changed files; the
@@ -153,7 +155,8 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
                 config.Lexicons, new DalamudLogSink(PluginLog)),
             speechQueueFactory: () => new PlaybackSpeechQueue(
                 sink, () => config.GlobalVolume, new DalamudLogSink(PluginLog),
-                staleAfterMsFactory: () => (long)config.StaleLineSeconds * 1000),
+                staleAfterMsFactory: () => (long)config.StaleLineSeconds * 1000,
+                levelLoudnessFactory: () => config.LevelVoiceLoudness),
             enabledChatTypesFactory: () => config.CurrentPreset?.EnabledChatTypes as IReadOnlyCollection<int>,
             enableAllChatTypesFactory: () => config.CurrentPreset?.EnableAllChatTypes ?? false,
             triggersFactory: () => config.Triggers.AsReadOnly(),
@@ -233,7 +236,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             },
             // TTT parity: /cancelspeech and /disabletts drop the WHOLE backlog
             // (CancelTts -> CancelAllSpeech); text advance stays current-line only.
-            cancelSpeech: () => this.services.SpeechQueue.Clear(),
+            cancelSpeech: () => this.services.Pipeline.CancelAll(),
             currentPresetId: () => config.CurrentPresetId,
             presets: () => [.. config.EnabledChatTypesPresets.Select(p => new PresetSummary(p.Id, p.Name))],
             switchPreset: id =>
@@ -394,7 +397,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     {
         if (this.pluginConfig.CancelSpeechOnTextAdvance)
         {
-            this.services.SpeechHandler.CancelCurrent();
+            this.services.Pipeline.InterruptDialogue();
         }
     }
 

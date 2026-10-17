@@ -53,6 +53,9 @@ public sealed class SpeechRequestHandler
     /// <summary>Stops the line currently being spoken; queued lines are kept.</summary>
     public void CancelCurrent() => this.queue.CancelCurrent();
 
+    /// <summary>Flushes the playback queue and stops the line being spoken.</summary>
+    public void ClearQueue() => this.queue.Clear();
+
     /// <summary>
     /// Prepares and speaks one line. The no-profile skip comes before planning so a
     /// profileless speaker never pays for director inference; the rolling context window
@@ -160,6 +163,10 @@ public sealed class SpeechRequestHandler
             this.log?.Error($"Synthesis failed for \"{speaker.Key}\".", ex);
             return;
         }
+
+        // Engines that cannot abort mid-inference still finish; a line the player has
+        // skipped past meanwhile must not reach the speakers.
+        cancellationToken.ThrowIfCancellationRequested();
 
         this.log?.Info(
             $"Queued line for \"{speaker.Key}\": {audio.Samples.Length} samples @ {audio.SampleRate} Hz " +

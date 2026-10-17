@@ -41,12 +41,15 @@ public sealed class SpeechPipelineTests
             IReadOnlyList<TriggerSpec>? bad = null,
             IReadOnlyCollection<int>? enabledChatTypes = null,
             bool rateLimitOn = false,
-            double messagesPerSecond = 1)
+            double messagesPerSecond = 1,
+            bool background = false,
+            FakeSpeechSynthesizer? synthesizer = null)
         {
+            var synth = synthesizer ?? new FakeSpeechSynthesizer();
             var handler = new SpeechRequestHandler(
                 lexicon: new FakeLexicon(),
                 dialogueSessions: this.Sessions,
-                synthesizer: () => new FakeSpeechSynthesizer(),
+                synthesizer: () => synth,
                 queue: this.Queue,
                 profileLookup: speaker => new VoiceProfile(
                     speaker.Key, "default", 0f, DateTimeOffset.UtcNow, false),
@@ -69,7 +72,10 @@ public sealed class SpeechPipelineTests
                 cutsceneActive: () => this.CutsceneActive,
                 talkVisible: () => this.TalkVisible,
                 dialogueSessions: this.Sessions,
-                handler: handler);
+                handler: handler,
+                // Inline dispatch keeps these assertions synchronous; the background
+                // worker has its own tests below.
+                backgroundDispatch: background);
         }
     }
 
@@ -166,5 +172,102 @@ public sealed class SpeechPipelineTests
         var h = new Harness();
         h.Pipeline.NotifyVoiceLinePlayback();
         Assert.Equal(1, h.Queue.CancelCurrentCalls);
+    }
+
+    private static string[] SpokenTexts(Harness h)
+    {
+        lock (h.Queue.Enqueued)
+        {
+            return [.. h.Queue.Enqueued.Select(i => i.Request.Text)];
+        }
+    }
+
+    [Fact]
+    public void BackgroundWorker_SpeaksLinesInArrivalOrder()
+    {
+        var h = new Harness(background: true);
+        using var pipeline = h.Pipeline;
+        for (var i = 0; i < 6; i++)
+        {
+            h.Source.Emit(TalkLine($"Speaker{i}", $"line {i}"));
+        }
+
+        Assert.True(SpinWait.SpinUntil(() => h.Queue.Enqueued.Count == 6, TimeSpan.FromSeconds(5)));
+        Assert.Equal(Enumerable.Range(0, 6).Select(i => $"line {i}"), SpokenTexts(h));
+    }
+
+    [Fact]
+    public void InterruptDialogue_DropsPendingDialogue_KeepsChat()
+    {
+        using var release = new ManualResetEventSlim(false);
+        using var entered = new ManualResetEventSlim(false);
+        var synth = new FakeSpeechSynthesizer
+        {
+            SynthesizeFunc = (request, _) =>
+            {
+                if (request.Text == "first")
+                {
+                    entered.Set();
+                    release.Wait(TimeSpan.FromSeconds(5));
+                }
+
+                return new SynthesisResult([0f, 0.1f], 24000);
+            },
+        };
+        var h = new Harness(background: true, synthesizer: synth);
+        using var pipeline = h.Pipeline;
+
+        h.Source.Emit(TalkLine("Yda", "first"));
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        h.Source.Emit(TalkLine("Yda", "second"));
+        h.Source.Emit(ChatLine("Papalymo", "chat keeps going"));
+
+        h.Pipeline.InterruptDialogue();
+        release.Set();
+
+        Assert.True(SpinWait.SpinUntil(() => h.Queue.Enqueued.Count == 1, TimeSpan.FromSeconds(5)));
+        Thread.Sleep(100);
+        Assert.Equal(["chat keeps going"], SpokenTexts(h));
+        Assert.Equal(1, h.Queue.CancelCurrentCalls);
+    }
+
+    [Fact]
+    public void InterruptDialogue_LeavesLaterDialogueAlone()
+    {
+        var h = new Harness(background: true);
+        using var pipeline = h.Pipeline;
+
+        h.Pipeline.InterruptDialogue();
+        h.Source.Emit(TalkLine("Yda", "after the advance"));
+
+        Assert.True(SpinWait.SpinUntil(() => h.Queue.Enqueued.Count == 1, TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    public void CancelAll_DropsPendingChat_AndClearsPlayback()
+    {
+        using var release = new ManualResetEventSlim(false);
+        using var entered = new ManualResetEventSlim(false);
+        var synth = new FakeSpeechSynthesizer
+        {
+            SynthesizeFunc = (_, _) =>
+            {
+                entered.Set();
+                release.Wait(TimeSpan.FromSeconds(5));
+                return new SynthesisResult([0f, 0.1f], 24000);
+            },
+        };
+        var h = new Harness(background: true, synthesizer: synth);
+        using var pipeline = h.Pipeline;
+
+        h.Source.Emit(ChatLine("Papalymo", "one"));
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        h.Source.Emit(ChatLine("Papalymo", "two"));
+        h.Pipeline.CancelAll();
+        release.Set();
+
+        Thread.Sleep(200);
+        Assert.Empty(h.Queue.Enqueued);
+        Assert.Equal(1, h.Queue.ClearCalls);
     }
 }

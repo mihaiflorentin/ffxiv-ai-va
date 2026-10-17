@@ -110,6 +110,13 @@ public class Configuration
     /// slower than real time on CPU), or "chatterbox" (legacy cloning).</summary>
     public string SelectedEngine { get; set; } = "kokoro";
 
+    /// <summary>Pitch-shifted voices keep their speaking pace (the shift used to slow deep
+    /// voices and speed up high ones). Off restores the old coupled behaviour.</summary>
+    public bool KeepTempoWhenPitched { get; set; } = true;
+
+    /// <summary>Levels every line to the same loudness before the per-voice volume applies.</summary>
+    public bool LevelVoiceLoudness { get; set; } = true;
+
     /// <summary>Lines older than this are dropped at playback instead of played late. 0 keeps everything.</summary>
     public int StaleLineSeconds { get; set; } = 20;
 
