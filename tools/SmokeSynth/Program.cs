@@ -431,6 +431,14 @@ internal static class Program
             Console.WriteLine($"adapter:     {adapter.Name} ({adapter.Backend})");
         }
 
+        // The runtime lists every GPU but Dawn picks one by the power preference; name it the way the plugin does.
+        var preference = power == "low" ? GpuPreference.LowPower : GpuPreference.Performance;
+        var chosen = report.AdapterFor(preference);
+        Console.WriteLine(
+            chosen is null || chosen.NameIsGuess
+                ? $"in use:      the {(preference == GpuPreference.LowPower ? "low-power" : "high-performance")} adapter (the system gives no names or ranking to say which one that is)"
+                : $"in use:      {chosen.Name}");
+
         Directory.CreateDirectory(modelsDir);
         var guard = new GpuCrashGuard(Path.Combine(modelsDir, "gpu-session.pending"), log);
         var crashed = guard.TripIfLeftover(detail => Console.WriteLine($"crash guard: a previous run died on the GPU ({detail}); using the CPU this time."));

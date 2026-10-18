@@ -291,12 +291,11 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
         if (plan.IsGpu)
         {
-            // Dawn picks the adapter class from the power preference; the name is display only.
-            var adapters = services.Planner.LastReport?.Adapters ?? [];
-            var adapter = adapters.Count == 0
-                ? string.Empty
-                : (plan.PowerPreference == GpuPreference.LowPower ? adapters[^1] : adapters[0]).Name;
-            return new EngineStatus(EngineState.Ready, requested, new ActiveDevice(plan.Ep, adapter, plan.Api), plan.Reason, false);
+            // Dawn picks the adapter class from the power preference, whatever order the runtime lists them in, so the
+            // name comes from the probe's ranking for that preference; with no way to tell, no card is named.
+            var adapter = services.Planner.LastReport?.AdapterFor(plan.PowerPreference);
+            var name = adapter is null || adapter.NameIsGuess ? string.Empty : adapter.Name;
+            return new EngineStatus(EngineState.Ready, requested, new ActiveDevice(plan.Ep, name, plan.Api), plan.Reason, false);
         }
 
         return plan.WantedGpu

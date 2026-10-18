@@ -94,8 +94,9 @@ public sealed class FakeAudioSink : IAudioSink
 
         lock (this.gate)
         {
-            this.Streamed.Add([.. heard]);
+            // The rate first: tests wait on Streamed.Count without the lock and then read the rate.
             this.StreamedSampleRates.Add(source.SampleRate);
+            this.Streamed.Add([.. heard]);
         }
     }
 

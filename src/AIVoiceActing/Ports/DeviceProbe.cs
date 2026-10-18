@@ -67,7 +67,16 @@ public sealed record DevicePreferences(
 /// <param name="Vendor">AMD, NVIDIA, Intel, or the raw vendor text.</param>
 /// <param name="Name">Adapter name, or a PCI id description when the platform gives no name.</param>
 /// <param name="Backend">Graphics API the adapter was enumerated through (Vulkan, D3D12, unknown).</param>
-public sealed record DeviceAdapter(string Vendor, string Name, string Backend);
+/// <param name="HighPerformanceIndex">The system's own ranking when it gives one (0 = the high-performance adapter, as DXGI lists them); null when unknown.</param>
+/// <param name="MemoryMb">Graphics memory when the system reports it; null when unknown.</param>
+/// <param name="NameIsGuess">True when <paramref name="Name"/> is a stand-in made from PCI ids, not a name the system gave.</param>
+public sealed record DeviceAdapter(
+    string Vendor,
+    string Name,
+    string Backend,
+    int? HighPerformanceIndex = null,
+    long? MemoryMb = null,
+    bool NameIsGuess = false);
 
 /// <summary>What the machine can do. Immutable; <see cref="Reason"/> is final user-facing text.</summary>
 /// <param name="WebGpuAvailable">The WebGPU runtime loaded and found at least one GPU.</param>
@@ -86,6 +95,42 @@ public sealed record DeviceReport(
 
     /// <summary>Any GPU path (WebGPU or DirectML) that could run a verified model.</summary>
     public bool HasUsableGpu => (this.WebGpuAvailable || this.DirectMlAvailable) && this.Adapters.Count > 0;
+
+    /// <summary>
+    /// The adapter the runtime will use for <paramref name="preference"/>: it picks a class (the high-performance or the
+    /// low-power adapter), not an entry of the list it reports, so the list order proves nothing. The system's own ranking
+    /// decides when it gives one (its high-performance index, else the amount of graphics memory); a single adapter is
+    /// the answer; with several and no way to rank them the answer is null, and nothing should be claimed.
+    /// </summary>
+    public DeviceAdapter? AdapterFor(GpuPreference preference)
+    {
+        if (this.Adapters.Count == 0)
+        {
+            return null;
+        }
+
+        if (this.Adapters.Count == 1)
+        {
+            return this.Adapters[0];
+        }
+
+        var performance = preference == GpuPreference.Performance;
+        if (this.Adapters.All(a => a.HighPerformanceIndex is not null))
+        {
+            return (performance
+                ? this.Adapters.OrderBy(a => a.HighPerformanceIndex)
+                : this.Adapters.OrderByDescending(a => a.HighPerformanceIndex)).First();
+        }
+
+        if (this.Adapters.All(a => a.MemoryMb is not null))
+        {
+            return (performance
+                ? this.Adapters.OrderByDescending(a => a.MemoryMb)
+                : this.Adapters.OrderBy(a => a.MemoryMb)).First();
+        }
+
+        return null;
+    }
 }
 
 /// <summary>Driven port: finds out which GPU paths this machine offers.</summary>

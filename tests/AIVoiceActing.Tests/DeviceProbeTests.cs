@@ -113,4 +113,39 @@ public sealed class DeviceProbeTests
         Assert.False(AIVoiceActing.UI.State.SetupDeviceInfo.From(null).HasUsableGpu);
         Assert.False(AIVoiceActing.UI.State.SetupDeviceInfo.From(gpu, gpuDisabledByCrashGuard: true).HasUsableGpu);
     }
+
+    private static DeviceReport Report(params DeviceAdapter[] adapters) =>
+        new(DevicePlatform.Wine, adapters, true, string.Empty);
+
+    [Fact]
+    public void AdapterFor_FollowsTheSystemsRanking_NotTheListOrder()
+    {
+        var igpu = new DeviceAdapter("AMD", "Radeon Graphics", "Vulkan", HighPerformanceIndex: 1);
+        var dgpu = new DeviceAdapter("AMD", "Radeon RX 9070 XT", "Vulkan", HighPerformanceIndex: 0);
+        var report = Report(igpu, dgpu); // listed the wrong way round
+
+        Assert.Same(dgpu, report.AdapterFor(GpuPreference.Performance));
+        Assert.Same(igpu, report.AdapterFor(GpuPreference.LowPower));
+    }
+
+    [Fact]
+    public void AdapterFor_FallsBackToTheAmountOfGraphicsMemory()
+    {
+        var igpu = new DeviceAdapter("AMD", "Radeon Graphics", "Vulkan", MemoryMb: 512);
+        var dgpu = new DeviceAdapter("AMD", "Radeon RX 9070 XT", "Vulkan", MemoryMb: 16304);
+
+        Assert.Same(dgpu, Report(igpu, dgpu).AdapterFor(GpuPreference.Performance));
+        Assert.Same(igpu, Report(igpu, dgpu).AdapterFor(GpuPreference.LowPower));
+    }
+
+    [Fact]
+    public void AdapterFor_OneAdapterIsTheAnswer_SeveralUnrankedAreNone()
+    {
+        var one = new DeviceAdapter("AMD", "AMD GPU (device 0x13c0)", "Vulkan", NameIsGuess: true);
+        var two = new DeviceAdapter("AMD", "AMD GPU (device 0x7550)", "Vulkan", NameIsGuess: true);
+
+        Assert.Same(one, Report(one).AdapterFor(GpuPreference.Performance));
+        Assert.Null(Report(one, two).AdapterFor(GpuPreference.Performance)); // the listing's first entry proves nothing
+        Assert.Null(Report().AdapterFor(GpuPreference.Performance));
+    }
 }

@@ -213,6 +213,45 @@ public sealed class EngineStatusTests : IDisposable
     }
 
     [Fact]
+    public void Turbo_NamesTheAdapterThePowerPreferenceChooses_NotTheFirstListed()
+    {
+        var (synth, planner, _, _) = this.Turbo(gpuLoopReady: true);
+        using var _s = synth;
+        planner.LastReport = new DeviceReport(
+            DevicePlatform.Wine,
+            [
+                new DeviceAdapter("AMD", "Radeon Graphics", "Vulkan", HighPerformanceIndex: 1),
+                new DeviceAdapter("AMD", "Radeon RX 9070 XT", "Vulkan", HighPerformanceIndex: 0),
+            ],
+            true,
+            string.Empty);
+        planner.CheapPlan = new DevicePlan(DeviceEp.WebGpu, GpuApi.Vulkan, GpuPreference.Performance, "Using the high-performance GPU through Vulkan.", true);
+
+        Assert.Equal("Radeon RX 9070 XT", synth.Status.ActiveDevice.Adapter);
+    }
+
+    [Fact]
+    public void Turbo_WhenTheCardCannotBeTold_NoDeviceIdIsClaimed()
+    {
+        var (synth, planner, _, _) = this.Turbo(gpuLoopReady: true);
+        using var _s = synth;
+        planner.LastReport = new DeviceReport(
+            DevicePlatform.Other,
+            [
+                new DeviceAdapter("AMD", "AMD GPU (device 0x13c0)", "Vulkan", NameIsGuess: true),
+                new DeviceAdapter("AMD", "AMD GPU (device 0x7550)", "Vulkan", NameIsGuess: true),
+            ],
+            true,
+            string.Empty);
+        planner.CheapPlan = new DevicePlan(DeviceEp.WebGpu, GpuApi.Vulkan, GpuPreference.Performance, "Using the high-performance GPU through Vulkan.", true);
+
+        var status = synth.Status;
+
+        Assert.Equal(EngineState.Ready, status.State);
+        Assert.Equal(string.Empty, status.ActiveDevice.Adapter);
+    }
+
+    [Fact]
     public async Task Turbo_Retry_ClearsTheCrashFlag_PassesTheModeOnce_AndShowsLoadingThenFailed()
     {
         var (synth, planner, clears, _) = this.Turbo();

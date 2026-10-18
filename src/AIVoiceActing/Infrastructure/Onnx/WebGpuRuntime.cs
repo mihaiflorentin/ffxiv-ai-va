@@ -158,6 +158,11 @@ public sealed class WebGpuRuntime : IWebGpuRuntime
             }
 
             this.devices = [.. env.GetEpDevices().Where(d => d.EpName == EpName)];
+            foreach (var device in this.devices)
+            {
+                this.log?.Info($"WebGPU device 0x{device.HardwareDevice.DeviceId:x4} (vendor 0x{device.HardwareDevice.VendorId:x4}): {string.Join(", ", device.HardwareDevice.Metadata.Entries.Select(e => $"{e.Key}={e.Value}"))}");
+            }
+
             var adapters = this.devices
                 .Select(d => Describe(d.HardwareDevice, this.isWine))
                 .ToList();
@@ -177,19 +182,40 @@ public sealed class WebGpuRuntime : IWebGpuRuntime
     {
         var vendor = VendorName(hardware.VendorId, hardware.Vendor);
         string? name = null;
+        int? highPerformanceIndex = null;
+        long? memoryMb = null;
         foreach (var entry in hardware.Metadata.Entries)
         {
             var key = entry.Key.ToLowerInvariant();
-            if (!string.IsNullOrWhiteSpace(entry.Value) && (key.Contains("descr") || key.Contains("name")))
+            if (string.IsNullOrWhiteSpace(entry.Value))
+            {
+                continue;
+            }
+
+            if (name is null && (key.Contains("descr") || key.Contains("name")))
             {
                 name = entry.Value.Trim();
-                break;
+            }
+            else if (key.Contains("highperformance") && int.TryParse(entry.Value.Trim(), out var index))
+            {
+                highPerformanceIndex = index;
+            }
+            else if ((key.Contains("memory") || key.Contains("vram")) && FirstNumber(entry.Value) is { } megabytes)
+            {
+                memoryMb = megabytes;
             }
         }
 
+        var guessed = name is null;
         name ??= $"{vendor} GPU (device 0x{hardware.DeviceId:x4})";
         var backend = isWine || !OperatingSystem.IsWindows() ? "Vulkan" : "D3D12";
-        return new DeviceAdapter(vendor, name, backend);
+        return new DeviceAdapter(vendor, name, backend, highPerformanceIndex, memoryMb, guessed);
+    }
+
+    private static long? FirstNumber(string text)
+    {
+        var digits = new string([.. text.SkipWhile(c => !char.IsDigit(c)).TakeWhile(char.IsDigit)]);
+        return long.TryParse(digits, out var value) ? value : null;
     }
 
     private static string VendorName(uint vendorId, string? vendor) => vendorId switch
