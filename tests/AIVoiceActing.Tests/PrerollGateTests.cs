@@ -114,12 +114,81 @@ public sealed class PrerollGateTests
         {
             this.Tokens(gate, 38, 50); // 20 tokens per second
             gate.WindowDecoded(200, 1200);
-            gate.ShouldRelease(1200);
+            gate.ShouldRelease(2000);
         }
 
         Assert.True(shortLine.Released);
         Assert.False(longLine.Released);
         Assert.True(longLine.RequiredMs > shortLine.RequiredMs);
+    }
+
+    [Fact]
+    public void AModelJustUnderRealTime_HoldsMoreThanThePlainDeficit()
+    {
+        var gate = this.Gate(chars: 200);
+        this.Tokens(gate, 38, 45); // 22 tokens per second: 0.89 of real time
+        gate.WindowDecoded(400, 1200);
+
+        Assert.False(gate.ShouldRelease(1200));
+
+        // The plain deficit of about 13 s still to make is 1.6 s; the estimate is noisy near real time, so more is asked for.
+        Assert.InRange(gate.RequiredMs, 3500, 7000);
+    }
+
+    [Fact]
+    public void AModelWellAboveRealTime_AddsNoProportionalMargin()
+    {
+        var gate = this.Gate(chars: 400);
+        this.Tokens(gate, 38, 12); // 83 tokens per second
+        gate.WindowDecoded(300, 1200);
+
+        gate.ShouldRelease(100);
+
+        Assert.Equal(PrerollOptions.Default.MinMs, gate.RequiredMs);
+    }
+
+    [Fact]
+    public void ARateThatWasSlowOverTheLine_CountsEvenWhenTheLastTokensWereQuick()
+    {
+        var steady = this.Gate(chars: 200);
+        this.Tokens(steady, 50, 20);
+        steady.WindowDecoded(300, 1200);
+        steady.ShouldRelease(1200);
+
+        var mixed = this.Gate(chars: 200);
+        this.Tokens(mixed, 30, 100); // a slow stretch, 10 tokens per second
+        this.Tokens(mixed, 20, 20); // then a quick one
+        mixed.WindowDecoded(300, 1200);
+        mixed.ShouldRelease(1200);
+
+        Assert.True(mixed.RequiredMs > steady.RequiredMs + 1000, $"mixed {mixed.RequiredMs} ms, steady {steady.RequiredMs} ms");
+    }
+
+    [Fact]
+    public void ALineLongerThanTheTextSuggested_IsStillExpectedToGoOn()
+    {
+        var gate = this.Gate(chars: 10); // about 18 tokens expected
+        this.Tokens(gate, 60, 50); // the model keeps going at 20 tokens per second
+        gate.WindowDecoded(400, 1200);
+
+        gate.ShouldRelease(1200);
+
+        Assert.True(gate.RequiredMs > 1300, $"asked for {gate.RequiredMs} ms");
+    }
+
+    [Fact]
+    public void ATokenStall_RaisesTheRequirement_EvenBeforeTheNextTokenArrives()
+    {
+        var gate = this.Gate(chars: 200);
+        this.Tokens(gate, 38, 30); // 33 tokens per second
+        gate.WindowDecoded(300, 1200);
+        gate.ShouldRelease(500);
+        var before = gate.RequiredMs;
+
+        this.now += 1500; // the card is busy: nothing for 1.5 s
+        gate.ShouldRelease(500);
+
+        Assert.True(gate.RequiredMs > before);
     }
 
     [Fact]

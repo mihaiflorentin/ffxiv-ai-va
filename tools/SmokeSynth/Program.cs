@@ -40,6 +40,7 @@ internal static class Program
         string? benchOut = null;
         string? linesFile = null;
         var stream = false;
+        var simulate = false;
         int? promptTokens = null;
         int? firstChunk = null;
         int? maxChunk = null;
@@ -168,6 +169,10 @@ internal static class Program
                     break;
                 case "--lines" when i + 1 < args.Length:
                     linesFile = args[++i];
+                    break;
+                case "--sim":
+                    simulate = true;
+                    stream = true;
                     break;
                 case "--stream":
                     stream = true;
@@ -308,7 +313,7 @@ internal static class Program
                 {
                     lineNumber++;
                     var each = stream
-                        ? RunStreaming(synthesizer, request with { Text = line }, out _)
+                        ? RunStreaming(synthesizer, request with { Text = line }, out _, simulate)
                         : synthesizer.SynthesizeAsync(request with { Text = line }, CancellationToken.None).GetAwaiter().GetResult();
                     var stem = Path.Combine(Path.GetDirectoryName(output) ?? ".", Path.GetFileNameWithoutExtension(output));
                     WavCodec.WriteMono24k($"{stem}-{lineNumber}.wav", each.Samples);
@@ -326,7 +331,7 @@ internal static class Program
             var clock = Stopwatch.StartNew();
             double firstAudio = -1;
             var result = stream
-                ? RunStreaming(synthesizer, request, out firstAudio)
+                ? RunStreaming(synthesizer, request, out firstAudio, simulate)
                 : synthesizer.SynthesizeAsync(request, CancellationToken.None).GetAwaiter().GetResult();
             clock.Stop();
 
@@ -368,7 +373,7 @@ internal static class Program
                     var timer = Stopwatch.StartNew();
                     double first = -1;
                     var again = stream
-                        ? RunStreaming(synthesizer, request, out first)
+                        ? RunStreaming(synthesizer, request, out first, simulate)
                         : synthesizer.SynthesizeAsync(request, CancellationToken.None).GetAwaiter().GetResult();
                     timer.Stop();
                     runs.Add(timer.Elapsed.TotalSeconds / (again.Samples.Length / (double)again.SampleRate));
@@ -447,25 +452,100 @@ internal static class Program
             Precision: () => precision);
     }
 
-    private static SynthesisResult RunStreaming(ISpeechSynthesizer synthesizer, SynthesisRequest request, out double firstAudioSeconds)
+    private static SynthesisResult RunStreaming(ISpeechSynthesizer synthesizer, SynthesisRequest request, out double firstAudioSeconds, bool simulate = false)
     {
         var clock = Stopwatch.StartNew();
         var first = -1.0;
+        var timer = new LineTimer(request.Text.Length, Environment.TickCount64);
+        LineTimer.Current = timer;
+        var playback = simulate ? new PlaybackSimulation(synthesizer.StreamingSampleRate) : null;
         var result = synthesizer
             .SynthesizeStreamingAsync(
                 request,
-                _ =>
+                samples =>
                 {
                     if (first < 0)
                     {
                         first = clock.Elapsed.TotalSeconds;
                     }
+
+                    playback?.Append(samples.Span);
                 },
                 CancellationToken.None)
             .GetAwaiter()
             .GetResult();
         firstAudioSeconds = first;
+        var render = clock.Elapsed.TotalSeconds;
+        var shot = timer.Snapshot();
+        Console.WriteLine(
+            $"line:        {request.Text.Length} chars, render {render:0.0} s, LM {shot.LmTokens} tok {shot.LmMs / 1000.0:0.0} s " +
+            $"(p50 {shot.LmMsPerTokenP50} ms, p95 {shot.LmMsPerTokenP95} ms), decoder {shot.DecoderMsTotal / 1000.0:0.0} s over {shot.Windows} calls, " +
+            $"preroll {shot.PrerollMs / 1000.0:0.0} s, {shot.Engine}");
+        if (playback is not null)
+        {
+            var summary = playback.Finish();
+            Console.WriteLine(
+                $"playback:    first audio {first:0.0} s, speech {result.Samples.Length / (double)result.SampleRate:0.0} s, " +
+                $"underruns {summary.Underruns} ({summary.SilenceMs / 1000.0:0.0} s silence)");
+        }
+
         return result;
+    }
+
+    /// <summary>
+    /// Plays a streamed line into the plugin's own stream and polish source with a device-like reader (20 ms pulls
+    /// on a real clock) and counts what the sink would: underruns and silence after the first sound.
+    /// </summary>
+    private sealed class PlaybackSimulation
+    {
+        private readonly SpeechAudioStream stream;
+        private readonly PolishedPcmSource source;
+        private readonly PlaybackMeter meter;
+        private readonly Thread reader;
+        private volatile bool stop;
+
+        public PlaybackSimulation(int sampleRate)
+        {
+            this.stream = new SpeechAudioStream(sampleRate);
+            this.source = new PolishedPcmSource(this.stream, 1f, false);
+            this.meter = new PlaybackMeter(sampleRate);
+            this.reader = new Thread(this.Run) { IsBackground = true };
+            this.reader.Start();
+        }
+
+        public void Append(ReadOnlySpan<float> samples) => this.stream.Append(samples);
+
+        public (int Underruns, long SilenceMs) Finish()
+        {
+            this.stream.Complete();
+            this.reader.Join(TimeSpan.FromSeconds(120));
+            this.stop = true;
+            return (this.meter.UnderrunCount, this.meter.SilenceMs);
+        }
+
+        private void Run()
+        {
+            var rate = this.stream.SampleRate;
+            var buffer = new float[rate / 50];
+            var clock = Stopwatch.StartNew();
+            long due = 0;
+            while (!this.stop)
+            {
+                var read = this.source.Read(buffer);
+                this.meter.OnRead(buffer.Length, read, this.source.IsFinished);
+                if (read == 0 && this.source.IsFinished)
+                {
+                    return;
+                }
+
+                due += 20;
+                var wait = due - clock.ElapsedMilliseconds;
+                if (wait > 0)
+                {
+                    Thread.Sleep((int)wait);
+                }
+            }
+        }
     }
 
     private static string? FindWebGpuLibrary()
@@ -515,6 +595,8 @@ internal static class Program
               --bench                Time 5 more runs after the first and print min/median/max RTF and time to first audio.
               --bench-out <file>     With --bench: also write the first benchmark run's audio.
               --stream               Turbo: use the chunked streaming decode (first audio while the line renders).
+              --sim                  With --stream: also play the line into the plugin's stream and polish source on a real clock
+                                     and print the underruns and silence a sound device would have seen.
               --first-chunk/--max-chunk <tokens>, --left/--lookahead <tokens>, --half-fade <samples>, --prompt-tokens <n>
                                      Streaming knobs (defaults in StreamingOptions).
               --help                 Show this help.

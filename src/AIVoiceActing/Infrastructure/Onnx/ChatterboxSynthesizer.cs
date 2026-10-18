@@ -748,10 +748,11 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         Engine eng, ReferenceEmbeddings reference, long[] textIds, int textChars, Action<float[]> emit, LineTimer? timer, CancellationToken ct)
     {
         var options = this.Streaming;
-        var gate = new PrerollGate(this.PrerollNow(), textChars, () => Environment.TickCount64);
+        var gate = new PrerollGate(this.PrerollNow(), textChars, () => Environment.TickCount64, options.Chunks);
         var held = new PrerollBuffer(gate, SampleRate, emit);
         var feed = new SpeechTokenFeed();
-        var schedule = new ChunkSchedule(options.Chunks);
+        // A language model near real time gets small chunks: the audio then comes in steady pieces and the pre-roll stays short.
+        var schedule = new ChunkSchedule(options.Chunks, () => ChunkSchedule.CapFor(options.Chunks, gate.LanguageModelRate));
         var stitcher = new ChunkStitcher(SamplesPerToken, options.HalfFadeSamples);
         var prompt = reference.Trimmed(options.PromptTokens);
         long lmMs = 0;

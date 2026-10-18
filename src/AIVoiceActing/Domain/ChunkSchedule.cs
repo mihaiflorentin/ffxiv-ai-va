@@ -66,10 +66,17 @@ public sealed class ChunkSchedule
     private int start;
     private int index;
 
-    public ChunkSchedule(ChunkScheduleOptions? options = null)
+    private readonly Func<int>? capNow;
+
+    /// <param name="capNow">
+    /// When given, asked for the largest chunk to plan right now (see <see cref="CapFor"/>): a slow language model
+    /// gets small chunks, so the audio comes in steady pieces and the pre-roll can stay short.
+    /// </param>
+    public ChunkSchedule(ChunkScheduleOptions? options = null, Func<int>? capNow = null)
     {
         this.Options = options ?? ChunkScheduleOptions.Default;
         this.Options.Validate();
+        this.capNow = capNow;
     }
 
     public ChunkScheduleOptions Options { get; }
@@ -78,11 +85,28 @@ public sealed class ChunkSchedule
     public int Consumed => this.start;
 
     /// <summary>Planned chunk size for the chunk with this index.</summary>
-    public int SizeFor(int chunkIndex)
+    public int SizeFor(int chunkIndex) => SizeFor(this.Options, chunkIndex, this.capNow?.Invoke() ?? this.Options.MaxTokens);
+
+    /// <summary>Planned size of chunk <paramref name="chunkIndex"/> when no chunk may exceed <paramref name="cap"/> tokens (never below the first chunk's size).</summary>
+    public static int SizeFor(ChunkScheduleOptions options, int chunkIndex, int cap)
     {
-        var size = this.Options.FirstTokens * Math.Pow(this.Options.Growth, chunkIndex);
-        return (int)Math.Min(this.Options.MaxTokens, Math.Round(size));
+        var size = options.FirstTokens * Math.Pow(options.Growth, chunkIndex);
+        var limit = Math.Clamp(cap, options.FirstTokens, options.MaxTokens);
+        return (int)Math.Min(limit, Math.Round(size));
     }
+
+    /// <summary>
+    /// The largest chunk worth planning for a language model that makes <paramref name="rate"/> seconds of speech per
+    /// second of work. A chunk can only be decoded once its last token exists, so with a model near real time a big
+    /// chunk is a long wait that the pre-roll has to cover (a 120-token chunk is 4.8 s of speech). Twenty tokens per
+    /// unit of rate keeps that wait around a second and a half to three seconds; a model several times faster than
+    /// real time gets the full size, where the cost of every decoder call is the thing to save. NaN or infinity (no
+    /// pace known) means the full size.
+    /// </summary>
+    public static int CapFor(ChunkScheduleOptions options, double rate) =>
+        double.IsNaN(rate) || double.IsInfinity(rate)
+            ? options.MaxTokens
+            : Math.Clamp((int)Math.Round(rate * 20.0), options.FirstTokens, options.MaxTokens);
 
     /// <summary>
     /// The next window, or null: either wait for more tokens (<paramref name="finished"/> is false) or

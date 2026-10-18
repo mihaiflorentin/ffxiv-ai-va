@@ -17,6 +17,7 @@ public sealed class PolishedPcmSource : IPcmSource
     private readonly SpeechAudioStream stream;
     private readonly bool levelLoudness;
     private readonly int fadeSamples;
+    private readonly int stallFadeSamples;
     private readonly int rebufferSamples;
     private readonly long rebufferMaxWaitSamples;
     private float gain;
@@ -35,6 +36,12 @@ public sealed class PolishedPcmSource : IPcmSource
     /// <summary>The longest such a pause is stretched: after this much silence it carries on with what it has.</summary>
     public const int RebufferMaxWaitMs = 3000;
 
+    /// <summary>
+    /// The sound fades out over this long when it has used up everything that was made, and fades back in over
+    /// the same time when it resumes, so a stall is a short dip and not a hard cut and a click.
+    /// </summary>
+    public const int StallFadeMs = 25;
+
     public PolishedPcmSource(SpeechAudioStream stream, float gain, bool levelLoudness)
     {
         this.rebufferSamples = Math.Max(1, stream.SampleRate * RebufferMs / 1000);
@@ -43,6 +50,7 @@ public sealed class PolishedPcmSource : IPcmSource
         this.gain = Math.Max(0f, gain);
         this.levelLoudness = levelLoudness;
         this.fadeSamples = Math.Max(1, stream.SampleRate * AudioPolish.FadeMs / 1000);
+        this.stallFadeSamples = Math.Max(1, stream.SampleRate * StallFadeMs / 1000);
     }
 
     public int SampleRate => this.stream.SampleRate;
@@ -90,6 +98,12 @@ public sealed class PolishedPcmSource : IPcmSource
         }
         else if (completed)
         {
+            if (this.rebuffering)
+            {
+                // The producer finished while the sound was stopped: what is left picks up with a ramp as well.
+                this.fadeInDone = 0;
+            }
+
             this.rebuffering = false;
         }
 
@@ -109,6 +123,11 @@ public sealed class PolishedPcmSource : IPcmSource
 
         var count = this.stream.Read(buffer[..Math.Min(buffer.Length, allowed)]);
         var remainingAfter = completed ? this.stream.Buffered : int.MaxValue;
+
+        // A read that takes the last of what was made, with the line still going, leaves the sound at a dead stop
+        // until more arrives: end it on a ramp, and wait for a cushion before it starts again.
+        var drains = !completed && count == allowed;
+        var outLength = Math.Min(this.stallFadeSamples, count);
         for (var i = 0; i < count; i++)
         {
             var value = AudioPolish.SoftLimit(buffer[i] * this.gain);
@@ -117,10 +136,20 @@ public sealed class PolishedPcmSource : IPcmSource
                 value *= (this.position + i) / (float)this.fadeSamples;
             }
 
-            if (this.fadeInDone < this.fadeSamples)
+            if (this.fadeInDone < this.stallFadeSamples)
             {
-                value *= this.fadeInDone / (float)this.fadeSamples;
+                value *= this.fadeInDone / (float)this.stallFadeSamples;
                 this.fadeInDone++;
+            }
+
+            if (drains)
+            {
+                // Everything made so far goes out in this read: ramp down over its last stretch.
+                var toEnd = count - i;
+                if (toEnd <= outLength)
+                {
+                    value *= toEnd / (float)(outLength + 1);
+                }
             }
 
             if (completed)
@@ -133,6 +162,12 @@ public sealed class PolishedPcmSource : IPcmSource
             }
 
             buffer[i] = value;
+        }
+
+        if (drains)
+        {
+            this.rebuffering = true;
+            this.rebufferWaited = 0;
         }
 
         this.position += count;

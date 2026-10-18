@@ -198,7 +198,9 @@ public sealed class SpeechAudioStreamTests
 
         Assert.True(read > 0);
         Assert.True(buffer[0] < 0.1f);
-        Assert.Equal(0.5f, buffer[read - 1], 2);
+        var later = new float[512];
+        source.Read(later); // the ramp (25 ms) is over by the end of this read
+        Assert.Equal(0.5f, later[^1], 2);
     }
 
     [Fact]
@@ -220,6 +222,62 @@ public sealed class SpeechAudioStreamTests
 
         Assert.Equal(2000 + (24000 * AudioPolish.FadeMs / 1000), rest.Length); // the held-back fade plus the new samples
         Assert.True(source.IsFinished);
+    }
+
+    [Fact]
+    public void WhenEverythingMadeIsPlayed_TheSoundRampsDownInsteadOfStoppingDead()
+    {
+        var stream = new SpeechAudioStream(24000);
+        var source = new PolishedPcmSource(stream, 1f, false);
+        stream.Append(Enumerable.Repeat(0.5f, 5000).ToArray());
+        var heard = new List<float>();
+        var buffer = new float[512];
+        int n;
+        while ((n = source.Read(buffer)) > 0)
+        {
+            heard.AddRange(buffer.AsSpan(0, n).ToArray());
+        }
+
+        var ramp = 24000 * PolishedPcmSource.StallFadeMs / 1000;
+        Assert.Equal(0.5f, heard[^(ramp + 20)], 3); // full level right before the ramp
+        Assert.True(heard[^1] < 0.01f, $"ended at {heard[^1]}");
+        for (var i = heard.Count - ramp; i < heard.Count - 1; i++)
+        {
+            Assert.True(heard[i + 1] <= heard[i] + 1e-6f, "the ramp only goes down");
+        }
+    }
+
+    [Fact]
+    public void WhileTheReaderIsAheadOfTheEnd_NothingIsFaded()
+    {
+        var stream = new SpeechAudioStream(24000);
+        var source = new PolishedPcmSource(stream, 1f, false);
+        stream.Append(Enumerable.Repeat(0.5f, 20000).ToArray());
+        var buffer = new float[512];
+        source.Read(buffer); // the line's own start fade
+        source.Read(buffer);
+
+        Assert.All(buffer, v => Assert.Equal(0.5f, v, 3));
+    }
+
+    [Fact]
+    public void IfTheProducerFinishesWhileTheSoundIsStopped_TheRestStillComesInOnARamp()
+    {
+        var stream = new SpeechAudioStream(24000);
+        var source = new PolishedPcmSource(stream, 1f, false);
+        stream.Append(Enumerable.Repeat(0.5f, 5000).ToArray());
+        var buffer = new float[512];
+        while (source.Read(buffer) > 0)
+        {
+        }
+
+        stream.Append(Enumerable.Repeat(0.5f, 2000).ToArray());
+        Assert.Equal(0, source.Read(buffer));
+        stream.Complete();
+
+        var rest = Drain(source);
+
+        Assert.True(rest[0] < 0.05f, $"started at {rest[0]}");
     }
 
     [Fact]
