@@ -192,7 +192,7 @@ public sealed class WebGpuRuntime : IWebGpuRuntime
                 continue;
             }
 
-            if (name is null && (key.Contains("descr") || key.Contains("name")))
+            if (name is null && !key.Contains("highperformance") && (key.Contains("descr") || key.Contains("name")))
             {
                 name = entry.Value.Trim();
             }
@@ -200,7 +200,7 @@ public sealed class WebGpuRuntime : IWebGpuRuntime
             {
                 highPerformanceIndex = index;
             }
-            else if ((key.Contains("memory") || key.Contains("vram")) && FirstNumber(entry.Value) is { } megabytes)
+            else if ((key.Contains("memory") || key.Contains("vram")) && ParseMemoryMb(entry.Value) is { } megabytes)
             {
                 memoryMb = megabytes;
             }
@@ -212,10 +212,43 @@ public sealed class WebGpuRuntime : IWebGpuRuntime
         return new DeviceAdapter(vendor, name, backend, highPerformanceIndex, memoryMb, guessed);
     }
 
-    private static long? FirstNumber(string text)
+    /// <summary>
+    /// Megabytes in a memory string such as "8 GB", "8192 MB", "524288 KB" or a bare byte count. A bare number below one
+    /// million reads as megabytes, anything larger as bytes. Null when there is no number.
+    /// </summary>
+    internal static long? ParseMemoryMb(string text)
     {
-        var digits = new string([.. text.SkipWhile(c => !char.IsDigit(c)).TakeWhile(char.IsDigit)]);
-        return long.TryParse(digits, out var value) ? value : null;
+        var rest = text.AsSpan().TrimStart();
+        var start = 0;
+        while (start < rest.Length && !char.IsDigit(rest[start]))
+        {
+            start++;
+        }
+
+        rest = rest[start..];
+        var end = 0;
+        while (end < rest.Length && (char.IsDigit(rest[end]) || rest[end] == '.'))
+        {
+            end++;
+        }
+
+        if (!double.TryParse(rest[..end], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value))
+        {
+            return null;
+        }
+
+        var unit = rest[end..].Trim().ToString().ToUpperInvariant();
+        var megabytes = unit switch
+        {
+            "" => value >= 1_000_000 ? value / (1024.0 * 1024.0) : value,
+            "B" or "BYTES" => value / (1024.0 * 1024.0),
+            "KB" or "KIB" => value / 1024.0,
+            "MB" or "MIB" => value,
+            "GB" or "GIB" => value * 1024.0,
+            "TB" or "TIB" => value * 1024.0 * 1024.0,
+            _ => double.NaN,
+        };
+        return double.IsNaN(megabytes) ? null : (long)Math.Round(megabytes);
     }
 
     private static string VendorName(uint vendorId, string? vendor) => vendorId switch

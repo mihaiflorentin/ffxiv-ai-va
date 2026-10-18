@@ -192,6 +192,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
                 tokens.Add,
                 maxNewTokens: WarmUpTokens,
                 steps: steps);
+            eng.LmGuard?.Succeeded();
             if (eng.CpuLmFactory is not null)
             {
                 // A card that is already slow now gets its processor session before the first real line.
@@ -204,6 +205,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
             var window = tokens.Concat(Enumerable.Repeat((long)TurboSilenceToken, SilenceSuffixCount)).ToArray();
             _ = this.DecodeWindow(eng, reference.Trimmed(this.Streaming.PromptTokens), window);
+            eng.LmGuard?.Succeeded();
             this.log?.Info($"Turbo warm-up line done in {clock.ElapsedMilliseconds} ms ({EngineLabel(eng, eng.LmEp != DeviceEp.Cpu)}).");
         }
         catch (OperationCanceledException)
@@ -584,6 +586,16 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             timer?.AddLanguageModel(SpeechCount(generated), phase.ElapsedMilliseconds);
             this.log?.Info($"Turbo timing: reference {referenceMs} ms, language model {phase.ElapsedMilliseconds} ms for {SpeechCount(generated)} tokens.");
         }
+        catch (Exception ex) when (this.IsCpuSessionFailure(eng, pick, ex, ct))
+        {
+            pick = this.DropCpuSession(eng, ex);
+            timer?.ResetAttempt();
+            timer?.SetEngine(EngineLabel(eng, pick.OnGpu));
+            phase.Restart();
+            generated = this.Decode(eng, pick, reference, textIds, timer, ct);
+            timer?.AddLanguageModel(SpeechCount(generated), phase.ElapsedMilliseconds);
+            this.log?.Info($"Turbo timing: language model {phase.ElapsedMilliseconds} ms for {SpeechCount(generated)} tokens (GPU after a CPU failure).");
+        }
         catch (Exception ex) when (this.IsGpuFailure(eng, pick, ex, ct))
         {
             // A managed failure on the GPU means the process is alive: close the crash scope, run this
@@ -769,6 +781,13 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         StreamingStats stats;
         try
         {
+            stats = this.RunStreaming(eng, pick, reference, textIds, request.Text.Length, Emit, timer, ct);
+        }
+        catch (Exception ex) when (whole.Count == 0 && this.IsCpuSessionFailure(eng, pick, ex, ct))
+        {
+            pick = this.DropCpuSession(eng, ex);
+            timer?.ResetAttempt();
+            timer?.SetEngine(EngineLabel(eng, pick.OnGpu));
             stats = this.RunStreaming(eng, pick, reference, textIds, request.Text.Length, Emit, timer, ct);
         }
         catch (Exception ex) when (whole.Count == 0 && this.IsGpuFailure(eng, pick, ex, ct))
@@ -1013,11 +1032,28 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         && !ct.IsCancellationRequested
         && ex is not (OperationCanceledException or SpeechSynthesisEngineDisposedException or ObjectDisposedException);
 
+    /// <summary>A line on the background-built processor language model threw (not a cancellation): that session is not to be trusted.</summary>
+    private bool IsCpuSessionFailure(Engine eng, LinePick pick, Exception ex, CancellationToken ct) =>
+        !pick.OnGpu
+        && eng.CpuLmFactory is not null
+        && !ct.IsCancellationRequested
+        && ex is not (OperationCanceledException or SpeechSynthesisEngineDisposedException or ObjectDisposedException);
+
+    /// <summary>Turns the processor session off for good and returns the graphics card's pick to retry the line on.</summary>
+    private LinePick DropCpuSession(Engine eng, Exception ex)
+    {
+        this.log?.Warn($"The processor language model failed ({ex.GetType().Name}: {ex.Message}); continuing on the graphics card.");
+        eng.DisableCpu();
+        this.lastLmDevice = LmDevice.Gpu;
+        return new LinePick(eng.Loop, true);
+    }
+
     /// <summary>Swaps in a CPU engine after a managed GPU failure. Runs inside the synthesis gate.</summary>
     private Engine FallBackToCpu(Engine failed, Exception ex)
     {
         this.log?.Warn($"The language model failed on the GPU ({ex.GetType().Name}: {ex.Message}); continuing on the CPU.");
         failed.LmGuard?.FailedSafely();
+        this.lastLmDevice = null;
         const string reason = "The GPU stopped working while speaking, so Chatterbox Turbo runs on the CPU. Use Retry on GPU to try again.";
         var old = this.engine;
         lock (this.statusGate)
@@ -1500,6 +1536,21 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
         /// <summary>The decode loop of the processor session once it exists; null until then.</summary>
         public TurboDecodeLoop? CpuLoop => this.cpuLoop;
+
+        /// <summary>Gives the processor session up after it failed a line: it is disposed and never built or chosen again.</summary>
+        public void DisableCpu()
+        {
+            this.Chooser.DisableCpu();
+            lock (this.cpuGate)
+            {
+                this.cpuBuildStarted = true;
+                this.cpuLoop = null;
+                this.cpuLm?.Dispose();
+                this.cpuOptions?.Dispose();
+                this.cpuLm = null;
+                this.cpuOptions = null;
+            }
+        }
 
         /// <summary>Starts building the processor session on a worker; does nothing when it was started, failed, or the engine is gone.</summary>
         public void BeginCpuBuild(ILogSink? log)

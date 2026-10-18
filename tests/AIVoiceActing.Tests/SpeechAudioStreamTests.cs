@@ -204,6 +204,22 @@ public sealed class SpeechAudioStreamTests
     }
 
     [Fact]
+    public void AShortReadOfWhatIsLeft_IsNotPlayedAsAClickingScrap_ItWaitsForACushion()
+    {
+        var stream = new SpeechAudioStream(24000);
+        var source = new PolishedPcmSource(stream, 1f, false);
+        stream.Append(Enumerable.Repeat(0.5f, 5000).ToArray());
+        var buffer = new float[512];
+        while (source.Read(buffer) > 0)
+        {
+        }
+
+        stream.Append(Enumerable.Repeat(0.5f, (24000 * AudioPolish.FadeMs / 1000) + 3).ToArray()); // 3 samples past the held-back fade
+
+        Assert.Equal(0, source.Read(buffer));
+    }
+
+    [Fact]
     public void ARebufferingLine_StillEndsWhenTheProducerCompletes()
     {
         var stream = new SpeechAudioStream(24000);

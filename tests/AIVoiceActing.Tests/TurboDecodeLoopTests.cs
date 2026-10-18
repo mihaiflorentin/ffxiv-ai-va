@@ -191,7 +191,7 @@ public sealed class TurboDecodeLoopTests : IDisposable
         var rig = this.NewRig(dir, "auto", plan: GpuPlan);
         using var synth = rig.Synth;
         await synth.WarmUpAsync(CancellationToken.None);
-        Assert.True(File.Exists(rig.Guard.MarkerPath));
+        Assert.False(File.Exists(rig.Guard.MarkerPath), "the warm-up ran the language model and the decoder on the GPU: the marker is closed");
 
         await synth.SynthesizeAsync(Line(), CancellationToken.None);
 
@@ -419,7 +419,7 @@ public sealed class TurboDecodeLoopTests : IDisposable
         using var synth = rig.Synth;
         synth.Streaming = TinyChunks;
         await synth.WarmUpAsync(CancellationToken.None);
-        Assert.True(File.Exists(rig.Guard.MarkerPath));
+        Assert.False(File.Exists(rig.Guard.MarkerPath), "the warm-up ran the language model and the decoder on the GPU: the marker is closed");
 
         var (whole, _) = await Stream(synth);
 

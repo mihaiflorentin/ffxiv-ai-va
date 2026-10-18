@@ -126,8 +126,9 @@ public sealed class PolishedPcmSource : IPcmSource
 
         // A read that takes the last of what was made, with the line still going, leaves the sound at a dead stop
         // until more arrives: end it on a ramp, and wait for a cushion before it starts again.
+        // The ramp covers the last stallFadeSamples of what was made, counted from the end of it, so it carries across
+        // reads: a short read (a few samples left over) continues the ramp instead of starting a steep one of its own.
         var drains = !completed && count == allowed;
-        var outLength = Math.Min(this.stallFadeSamples, count);
         for (var i = 0; i < count; i++)
         {
             var value = AudioPolish.SoftLimit(buffer[i] * this.gain);
@@ -142,13 +143,12 @@ public sealed class PolishedPcmSource : IPcmSource
                 this.fadeInDone++;
             }
 
-            if (drains)
+            if (!completed)
             {
-                // Everything made so far goes out in this read: ramp down over its last stretch.
-                var toEnd = count - i;
-                if (toEnd <= outLength)
+                var toEnd = allowed - i;
+                if (toEnd <= this.stallFadeSamples)
                 {
-                    value *= toEnd / (float)(outLength + 1);
+                    value *= toEnd / (float)(this.stallFadeSamples + 1);
                 }
             }
 

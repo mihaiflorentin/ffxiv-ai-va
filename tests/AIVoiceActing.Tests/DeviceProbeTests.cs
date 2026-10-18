@@ -149,3 +149,23 @@ public sealed class DeviceProbeTests
         Assert.Null(Report().AdapterFor(GpuPreference.Performance));
     }
 }
+
+public sealed class MemoryTextTests
+{
+    [Theory]
+    [InlineData("8 GB", 8192)]
+    [InlineData("8192 MB", 8192)]
+    [InlineData("8192", 8192)]
+    [InlineData("8589934592", 8192)]
+    [InlineData("524288 KB", 512)]
+    [InlineData("16 GiB", 16384)]
+    public void ParseMemoryMb_NormalisesUnits(string text, long expected) =>
+        Assert.Equal(expected, AIVoiceActing.Infrastructure.Onnx.WebGpuRuntime.ParseMemoryMb(text));
+
+    [Fact]
+    public void ParseMemoryMb_NoNumberOrUnknownUnit_IsNull()
+    {
+        Assert.Null(AIVoiceActing.Infrastructure.Onnx.WebGpuRuntime.ParseMemoryMb("n/a"));
+        Assert.Null(AIVoiceActing.Infrastructure.Onnx.WebGpuRuntime.ParseMemoryMb("8 parsecs"));
+    }
+}

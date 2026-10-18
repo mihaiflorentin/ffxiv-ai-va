@@ -204,4 +204,45 @@ public sealed class LmDeviceChooserTests
         Assert.Equal(LmDevice.Gpu, chooser.Choose(60, cpuReady: false));
         Assert.Equal(LmDevice.Gpu, chooser.Preferred);
     }
+
+    [Fact]
+    public void AProbe_IsCountedWhenIssued_SoACutShortLineDoesNotCauseAnotherOne()
+    {
+        var chooser = this.Chooser();
+        chooser.Choose(80, cpuReady: true);
+        Line(chooser, LmDevice.Gpu, 45);
+        chooser.Choose(80, cpuReady: true);
+        Line(chooser, LmDevice.Cpu, 12);
+
+        var probe = false;
+        for (var i = 0; i < 6 && !probe; i++)
+        {
+            probe = chooser.Choose(40, cpuReady: true) == LmDevice.Gpu; // the probe's line is cancelled: nothing is recorded
+        }
+
+        Assert.True(probe);
+        var probes = 0;
+        for (var i = 0; i < 4; i++)
+        {
+            probes += chooser.Choose(40, cpuReady: true) == LmDevice.Gpu ? 1 : 0;
+        }
+
+        Assert.Equal(0, probes);
+    }
+
+    [Fact]
+    public void AfterDisableCpu_TheCardKeepsEveryLine_AndNoProcessorSessionIsWanted()
+    {
+        var chooser = this.Chooser();
+        chooser.Choose(80, cpuReady: true);
+        Line(chooser, LmDevice.Gpu, 45);
+        Assert.True(chooser.WantsCpu);
+        Assert.Equal(LmDevice.Cpu, chooser.Choose(80, cpuReady: true));
+
+        chooser.DisableCpu();
+
+        Assert.False(chooser.WantsCpu);
+        Assert.Equal(LmDevice.Gpu, chooser.Choose(80, cpuReady: true));
+        Assert.Equal(LmDevice.Gpu, chooser.Preferred);
+    }
 }

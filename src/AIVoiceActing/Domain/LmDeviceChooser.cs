@@ -52,6 +52,7 @@ public sealed class LmDeviceChooser
     private int linesOnCpu;
     private long lastGpuAt;
     private bool probing;
+    private bool cpuDisabled;
 
     public LmDeviceChooser(LmDeviceOptions? options = null, Func<long>? nowMs = null)
     {
@@ -69,6 +70,17 @@ public sealed class LmDeviceChooser
             {
                 return this.preferred;
             }
+        }
+    }
+
+    /// <summary>The processor session failed: the card keeps every line from now on, and no processor session is wanted.</summary>
+    public void DisableCpu()
+    {
+        lock (this.gate)
+        {
+            this.cpuDisabled = true;
+            this.preferred = LmDevice.Gpu;
+            this.probing = false;
         }
     }
 
@@ -109,7 +121,7 @@ public sealed class LmDeviceChooser
         {
             lock (this.gate)
             {
-                return !double.IsNaN(this.gpuMs) && this.gpuMs > this.options.GpuSlowMs;
+                return !this.cpuDisabled && !double.IsNaN(this.gpuMs) && this.gpuMs > this.options.GpuSlowMs;
             }
         }
     }
@@ -123,7 +135,7 @@ public sealed class LmDeviceChooser
         lock (this.gate)
         {
             this.probing = false;
-            if (!cpuReady)
+            if (!cpuReady || this.cpuDisabled)
             {
                 this.preferred = LmDevice.Gpu;
                 return LmDevice.Gpu;
@@ -138,6 +150,10 @@ public sealed class LmDeviceChooser
             if (this.ProbeDue(lineChars))
             {
                 this.probing = true;
+
+                // Count the try now: a line that is cut short or too short never records, and would be probed again.
+                this.linesOnCpu = 0;
+                this.lastGpuAt = this.nowMs();
                 return LmDevice.Gpu;
             }
 
