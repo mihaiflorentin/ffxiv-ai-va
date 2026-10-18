@@ -3,7 +3,7 @@
   <PropertyGroup>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Version>0.0.38</Version>
+    <Version>0.0.39</Version>
     <AssemblyName>AIVoiceActing</AssemblyName>
     <Description>AI voice acting for FFXIV - local neural TTS with emotion-aware delivery.</Description>
     <IsPackable>false</IsPackable>

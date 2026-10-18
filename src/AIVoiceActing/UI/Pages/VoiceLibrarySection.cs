@@ -103,7 +103,9 @@ internal sealed class VoiceLibrarySection
         var now = ImGui.GetTime();
         if (now - this.referencedAt >= ReferencedRefreshSeconds || !ReferenceEquals(buffer, this.referencedFrom))
         {
-            this.referenced = CastingSummary.ReferencedIds(buffer, this.ctx.Profiles.Entries);
+            // Per-character generated voices resolve through Find but are never listed, so they are not missing.
+            var library = this.ctx.VoiceLibrary;
+            this.referenced = [.. CastingSummary.ReferencedIds(buffer, this.ctx.Profiles.Entries).Where(id => library.Find(id) is null)];
             this.referencedFrom = buffer;
             this.referencedAt = now;
         }
