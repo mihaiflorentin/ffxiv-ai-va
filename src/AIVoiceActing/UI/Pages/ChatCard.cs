@@ -17,6 +17,7 @@ internal sealed class ChatCard(UiContext ctx)
     private const float ChannelColumnEm = 13f;
 
     private string search = string.Empty;
+    private string openedFor = string.Empty;
 
     /// <summary>The active preset, healing the stored pointer when it dangles.</summary>
     private EnabledChatTypesPreset? Current()
@@ -187,6 +188,10 @@ internal sealed class ChatCard(UiContext ctx)
             return;
         }
 
+        // Open the matching groups once per change of the search, so the player can still close one.
+        var reopen = searching && this.search != this.openedFor;
+        this.openedFor = this.search;
+
         Ui.Gap(Ui.Space1);
         foreach (var (category, channels) in groups)
         {
@@ -195,7 +200,7 @@ internal sealed class ChatCard(UiContext ctx)
 
             // A search opens every matching group; otherwise only Speech starts open. The ##-suffix
             // pins the ImGui ID because the count in the caption changes with every tick.
-            if (searching)
+            if (reopen)
             {
                 ImGui.SetNextItemOpen(true, ImGuiCond.Always);
             }

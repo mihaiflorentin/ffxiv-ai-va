@@ -63,7 +63,7 @@ public sealed class ConfigurationWindow : Window
 
         this.DrawTabBar();
         var page = this.pages.First(p => p.Tab == this.ctx.Nav.Selected);
-        if (ImGui.BeginChild("##aiva-page", new Vector2(Ui.Fill(), -FooterBar.Height), false))
+        if (ImGui.BeginChild("##aiva-page-" + page.Tab, new Vector2(Ui.Fill(), -FooterBar.Height), false))
         {
             page.Draw();
         }

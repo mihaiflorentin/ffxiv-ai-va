@@ -82,11 +82,12 @@ internal sealed class AdvancedSection
         }
     }
 
-    /// <summary>A collapsible part of Advanced; opens by itself when a deep link names it.</summary>
+    /// <summary>A collapsible part of Advanced; opens and scrolls into view when a deep link names it.</summary>
     private static bool Part(string title, string? key, string? anchor)
     {
         if (key is not null && anchor == key)
         {
+            ImGui.SetScrollHereY(0f);
             ImGui.SetNextItemOpen(true);
         }
 

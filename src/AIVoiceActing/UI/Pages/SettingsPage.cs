@@ -6,10 +6,13 @@ using Dalamud.Bindings.ImGui;
 /// <summary>
 /// Settings, in the order a player needs it: Voice quality, Processor, Downloads, Keybinds, then a
 /// collapsed Advanced. Each part is its own small class. A nav anchor (<see cref="SettingsAnchors"/>)
-/// scrolls to its part, and opens Advanced when the part is inside it.
+/// scrolls to its part, and opens Advanced when the part is inside it. The jump is repeated for a
+/// few frames because cards that were never drawn settle on their real height one frame later.
 /// </summary>
 public sealed class SettingsPage : IPage
 {
+    private const int ScrollSettleFrames = 3;
+
     private readonly SettingsInputs inputs;
     private readonly QualityCard quality;
     private readonly ProcessorCard processor;
@@ -17,6 +20,8 @@ public sealed class SettingsPage : IPage
     private readonly KeybindsCard keybinds;
     private readonly AdvancedSection advanced;
     private readonly UiContext ctx;
+    private string? pendingAnchor;
+    private int scrollFrames;
 
     public SettingsPage(UiContext ctx)
     {
@@ -33,7 +38,14 @@ public sealed class SettingsPage : IPage
 
     public void Draw()
     {
-        var anchor = this.ctx.Nav.ConsumeAnchor(NavTab.Settings);
+        var consumed = this.ctx.Nav.ConsumeAnchor(NavTab.Settings);
+        if (consumed is not null)
+        {
+            this.pendingAnchor = consumed;
+            this.scrollFrames = ScrollSettleFrames;
+        }
+
+        var anchor = this.scrollFrames > 0 ? this.pendingAnchor : null;
         this.inputs.Refresh();
 
         ScrollTo(anchor, SettingsAnchors.Quality);
@@ -44,12 +56,12 @@ public sealed class SettingsPage : IPage
         this.downloads.Draw();
         ScrollTo(anchor, SettingsAnchors.Keybinds);
         this.keybinds.Draw();
-        if (SettingsAnchors.InsideAdvanced(anchor))
-        {
-            ImGui.SetScrollHereY(0f);
-        }
-
+        ScrollTo(anchor, SettingsAnchors.Advanced);
         this.advanced.Draw(anchor);
+        if (this.scrollFrames > 0)
+        {
+            this.scrollFrames--;
+        }
     }
 
     private static void ScrollTo(string? anchor, string key)
