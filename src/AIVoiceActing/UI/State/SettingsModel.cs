@@ -44,6 +44,7 @@ public static class SettingsReset
         config.DirectorEnabled = defaults.DirectorEnabled;
         config.LevelVoiceLoudness = defaults.LevelVoiceLoudness;
         config.StaleLineSeconds = defaults.StaleLineSeconds;
+        config.MaxPrerollSeconds = defaults.MaxPrerollSeconds;
         config.KeepTempoWhenPitched = defaults.KeepTempoWhenPitched;
         config.StreamSentences = defaults.StreamSentences;
         config.ShowNowSpeaking = defaults.ShowNowSpeaking;

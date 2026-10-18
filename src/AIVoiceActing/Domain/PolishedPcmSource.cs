@@ -17,12 +17,28 @@ public sealed class PolishedPcmSource : IPcmSource
     private readonly SpeechAudioStream stream;
     private readonly bool levelLoudness;
     private readonly int fadeSamples;
+    private readonly int rebufferSamples;
+    private readonly long rebufferMaxWaitSamples;
     private float gain;
     private bool started;
+    private bool rebuffering;
+    private long rebufferWaited;
+    private int fadeInDone = int.MaxValue;
     private long position;
+
+    /// <summary>
+    /// Once playback ran dry mid-line, it stays quiet until this much has built up again, so a slow stretch
+    /// is one clean pause instead of a stutter of single words.
+    /// </summary>
+    public const int RebufferMs = 800;
+
+    /// <summary>The longest such a pause is stretched: after this much silence it carries on with what it has.</summary>
+    public const int RebufferMaxWaitMs = 3000;
 
     public PolishedPcmSource(SpeechAudioStream stream, float gain, bool levelLoudness)
     {
+        this.rebufferSamples = Math.Max(1, stream.SampleRate * RebufferMs / 1000);
+        this.rebufferMaxWaitSamples = (long)stream.SampleRate * RebufferMaxWaitMs / 1000;
         this.stream = stream ?? throw new ArgumentNullException(nameof(stream));
         this.gain = Math.Max(0f, gain);
         this.levelLoudness = levelLoudness;
@@ -46,6 +62,37 @@ public sealed class PolishedPcmSource : IPcmSource
         var completed = this.stream.IsCompleted;
         var buffered = this.stream.Buffered;
         var allowed = completed ? buffered : Math.Max(0, buffered - this.fadeSamples);
+        if (allowed == 0 && completed)
+        {
+            return 0;
+        }
+
+        if (this.started && !completed)
+        {
+            if (allowed == 0 && !this.rebuffering)
+            {
+                // Ran dry in the middle of the line: wait for a cushion instead of playing scraps as they come.
+                this.rebuffering = true;
+                this.rebufferWaited = 0;
+            }
+
+            if (this.rebuffering)
+            {
+                if (allowed < this.rebufferSamples && this.rebufferWaited < this.rebufferMaxWaitSamples)
+                {
+                    this.rebufferWaited += buffer.Length;
+                    return 0;
+                }
+
+                this.rebuffering = false;
+                this.fadeInDone = 0; // the sound picks up again with a short ramp, not a click
+            }
+        }
+        else if (completed)
+        {
+            this.rebuffering = false;
+        }
+
         if (allowed == 0)
         {
             return 0;
@@ -68,6 +115,12 @@ public sealed class PolishedPcmSource : IPcmSource
             if (this.position + i < this.fadeSamples)
             {
                 value *= (this.position + i) / (float)this.fadeSamples;
+            }
+
+            if (this.fadeInDone < this.fadeSamples)
+            {
+                value *= this.fadeInDone / (float)this.fadeSamples;
+                this.fadeInDone++;
             }
 
             if (completed)

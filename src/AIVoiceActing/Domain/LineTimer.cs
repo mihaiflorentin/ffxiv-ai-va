@@ -42,6 +42,7 @@ public sealed class LineTimer
     private long audioMs;
     private string engine = string.Empty;
     private bool streamed;
+    private long prerollMs;
     private bool discarded;
 
     /// <param name="arrivedAtTicks"><c>Environment.TickCount64</c> when the line reached the pipeline; the work starts now.</param>
@@ -106,10 +107,14 @@ public sealed class LineTimer
         this.lmMs = 0;
         this.decoderMs = 0;
         this.windows = 0;
+        this.prerollMs = 0;
         this.StepLatency.Clear();
     });
 
     public void SetEngine(string name) => this.With(() => this.engine = name);
+
+    /// <summary>The sound was held back this long before it started (adds up over the chunks of a line).</summary>
+    public void AddPreroll(long ms) => this.With(() => this.prerollMs += Math.Max(0, ms));
 
     public void SetStreamed() => this.With(() => this.streamed = true);
 
@@ -183,7 +188,8 @@ public sealed class LineTimer
                 this.totalRenderMs,
                 this.audioMs,
                 this.engine,
-                this.streamed);
+                this.streamed,
+                this.prerollMs);
         }
     }
 

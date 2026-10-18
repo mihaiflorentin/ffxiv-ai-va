@@ -84,6 +84,7 @@ public sealed class ServiceContainer : IDisposable
     private ISpeechSynthesizer? kokoroReferenceRenderer;
     private readonly Func<int>? cpuThreadsFactory;
     private readonly Func<bool>? decoderSpinningFactory;
+    private readonly Func<int>? maxPrerollMsFactory;
     private readonly Func<string?>? kokoroVoicesDirFactory;
     private readonly Func<string?>? referenceClipsDirFactory;
     private readonly Func<IEmotionDirector?>? llmDirectorFactory;
@@ -165,6 +166,7 @@ public sealed class ServiceContainer : IDisposable
         Func<string>? selectedEngineFactory = null,
         Func<int>? cpuThreadsFactory = null,
         Func<bool>? decoderSpinningFactory = null,
+        Func<int>? maxPrerollMsFactory = null,
         Func<string?>? kokoroVoicesDirFactory = null,
         Func<string?>? referenceClipsDirFactory = null,
         Func<IEmotionDirector?>? llmDirectorFactory = null,
@@ -249,6 +251,7 @@ public sealed class ServiceContainer : IDisposable
         this.selectedEngineFactory = selectedEngineFactory;
         this.cpuThreadsFactory = cpuThreadsFactory;
         this.decoderSpinningFactory = decoderSpinningFactory;
+        this.maxPrerollMsFactory = maxPrerollMsFactory;
         this.kokoroVoicesDirFactory = kokoroVoicesDirFactory;
         this.referenceClipsDirFactory = referenceClipsDirFactory;
         this.llmDirectorFactory = llmDirectorFactory;
@@ -552,7 +555,8 @@ public sealed class ServiceContainer : IDisposable
             executionProvider: this.selectedEpFactory?.Invoke() ?? "cpu",
             intraOpThreads: this.cpuThreadsFactory?.Invoke(),
             log: this.LogSinkUnlocked(),
-            devices: this.TurboDevicesUnlocked(DeviceModePolicy.TurboEngineId));
+            devices: this.TurboDevicesUnlocked(DeviceModePolicy.TurboEngineId),
+            maxPrerollMs: this.maxPrerollMsFactory);
 
     private bool TurboIsMainEngine =>
         this.EngineCatalog.Resolve(this.selectedEngineFactory?.Invoke()) == "chatterbox-turbo";
@@ -583,6 +587,15 @@ public sealed class ServiceContainer : IDisposable
                 this.CreateKokoroUnlocked(this.cpuThreadsFactory?.Invoke()));
         }
     }
+
+    /// <summary>
+    /// Loads the Kokoro instance that renders reference clips (when Turbo is the main engine and so it is a
+    /// separate one) and runs its short practice line, so the first new voice of the session does not pay the
+    /// session, voice bank and dictionary start-up. Does nothing when the main engine already is that Kokoro
+    /// (it is warmed with the main engine). Failures are the caller's to log.
+    /// </summary>
+    public Task WarmReferenceRendererAsync(CancellationToken cancellationToken) =>
+        this.TurboIsMainEngine ? this.KokoroReferenceRenderer().WarmUpAsync(cancellationToken) : Task.CompletedTask;
 
     /// <summary>Kokoro-rendered reference clips the expressive engine clones, one per voice and pitch.</summary>
     public const string ExpressiveClipsFolder = "voices-kokoro-ref";

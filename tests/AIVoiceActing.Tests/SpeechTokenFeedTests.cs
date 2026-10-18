@@ -105,6 +105,25 @@ public sealed class SpeechTokenFeedTests
     }
 
     [Fact]
+    public void WhileItWaits_TheIdleCallbackRuns_OutsideTheFeedLock_SoTheModelIsNotHeldUp()
+    {
+        var feed = new SpeechTokenFeed();
+        var idle = 0;
+        var consumer = Task.Run(() => feed.WaitForPlan(new ChunkSchedule(Small), CancellationToken.None, () =>
+        {
+            Interlocked.Increment(ref idle);
+            feed.Add(1); // takes the feed's lock: would deadlock if the callback ran inside it
+            if (idle >= 3)
+            {
+                feed.Finish([]);
+            }
+        }));
+
+        Assert.True(consumer.Wait(TimeSpan.FromSeconds(10)));
+        Assert.True(idle >= 3);
+    }
+
+    [Fact]
     public void ACancelledToken_BeforeWaiting_ThrowsAtOnce()
     {
         var feed = new SpeechTokenFeed();

@@ -31,6 +31,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     private readonly ILogSink? log;
     private readonly int? intraOpThreads;
     private readonly TurboDeviceServices? devices;
+    private readonly Func<int>? maxPrerollMs;
     private readonly object statusGate = new();
     private volatile Lazy<Engine> engine;
     private DeviceMode? modeOverride;
@@ -67,7 +68,8 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         ILogSink? log = null,
         int? intraOpThreads = null,
         Func<ITextTokenizer>? tokenizerFactory = null,
-        TurboDeviceServices? devices = null) =>
+        TurboDeviceServices? devices = null,
+        Func<int>? maxPrerollMs = null) =>
         new(
             modelsDir,
             voicePathResolver,
@@ -75,7 +77,8 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             executionProvider,
             log,
             intraOpThreads,
-            devices);
+            devices,
+            maxPrerollMs);
 
     private static Func<ITextTokenizer> TurboTokenizerFactory(string modelsDir) =>
         () => new TokenizersDotNetTokenizer(Path.Combine(modelsDir, ModelCatalog.TurboTokenizerJsonFileName));
@@ -87,9 +90,11 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         string executionProvider,
         ILogSink? log,
         int? intraOpThreads,
-        TurboDeviceServices? devices)
+        TurboDeviceServices? devices,
+        Func<int>? maxPrerollMs)
     {
         this.devices = devices;
+        this.maxPrerollMs = maxPrerollMs;
         this.modelsDir = modelsDir;
         this.voicePathResolver = voicePathResolver;
         this.tokenizerFactory = tokenizerFactory;
@@ -134,7 +139,16 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
     private bool GpuLoopReady => this.devices is { LmGpuLoopReady: true };
 
-    /// <summary>Builds all sessions ahead of the first line; no-ops once initialized.</summary>
+    /// <summary>Speech tokens the warm-up line asks the language model for: enough to build its pipelines, not enough to cost a second.</summary>
+    private const int WarmUpTokens = 8;
+
+    /// <summary>
+    /// Builds all sessions ahead of the first line, then speaks a few words of the default voice and throws
+    /// the audio away (clip encoder, a few language model steps, one decoder window), so the shader and
+    /// kernel set-up and the first-run costs are paid here and not by the player's first line. Cancellable,
+    /// and a failure of the practice line only gets logged: the first real line then meets it as before
+    /// (a graphics card that fails moves to the processor there, with its crash-guard handling untouched).
+    /// </summary>
     public async Task WarmUpAsync(CancellationToken cancellationToken)
     {
         // Session creation must not race dispose: take the synthesis gate like a line.
@@ -142,11 +156,52 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         try
         {
             this.ThrowIfDisposed();
-            _ = this.engine.Value;
+            var eng = this.engine.Value;
+            cancellationToken.ThrowIfCancellationRequested();
+            this.WarmLine(eng, cancellationToken);
         }
         finally
         {
             this.synthesisGate.Release();
+        }
+    }
+
+    private void WarmLine(Engine eng, CancellationToken ct)
+    {
+        this.loading = true;
+        try
+        {
+            var tokenizer = this.EnsureTokenizer();
+            var clip = this.voicePathResolver("default");
+            if (tokenizer is null || clip is null || !File.Exists(clip))
+            {
+                return;
+            }
+
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var reference = this.ReferenceFor(clip, eng, null);
+            var textIds = tokenizer.Encode(BuildPromptText([], "Ready.")).Select(id => (long)id).ToArray();
+            var tokens = new List<long>();
+            eng.Loop.Run(
+                new TurboDecodeInput(reference.CondEmb, reference.CondShape[1], textIds),
+                ct,
+                tokens.Add,
+                maxNewTokens: WarmUpTokens);
+            var window = tokens.Concat(Enumerable.Repeat((long)TurboSilenceToken, SilenceSuffixCount)).ToArray();
+            _ = this.DecodeWindow(eng, reference.Trimmed(this.Streaming.PromptTokens), window);
+            this.log?.Info($"Turbo warm-up line done in {clock.ElapsedMilliseconds} ms ({EngineLabel(eng)}).");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not SpeechSynthesisEngineDisposedException and not ObjectDisposedException)
+        {
+            this.log?.Warn($"Turbo warm-up line failed (the first real line will try again): {ex.Message}");
+        }
+        finally
+        {
+            this.loading = false;
         }
     }
 
@@ -564,11 +619,34 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     /// <summary>Chunk sizes, context and prompt length of the streaming decode.</summary>
     public StreamingOptions Streaming { get; set; } = StreamingOptions.Default;
 
+    /// <summary>When a streamed line may start to sound (see <see cref="PrerollGate"/>); the player's longest wait overrides <see cref="PrerollOptions.MaxMs"/>.</summary>
+    public PrerollOptions Preroll { get; set; } = PrerollOptions.Default;
+
     /// <summary>What the last streamed line cost (null until one was streamed); for tools and the log.</summary>
     public StreamingStats? LastStreamingStats { get; private set; }
 
-    public bool SupportsStreaming => this.StreamingOverride
-        ?? (this.engine.IsValueCreated && this.engine.Value.LmEp != DeviceEp.Cpu);
+    public bool SupportsStreaming => this.StreamingOverride ?? this.StreamsByPlan();
+
+    /// <summary>
+    /// A built engine answers by where its language model really runs. Before that (the engine is still
+    /// loading, or has not been asked yet) the plan answers, so a line that arrives early is not rendered
+    /// whole just because the sessions were not up a moment ago; a failed graphics card says no.
+    /// </summary>
+    private bool StreamsByPlan()
+    {
+        var current = this.engine;
+        if (current.IsValueCreated)
+        {
+            return current.Value.LmEp != DeviceEp.Cpu;
+        }
+
+        if (this.devices is null || this.gpuFailure is not null || this.loadFailure is not null)
+        {
+            return false;
+        }
+
+        return this.Resolve(cheap: true).Plan.IsGpu && this.GpuLoopReady;
+    }
 
     public int StreamingSampleRate => SampleRate;
 
@@ -641,7 +719,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         StreamingStats stats;
         try
         {
-            stats = this.RunStreaming(eng, reference, textIds, Emit, timer, ct);
+            stats = this.RunStreaming(eng, reference, textIds, request.Text.Length, Emit, timer, ct);
         }
         catch (Exception ex) when (whole.Count == 0 && this.IsGpuFailure(eng, ex, ct))
         {
@@ -650,12 +728,12 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             timer?.ResetAttempt();
             timer?.SetEngine(EngineLabel(eng));
             reference = this.ReferenceFor(referencePath, eng, timer);
-            stats = this.RunStreaming(eng, reference, textIds, Emit, timer, ct);
+            stats = this.RunStreaming(eng, reference, textIds, request.Text.Length, Emit, timer, ct);
         }
 
         this.LastStreamingStats = stats with { FirstAudioMs = firstAudioMs, TotalMs = clock.ElapsedMilliseconds };
         this.log?.Info(
-            $"Turbo streaming: first audio {firstAudioMs} ms, {stats.Chunks} chunks, language model {stats.LanguageModelMs} ms " +
+            $"Turbo streaming: first audio {firstAudioMs} ms (held back {stats.PrerollMs} ms), {stats.Chunks} chunks, language model {stats.LanguageModelMs} ms " +
             $"for {stats.SpeechTokens} tokens, decoder {stats.DecoderMs} ms ({eng.Files.Label} on {eng.LmEp}).");
         return new SynthesisResult([.. whole], SampleRate);
     }
@@ -667,9 +745,11 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     /// sessions are idle when the synthesis gate opens again.
     /// </summary>
     private StreamingStats RunStreaming(
-        Engine eng, ReferenceEmbeddings reference, long[] textIds, Action<float[]> emit, LineTimer? timer, CancellationToken ct)
+        Engine eng, ReferenceEmbeddings reference, long[] textIds, int textChars, Action<float[]> emit, LineTimer? timer, CancellationToken ct)
     {
         var options = this.Streaming;
+        var gate = new PrerollGate(this.PrerollNow(), textChars, () => Environment.TickCount64);
+        var held = new PrerollBuffer(gate, SampleRate, emit);
         var feed = new SpeechTokenFeed();
         var schedule = new ChunkSchedule(options.Chunks);
         var stitcher = new ChunkStitcher(SamplesPerToken, options.HalfFadeSamples);
@@ -685,9 +765,14 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
                     eng.Loop.Run(
                         new TurboDecodeInput(reference.CondEmb, reference.CondShape[1], textIds),
                         stop.Token,
-                        feed.Add,
+                        token =>
+                        {
+                            feed.Add(token);
+                            gate.TokenProduced();
+                        },
                         timer);
                     lmMs = lmClock.ElapsedMilliseconds;
+                    gate.LanguageModelFinished();
                     eng.LmGuard?.Succeeded();
                     this.lastTokens = feed.SpeechTokens();
                     feed.Finish(Enumerable.Repeat((long)TurboSilenceToken, SilenceSuffixCount));
@@ -703,15 +788,21 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         var chunks = 0;
         try
         {
-            while (feed.WaitForPlan(schedule, ct) is { } plan)
+            while (feed.WaitForPlan(schedule, ct, held.Tick) is { } plan)
             {
                 var decoding = System.Diagnostics.Stopwatch.StartNew();
                 var window = feed.Slice(plan.WindowStart, plan.WindowEnd);
                 var audio = this.DecodeWindow(eng, prompt, window);
-                decoderMs += decoding.ElapsedMilliseconds;
+                var windowMs = decoding.ElapsedMilliseconds;
+                decoderMs += windowMs;
                 chunks++;
-                emit(stitcher.Add(plan, audio));
+                var pcm = stitcher.Add(plan, audio);
+                gate.WindowDecoded(windowMs, pcm.Length * 1000L / SampleRate);
+                held.Add(pcm);
             }
+
+            // Fully made: whatever the pre-roll still holds goes now.
+            held.Flush();
         }
         finally
         {
@@ -722,8 +813,16 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         var speechTokens = feed.SpeechTokens().Length;
         timer?.AddLanguageModel(speechTokens, lmMs);
         timer?.AddDecoder(decoderMs, chunks);
-        return new StreamingStats(0, 0, chunks, speechTokens, lmMs, decoderMs, stitcher.LengthMismatches);
+        var prerollMs = Math.Max(0, gate.WaitedMs);
+        timer?.AddPreroll(prerollMs);
+        return new StreamingStats(0, 0, chunks, speechTokens, lmMs, decoderMs, stitcher.LengthMismatches, prerollMs);
     }
+
+    /// <summary>Pre-roll settings now: the player's longest wait (Advanced) over the defaults; 0 starts the sound with the first audio.</summary>
+    private PrerollOptions PrerollNow() =>
+        this.maxPrerollMs?.Invoke() is { } max
+            ? this.Preroll with { MaxMs = Math.Clamp(max, 0, 20000) }
+            : this.Preroll;
 
     private float[] DecodeWindow(Engine eng, ReferenceEmbeddings prompt, long[] window)
     {

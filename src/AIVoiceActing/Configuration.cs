@@ -157,6 +157,12 @@ public class Configuration
     /// <summary>Lines older than this are dropped at playback instead of played late. 0 keeps everything.</summary>
     public int StaleLineSeconds { get; set; } = 20;
 
+    /// <summary>
+    /// The longest a streamed line waits, after its first sound is ready, for a cushion that carries it to the
+    /// end without stopping mid-sentence. A fast machine starts sooner than this. 0 starts at once, as before.
+    /// </summary>
+    public float MaxPrerollSeconds { get; set; } = 6f;
+
     // ---- Triggers / exclusions (an exclusion wins) ----
     public IList<TriggerSpec> Triggers { get; set; } = new List<TriggerSpec>();
     public IList<TriggerSpec> Exclusions { get; set; } = new List<TriggerSpec>();

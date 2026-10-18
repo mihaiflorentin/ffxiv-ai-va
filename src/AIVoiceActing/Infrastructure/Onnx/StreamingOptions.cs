@@ -27,6 +27,7 @@ public sealed record StreamingOptions(ChunkScheduleOptions Chunks, int PromptTok
 /// <param name="LanguageModelMs">Time the language model loop ran (on its own thread, overlapping the decoder).</param>
 /// <param name="DecoderMs">Time spent inside decoder calls.</param>
 /// <param name="LengthMismatches">Decoder windows whose length differed from the plan (should be 0).</param>
+/// <param name="PrerollMs">How long the first audio was held back to build a cushion (0: none).</param>
 public sealed record StreamingStats(
     long FirstAudioMs,
     long TotalMs,
@@ -34,4 +35,5 @@ public sealed record StreamingStats(
     int SpeechTokens,
     long LanguageModelMs,
     long DecoderMs,
-    int LengthMismatches);
+    int LengthMismatches,
+    long PrerollMs = 0);

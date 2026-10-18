@@ -262,11 +262,13 @@ public sealed class StreamingPlaybackTests
         queue.Enqueue(Streamed(stream));
 
         Assert.True(SpinWait.SpinUntil(() => queue.NowPlaying is not null, TimeSpan.FromSeconds(5)));
+        // The sink has really started reading (all but the held-back closing fade is gone) before more arrives.
+        Assert.True(SpinWait.SpinUntil(() => stream.Buffered < 2000, TimeSpan.FromSeconds(5)));
         stream.Append(Enumerable.Repeat(0.2f, 3000).ToArray());
         stream.Complete();
 
         Assert.True(SpinWait.SpinUntil(() => sink.Streamed.Count == 1, TimeSpan.FromSeconds(5)));
-        Assert.Equal(5000, sink.Streamed[0].Length);
+        Assert.True(sink.Streamed[0].Length == 5000, $"len {sink.Streamed[0].Length}");
         Assert.Equal(0f, sink.Streamed[0][0]); // faded in
         Assert.Equal(0.2f, sink.Streamed[0][2500], 4);
         Assert.Equal(24000, sink.StreamedSampleRates[0]);

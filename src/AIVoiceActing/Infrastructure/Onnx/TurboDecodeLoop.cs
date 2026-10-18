@@ -76,8 +76,9 @@ public sealed class TurboDecodeLoop
     /// seeded START or the closing STOP), so a decoder can start on the first tokens while the loop goes on.
     /// <paramref name="timer"/>, when given, hears how long the first step (the prefill) took and the duration of
     /// every later language model step, which is the number a graphics card shared with the game inflates.
+    /// <paramref name="maxNewTokens"/> stops the loop early (warm-up runs a handful of steps); the cap never exceeds <see cref="MaxNewTokens"/>.
     /// </summary>
-    public List<long> Run(TurboDecodeInput input, CancellationToken ct, Action<long>? onToken = null, LineTimer? timer = null)
+    public List<long> Run(TurboDecodeInput input, CancellationToken ct, Action<long>? onToken = null, LineTimer? timer = null, int maxNewTokens = MaxNewTokens)
     {
         var generated = new List<long> { StartSpeechToken };
         var seen = new HashSet<long> { StartSpeechToken };
@@ -89,7 +90,7 @@ public sealed class TurboDecodeLoop
             long[] ids = input.TextIds;
             long lastPosition = 0;
             long totalLength = 0;
-            for (var step = 0; step < MaxNewTokens; step++)
+            for (var step = 0; step < Math.Min(maxNewTokens, MaxNewTokens); step++)
             {
                 ct.ThrowIfCancellationRequested();
                 var textEmbeds = this.EmbedTokens(ids, out var width);

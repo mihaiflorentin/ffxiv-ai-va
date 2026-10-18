@@ -239,7 +239,8 @@ public sealed class TurboDecodeLoopTests : IDisposable
         var rig = this.NewRig(dir, "auto", plan: GpuPlan);
         using var synth = rig.Synth;
 
-        await synth.WarmUpAsync(CancellationToken.None);
+        // Build the sessions without the warm-up line, which would remember the default clip's embeddings.
+        await synth.RetryAsync(DeviceMode.Auto);
         File.Delete(rig.Voice);
 
         await Assert.ThrowsAsync<SpeechSynthesisException>(() => synth.SynthesizeAsync(Line(), CancellationToken.None));
@@ -314,6 +315,50 @@ public sealed class TurboDecodeLoopTests : IDisposable
     }
 
     [Fact]
+    public async Task TheWarmUp_SpeaksAPracticeLine_SoTheDefaultClipIsAlreadyEncodedAndNothingIsHeard()
+    {
+        var dir = this.Install(TinyTurboModels.Lm32, TinyTurboModels.Lm16, decoder: TinyTurboModels.StreamDecoder);
+        var rig = this.NewRig(dir, "fp32");
+        using var synth = rig.Synth;
+        var before = synth.LastSpeechTokens;
+
+        await synth.WarmUpAsync(CancellationToken.None);
+        Assert.Equal(EngineState.Ready, synth.Status.State); // the "Loading" state of the practice line is over
+        File.Delete(rig.Voice); // a real line now finds the clip's embeddings in memory
+
+        var audio = await synth.SynthesizeAsync(Line(), CancellationToken.None);
+
+        Assert.Equal(43 * Spt, audio.Samples.Length);
+        Assert.Empty(before);
+    }
+
+    [Fact]
+    public async Task TheWarmUp_StopsWhenCancelled()
+    {
+        var dir = this.Install(TinyTurboModels.Lm32, TinyTurboModels.Lm16);
+        using var synth = this.NewRig(dir, "fp32").Synth;
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => synth.WarmUpAsync(cts.Token));
+    }
+
+    [Fact]
+    public async Task APrerollOfZero_HandsEachPieceOverAsItDecodes_ADefaultOneKeepsTheStartBackAndSaysSo()
+    {
+        using var synth = this.StreamingSynth();
+        synth.Preroll = new PrerollOptions(MaxMs: 0);
+        var (_, immediate) = await Stream(synth);
+        Assert.True(immediate.Count >= 5);
+        Assert.Equal(0, synth.LastStreamingStats!.PrerollMs);
+
+        synth.Preroll = PrerollOptions.Default;
+        var (whole, held) = await Stream(synth);
+        Assert.Equal(whole.Samples, held.SelectMany(p => p).ToArray());
+        Assert.True(synth.LastStreamingStats!.PrerollMs >= 0);
+    }
+
+    [Fact]
     public async Task ACallerWhoStopsListening_CancelsTheLineMidStream_AndTheEngineStaysUsable()
     {
         using var synth = this.StreamingSynth();
@@ -353,7 +398,7 @@ public sealed class TurboDecodeLoopTests : IDisposable
     {
         var dir = this.Install(TinyTurboModels.Lm32, TinyTurboModels.Lm16, decoder: TinyTurboModels.StreamDecoder);
         using var gpu = this.NewRig(dir, "auto", plan: GpuPlan).Synth;
-        Assert.False(gpu.SupportsStreaming); // not loaded yet: nothing to say
+        Assert.True(gpu.SupportsStreaming); // not loaded yet: the plan answers, so an early line is not rendered whole
         await gpu.WarmUpAsync(CancellationToken.None);
         Assert.True(gpu.SupportsStreaming);
 

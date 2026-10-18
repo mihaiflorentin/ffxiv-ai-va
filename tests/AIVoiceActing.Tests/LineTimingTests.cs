@@ -266,6 +266,20 @@ public sealed class RingLineTimingLogTests
     }
 
     [Fact]
+    public void ThePrerollWait_IsInTheTimingAndTheReport()
+    {
+        var timer = new LineTimer(10, Environment.TickCount64);
+        timer.AddPreroll(1400);
+        timer.AddPreroll(600);
+
+        var t = timer.Snapshot();
+
+        Assert.Equal(2000, t.PrerollMs);
+        Assert.Contains("preroll 2.0", DiagnosticsReport.LineSummary(t));
+        Assert.DoesNotContain("preroll", DiagnosticsReport.LineSummary(t with { PrerollMs = 0 }));
+    }
+
+    [Fact]
     public void ARecordedLineIsReplacedInPlace()
     {
         var log = new RingLineTimingLog(3);

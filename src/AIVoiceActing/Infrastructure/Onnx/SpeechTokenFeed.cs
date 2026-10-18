@@ -101,9 +101,9 @@ internal sealed class SpeechTokenFeed
 
     /// <summary>
     /// Blocks until the schedule yields a window, or returns null once the stream is finished and fully
-    /// handed out. Rethrows the producer's failure (original exception type) and honours cancellation.
+    /// handed out. <paramref name="onIdle"/> runs on this thread each time the wait wakes without a window (a token arrived, or 100 ms passed). Rethrows the producer's failure (original exception type) and honours cancellation.
     /// </summary>
-    public ChunkPlan? WaitForPlan(ChunkSchedule schedule, CancellationToken cancellationToken)
+    public ChunkPlan? WaitForPlan(ChunkSchedule schedule, CancellationToken cancellationToken, Action? onIdle = null)
     {
         using var wake = cancellationToken.Register(() =>
         {
@@ -112,9 +112,9 @@ internal sealed class SpeechTokenFeed
                 Monitor.PulseAll(this.gate);
             }
         });
-        lock (this.gate)
+        while (true)
         {
-            while (true)
+            lock (this.gate)
             {
                 if (this.failure is { } error)
                 {
@@ -133,8 +133,11 @@ internal sealed class SpeechTokenFeed
                     return null;
                 }
 
-                Monitor.Wait(this.gate, 250);
+                Monitor.Wait(this.gate, onIdle is null ? 250 : 100);
             }
+
+            // Outside the lock: the callback may hand audio on, and the model must not wait for that.
+            onIdle?.Invoke();
         }
     }
 }

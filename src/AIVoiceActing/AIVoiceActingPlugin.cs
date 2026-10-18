@@ -209,6 +209,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
                 : new Dictionary<string, string>(),
             cpuThreadsFactory: () => config.Device.CpuThreads(),
             decoderSpinningFactory: () => config.Device.DecoderSpinning,
+            maxPrerollMsFactory: () => (int)MathF.Round(Math.Max(0f, config.MaxPrerollSeconds) * 1000f),
             // Dalamud loads plugin assemblies with an empty Assembly.Location, so the
             // adapter cannot find the package's voices/ folder relative to itself —
             kokoroVoicesDirFactory: () => Path.Combine(
@@ -542,6 +543,16 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             catch (Exception ex)
             {
                 this.services.LogSink.Warn($"Speech engine pre-warm failed (will retry on first line): {ex.Message}");
+            }
+
+            // The Kokoro that renders voice clips for Turbo, after the main engine so the two never fight for the processor.
+            try
+            {
+                await this.services.WarmReferenceRendererAsync(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                this.services.LogSink.Warn($"Voice clip renderer pre-warm failed (will retry on first new voice): {ex.Message}");
             }
         });
     }

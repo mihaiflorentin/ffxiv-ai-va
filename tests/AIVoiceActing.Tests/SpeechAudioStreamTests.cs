@@ -178,6 +178,72 @@ public sealed class SpeechAudioStreamTests
     }
 
     [Fact]
+    public void AfterRunningDryMidLine_ItWaitsForACushion_InsteadOfPlayingScraps()
+    {
+        var stream = new SpeechAudioStream(24000);
+        var source = new PolishedPcmSource(stream, 1f, false);
+        stream.Append(Enumerable.Repeat(0.5f, 5000).ToArray());
+        var buffer = new float[512];
+        while (source.Read(buffer) > 0)
+        {
+        }
+
+        // A word's worth arrives; it is less than the cushion, so nothing plays yet.
+        stream.Append(Enumerable.Repeat(0.5f, 4000).ToArray());
+        Assert.Equal(0, source.Read(buffer));
+
+        // More arrives until the cushion (800 ms) is there: now it plays, with a short ramp up.
+        stream.Append(Enumerable.Repeat(0.5f, 20000).ToArray());
+        var read = source.Read(buffer);
+
+        Assert.True(read > 0);
+        Assert.True(buffer[0] < 0.1f);
+        Assert.Equal(0.5f, buffer[read - 1], 2);
+    }
+
+    [Fact]
+    public void ARebufferingLine_StillEndsWhenTheProducerCompletes()
+    {
+        var stream = new SpeechAudioStream(24000);
+        var source = new PolishedPcmSource(stream, 1f, false);
+        stream.Append(Enumerable.Repeat(0.5f, 5000).ToArray());
+        var buffer = new float[512];
+        while (source.Read(buffer) > 0)
+        {
+        }
+
+        stream.Append(Enumerable.Repeat(0.5f, 2000).ToArray());
+        Assert.Equal(0, source.Read(buffer));
+        stream.Complete();
+
+        var rest = Drain(source);
+
+        Assert.Equal(2000 + (24000 * AudioPolish.FadeMs / 1000), rest.Length); // the held-back fade plus the new samples
+        Assert.True(source.IsFinished);
+    }
+
+    [Fact]
+    public void TheDryWait_IsBounded_SoASlowLineStillCarriesOn()
+    {
+        var stream = new SpeechAudioStream(24000);
+        var source = new PolishedPcmSource(stream, 1f, false);
+        stream.Append(Enumerable.Repeat(0.5f, 5000).ToArray());
+        var buffer = new float[2400];
+        while (source.Read(buffer) > 0)
+        {
+        }
+
+        stream.Append(Enumerable.Repeat(0.5f, 4000).ToArray());
+        var silent = 0;
+        while (source.Read(buffer) == 0 && silent < 100)
+        {
+            silent++;
+        }
+
+        Assert.InRange(silent, 1, 60); // about 3 s of device reads at 100 ms each, never forever
+    }
+
+    [Fact]
     public void Polish_HoldsBackTheLastFade_UntilTheLineIsComplete()
     {
         var stream = new SpeechAudioStream(24000);

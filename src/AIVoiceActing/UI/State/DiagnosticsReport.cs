@@ -119,7 +119,7 @@ public static class DiagnosticsReport
 
     /// <summary>
     /// One line's stage timings, for example
-    /// <c>#12 3 chunks, turbo gpu q4f16: first audio 6.4, sound 6.8 [queue 0.0 ref 3.1 (rendered) enc 0.8 gate 0.0 prefill 0.2 decoder 0.9 over 4 calls device 0.4]
+    /// <c>#12 3 chunks, turbo gpu q4f16: first audio 6.4, sound 6.8 [queue 0.0 ref 3.1 (rendered) enc 0.8 gate 0.0 prefill 0.2 decoder 0.9 over 4 calls preroll 1.4 device 0.4]
     /// LM 156 tok 4.9 (p50 21 ms, p95 63 ms), render 6.1, speech 7.2, underruns 1 (2.4 silence)</c>.
     /// A stage that was not measured is left out.
     /// </summary>
@@ -158,6 +158,11 @@ public static class DiagnosticsReport
         if (t.Windows > 0)
         {
             sb.Append(CultureInfo.InvariantCulture, $" decoder {Sec(t.DecoderMsTotal)} over {t.Windows} {(t.Windows == 1 ? "call" : "calls")}");
+        }
+
+        if (t.PrerollMs > 0)
+        {
+            sb.Append(CultureInfo.InvariantCulture, $" preroll {Sec(t.PrerollMs)}");
         }
 
         if (t.DeviceOpenMs >= 0)

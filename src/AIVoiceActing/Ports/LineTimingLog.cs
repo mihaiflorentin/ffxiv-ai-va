@@ -30,6 +30,7 @@ namespace AIVoiceActing.Ports;
 /// <param name="AudioMs">Length of the finished speech.</param>
 /// <param name="Engine">Engine and where it ran, for example "turbo gpu q4f16".</param>
 /// <param name="Streamed">Playback started before the line was complete.</param>
+/// <param name="PrerollMs">How long the sound was held back after the first audio was ready, so it would not run dry mid-line; 0 when it started at once.</param>
 public sealed record LineTiming(
     long Id,
     int LineChars,
@@ -56,7 +57,8 @@ public sealed record LineTiming(
     long TotalRenderMs,
     long AudioMs,
     string Engine,
-    bool Streamed);
+    bool Streamed,
+    long PrerollMs = 0);
 
 /// <summary>Driven port keeping the stage timings of the last few lines, for the diagnostics report.</summary>
 public interface ILineTimingLog

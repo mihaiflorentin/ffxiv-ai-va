@@ -114,6 +114,20 @@ internal sealed class AdvancedSection
                 save);
         }
 
+        using (FormRow.Begin(
+                   "Longest wait before a line starts (seconds)",
+                   "An expressive voice on a graphics card waits until enough is ready to speak the whole line without stopping in the middle. " +
+                   "On a fast machine that is under a second; this is the most it will ever wait. 0 starts talking at once, even if the line may stop and go."))
+        {
+            Controls.DragFloat(
+                "##adv-preroll",
+                0f,
+                15f,
+                () => c.MaxPrerollSeconds,
+                v => c.MaxPrerollSeconds = v,
+                save);
+        }
+
         SettingsParts.Toggle(
             "Keep speaking pace on pitched voices",
             "Pitch shifting used to slow deep voices and speed up high ones. On keeps every voice at its own pace.",
