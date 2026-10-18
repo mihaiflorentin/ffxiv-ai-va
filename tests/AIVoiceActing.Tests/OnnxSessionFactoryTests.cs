@@ -141,6 +141,14 @@ public sealed class OnnxSessionFactoryTests : IDisposable
         Assert.Equal(2, decoder.IntraOpNumThreads);
     }
 
+    [Fact]
+    public void OnACpuPlan_TheDecoderKeepsTheBackgroundLoadThreadCount()
+    {
+        using var decoder = Factory(new FakeWebGpuRuntime()).Create(SessionRole.Decoder, DevicePlan.OnCpu("cpu"), intraOpThreads: 8).Options;
+
+        Assert.Equal(8, decoder.IntraOpNumThreads);
+    }
+
     [Theory]
     [InlineData(null, 2)]
     [InlineData(0, 2)]

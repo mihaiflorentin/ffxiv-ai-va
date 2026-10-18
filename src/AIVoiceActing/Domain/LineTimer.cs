@@ -98,6 +98,17 @@ public sealed class LineTimer
         this.windows += calls;
     });
 
+    /// <summary>The engine started the line over (a graphics card failure, retried on the processor): drop what the failed attempt measured.</summary>
+    public void ResetAttempt() => this.With(() =>
+    {
+        this.prefillMs = 0;
+        this.lmTokens = 0;
+        this.lmMs = 0;
+        this.decoderMs = 0;
+        this.windows = 0;
+        this.StepLatency.Clear();
+    });
+
     public void SetEngine(string name) => this.With(() => this.engine = name);
 
     public void SetStreamed() => this.With(() => this.streamed = true);

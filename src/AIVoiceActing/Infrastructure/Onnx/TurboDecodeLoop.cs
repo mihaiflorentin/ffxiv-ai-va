@@ -124,17 +124,18 @@ public sealed class TurboDecodeLoop
                 var mask = new long[totalLength];
                 Array.Fill(mask, 1L);
 
-                var stepClock = timer is null ? null : System.Diagnostics.Stopwatch.StartNew();
+                var stepStart = timer is null ? 0 : System.Diagnostics.Stopwatch.GetTimestamp();
                 var logits = this.RunLanguageModel(runOptions, embeds, frames, width, mask, positions, past, ref previous);
-                if (stepClock is not null)
+                if (timer is not null)
                 {
+                    var stepMs = (long)System.Diagnostics.Stopwatch.GetElapsedTime(stepStart).TotalMilliseconds;
                     if (step == 0)
                     {
-                        timer!.AddPrefill(stepClock.ElapsedMilliseconds);
+                        timer.AddPrefill(stepMs);
                     }
                     else
                     {
-                        timer!.StepLatency.Add(stepClock.ElapsedMilliseconds);
+                        timer.StepLatency.Add(stepMs);
                     }
                 }
 

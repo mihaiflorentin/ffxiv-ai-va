@@ -73,7 +73,8 @@ public sealed class OnnxSessionFactory
                 return Cpu(intraOpThreads, string.Empty);
             }
 
-            var decoder = Cpu(DecoderThreads(intraOpThreads), string.Empty);
+            // The cap is for streamed small windows (the language model on the GPU); a CPU plan keeps the player's count.
+            var decoder = Cpu(plan.IsGpu ? DecoderThreads(intraOpThreads) : intraOpThreads, string.Empty);
             if (this.decoderSpinning?.Invoke() == true)
             {
                 decoder.Options.WithSpinning();
@@ -121,7 +122,7 @@ public sealed class OnnxSessionFactory
     /// matrices (one per chunk of a streamed line) that already run faster than real time on two threads,
     /// where more threads mostly spin: the same call costs 0.7 CPU seconds on one thread, 1.2 on two, 1.9 on
     /// four and 3.5 on eight (docs/plans/2026-10-gpu-spike-results.md), and the CPU is shared with the game.
-    /// The cap applies whatever the background load setting says (8 threads on "high"): more threads here only
+    /// The cap applies on a graphics card plan whatever the background load setting says (8 threads on "high"); a processor-only plan keeps the setting. More threads here only
     /// take cores from the game, and a smaller explicit count is kept.
     /// </summary>
     public const int DecoderDefaultMaxThreads = 2;

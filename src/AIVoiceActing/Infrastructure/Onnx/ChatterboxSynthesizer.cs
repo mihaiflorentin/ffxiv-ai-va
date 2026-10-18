@@ -485,20 +485,21 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         try
         {
             generated = this.Decode(eng, reference, textIds, timer, ct);
-            timer?.AddLanguageModel(generated.Count - 1, phase.ElapsedMilliseconds);
-            this.log?.Info($"Turbo timing: reference {referenceMs} ms, language model {phase.ElapsedMilliseconds} ms for {generated.Count - 1} tokens.");
+            timer?.AddLanguageModel(SpeechCount(generated), phase.ElapsedMilliseconds);
+            this.log?.Info($"Turbo timing: reference {referenceMs} ms, language model {phase.ElapsedMilliseconds} ms for {SpeechCount(generated)} tokens.");
         }
         catch (Exception ex) when (this.IsGpuFailure(eng, ex, ct))
         {
             // A managed failure on the GPU means the process is alive: close the crash scope, run this
             // line on the CPU, and stay there until the player retries.
             eng = this.FallBackToCpu(eng, ex);
+            timer?.ResetAttempt();
             timer?.SetEngine(EngineLabel(eng));
             reference = this.ReferenceFor(referencePath, eng, timer);
             phase.Restart();
             generated = this.Decode(eng, reference, textIds, timer, ct);
-            timer?.AddLanguageModel(generated.Count - 1, phase.ElapsedMilliseconds);
-            this.log?.Info($"Turbo timing: language model {phase.ElapsedMilliseconds} ms for {generated.Count - 1} tokens (CPU after a GPU failure).");
+            timer?.AddLanguageModel(SpeechCount(generated), phase.ElapsedMilliseconds);
+            this.log?.Info($"Turbo timing: language model {phase.ElapsedMilliseconds} ms for {SpeechCount(generated)} tokens (CPU after a GPU failure).");
         }
 
         // speech_tokens = generate_tokens[:, 1:-1] — drops the seeded START and the final token (STOP when
@@ -646,6 +647,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         {
             // Nothing was heard yet, so the line can start over on the CPU like a whole-line render.
             eng = this.FallBackToCpu(eng, ex);
+            timer?.ResetAttempt();
             timer?.SetEngine(EngineLabel(eng));
             reference = this.ReferenceFor(referencePath, eng, timer);
             stats = this.RunStreaming(eng, reference, textIds, Emit, timer, ct);
@@ -752,6 +754,10 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
         return wav;
     }
+
+    /// <summary>Speech tokens in a finished loop result: without the seeded START and the closing STOP (the streamed path counts the same).</summary>
+    private static int SpeechCount(List<long> generated) =>
+        Math.Max(0, generated.Count - (generated.Count > 0 && generated[^1] == TurboDecodeLoop.StopSpeechToken ? 2 : 1));
 
     private ReferenceEmbeddings ReferenceFor(string referencePath, Engine eng, LineTimer? timer) =>
         this.referenceCache.GetOrAdd(

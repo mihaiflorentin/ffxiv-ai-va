@@ -21,6 +21,14 @@ public sealed class LatencyHistogram
         }
     }
 
+    public void Clear()
+    {
+        lock (this.gate)
+        {
+            this.samples.Clear();
+        }
+    }
+
     public void Add(long ms)
     {
         lock (this.gate)

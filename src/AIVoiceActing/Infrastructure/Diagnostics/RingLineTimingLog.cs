@@ -29,7 +29,14 @@ public sealed class RingLineTimingLog : ILineTimingLog
                 return;
             }
 
-            this.entries.Add(timing);
+            // A late update for a line already evicted must not come back as the newest entry.
+            if (this.entries.Count >= this.Capacity && timing.Id < this.entries[0].Id)
+            {
+                return;
+            }
+
+            var at = this.entries.FindLastIndex(e => e.Id < timing.Id) + 1;
+            this.entries.Insert(at, timing);
             if (this.entries.Count > this.Capacity)
             {
                 this.entries.RemoveAt(0);

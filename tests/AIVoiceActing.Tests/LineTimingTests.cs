@@ -238,6 +238,34 @@ public sealed class RingLineTimingLogTests
     }
 
     [Fact]
+    public void ALateUpdateForAnEvictedLine_DoesNotComeBackAsTheNewest()
+    {
+        var log = new RingLineTimingLog(2);
+        log.Record(Line(1));
+        log.Record(Line(2));
+        log.Record(Line(3));
+        log.Record(Line(1, underruns: 9));
+
+        Assert.Equal([3L, 2L], log.Recent(10).Select(l => l.Id));
+    }
+
+    [Fact]
+    public void ResettingAnAttempt_DropsTheFailedRunsLanguageModelFigures()
+    {
+        var timer = new LineTimer(10, Environment.TickCount64);
+        timer.AddPrefill(500);
+        timer.AddLanguageModel(40, 4000);
+        timer.StepLatency.Add(90);
+
+        timer.ResetAttempt();
+
+        var t = timer.Snapshot();
+        Assert.Equal(0, t.PrefillMs);
+        Assert.Equal(0, t.LmTokens);
+        Assert.Equal(0, t.LmMsPerTokenP95);
+    }
+
+    [Fact]
     public void ARecordedLineIsReplacedInPlace()
     {
         var log = new RingLineTimingLog(3);

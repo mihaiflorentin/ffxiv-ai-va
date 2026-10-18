@@ -365,4 +365,29 @@ public sealed class StreamingPlaybackTests
         Assert.Equal(2, timing.UnderrunCount);
         Assert.Equal(1800, timing.SilenceMs);
     }
+
+    [Fact]
+    public void TheWaitBetweenTwoChunksOfOneLine_CountsAsAnUnderrunWithSilence()
+    {
+        var log = new FakeLineTimingLog();
+        var timer = new LineTimer(10, Environment.TickCount64, log);
+        var sink = new FakeAudioSink { LastPlayback = new PlaybackReport(100, 0, 0, 0) };
+        using var queue = new PlaybackSpeechQueue(sink);
+        var first = new SpeechAudioStream(24000);
+        first.Append(new float[500]);
+        first.Complete();
+        queue.Enqueue(Streamed(first, lineId: 7) with { Timer = timer });
+        Assert.True(SpinWait.SpinUntil(() => sink.Streamed.Count == 1, TimeSpan.FromSeconds(5)));
+
+        Thread.Sleep(300); // the next sentence is still rendering
+        var second = new SpeechAudioStream(24000);
+        second.Append(new float[500]);
+        second.Complete();
+        queue.Enqueue(Streamed(second, lineId: 7) with { Timer = timer });
+
+        Assert.True(SpinWait.SpinUntil(() => sink.Streamed.Count == 2 && log.Recorded.Count >= 2, TimeSpan.FromSeconds(5)));
+        var timing = log.Recorded[^1];
+        Assert.Equal(1, timing.UnderrunCount);
+        Assert.True(timing.SilenceMs >= 300, $"silence was {timing.SilenceMs} ms");
+    }
 }

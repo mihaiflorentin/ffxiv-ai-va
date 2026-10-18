@@ -106,6 +106,10 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
         this.sink.Cancel();
     }
 
+    private const long MinCountedGapMs = 50;
+    private long lastLineId;
+    private long lastEndTicks;
+
     private async Task PlayLoopAsync()
     {
         try
@@ -153,6 +157,11 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
             return;
         }
 
+        // The wait between two chunks of one line is silence the listener hears, but each chunk has its own
+        // device and meter that never see it: measure it here (arrival of the next chunk after the last ended).
+        var gapMs = item.LineId != 0 && item.LineId == this.lastLineId && this.lastEndTicks > 0
+            ? Environment.TickCount64 - this.lastEndTicks
+            : 0;
         try
         {
             // Gain, levelling, limiting and fades happen here so the device sees unity gain
@@ -171,7 +180,7 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
                 {
                     this.nowPlaying = null;
                     stream.Cancel(); // the line is over; a producer still running has nothing left to feed
-                    this.ReportPlayback(item);
+                    this.ReportPlayback(item, gapMs);
                 }
 
                 return;
@@ -187,7 +196,7 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
             finally
             {
                 this.nowPlaying = null;
-                this.ReportPlayback(item);
+                this.ReportPlayback(item, gapMs);
             }
         }
         catch (Exception ex)
@@ -197,16 +206,25 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
     }
 
     /// <summary>Hands what the sink measured for the item that just played to its line's timer.</summary>
-    private void ReportPlayback(SpeechItem item)
+    private void ReportPlayback(SpeechItem item, long gapMs)
     {
+        this.lastLineId = item.LineId;
+        this.lastEndTicks = Environment.TickCount64;
         if (item.Timer is not { } timer)
         {
             return;
         }
 
-        if (this.sink.LastPlayback is { } report)
+        var report = this.sink.LastPlayback;
+        if (report is not null)
         {
             timer.AddPlayback(report);
+        }
+
+        if (gapMs >= MinCountedGapMs)
+        {
+            // Waiting for the next chunk, then opening a new device for it: both are silence in the middle of the line.
+            timer.AddPlayback(new PlaybackReport(-1, 1, gapMs + Math.Max(0, report?.DeviceOpenMs ?? 0), 0));
         }
 
         timer.Commit();
