@@ -167,15 +167,18 @@ public sealed class SpeechRequestHandler
 
         // Long lines stream sentence by sentence: the first chunk plays while the rest
         // renders. Chunks share a line id so skipping the line drops what is left of it.
-        var chunks = this.streamSentences?.Invoke() == true
-            ? SentenceChunker.Split(processed)
-            : [processed];
-        timer.SetChunks(chunks.Count);
-        var lineId = chunks.Count > 1 ? Interlocked.Increment(ref nextLineId) : 0;
         // Engines that decode in pieces (Turbo with the language model on the GPU) hand audio over while
         // the line renders; the queue then plays it as it arrives. The same setting that splits long lines
         // turns this on, since both are about starting to speak sooner.
-        var streamAudio = this.streamSentences?.Invoke() == true && synth.SupportsStreaming && this.queue.SupportsStreaming;
+        var splitting = this.streamSentences?.Invoke() == true;
+        var streamAudio = splitting && synth.SupportsStreaming && this.queue.SupportsStreaming;
+        // A streaming engine pays its cold start (prefill, first window, device) per render, so it takes
+        // whole sentences together up to a size; the others keep the short sentence-sized pieces.
+        var chunks = !splitting
+            ? [processed]
+            : streamAudio ? SentenceChunker.SplitForStreaming(processed) : SentenceChunker.Split(processed);
+        timer.SetChunks(chunks.Count);
+        var lineId = chunks.Count > 1 ? Interlocked.Increment(ref nextLineId) : 0;
         for (var index = 0; index < chunks.Count; index++)
         {
             var request = SpeechRequestMapper.ToRequest(

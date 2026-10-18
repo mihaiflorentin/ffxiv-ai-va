@@ -42,6 +42,31 @@ public sealed class StreamingAndCacheTests
     }
 
     [Fact]
+    public void StreamingChunker_PacksSentencesUpToThreeHundredChars()
+    {
+        var chunks = SentenceChunker.SplitForStreaming(LongLine);
+
+        Assert.Equal(LongLine.Trim().Length <= 300 ? 1 : chunks.Count, chunks.Count);
+        Assert.All(chunks, c => Assert.True(c.Length <= 300 || !c.Contains(". ")));
+        Assert.Equal(LongLine.Trim(), string.Join(" ", chunks));
+    }
+
+    [Fact]
+    public void StreamingChunker_SplitsOnlyAtSentenceEnds_AndKeepsAnOverlongSentenceWhole()
+    {
+        var long1 = string.Join(" ", Enumerable.Repeat("word", 70)) + "."; // 349 chars, one sentence
+        var chunks = SentenceChunker.SplitForStreaming($"Hello there. {long1} Bye now.");
+
+        Assert.Equal(["Hello there.", long1, "Bye now."], chunks);
+    }
+
+    [Fact]
+    public void StreamingChunker_KeepsShortLinesWhole()
+    {
+        Assert.Equal(["Yes. Of course."], SentenceChunker.SplitForStreaming(" Yes. Of course. "));
+    }
+
+    [Fact]
     public void Chunker_SplitsLongLines_OnSentenceEnds()
     {
         var chunks = SentenceChunker.Split(LongLine);

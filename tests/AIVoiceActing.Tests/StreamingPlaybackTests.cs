@@ -142,7 +142,7 @@ public sealed class StreamingPlaybackTests
     }
 
     [Fact]
-    public async Task LongLines_StillSplitIntoSentences_AndEachStreamsUnderOneLineId()
+    public async Task AnOrdinaryLine_IsOneStream_SoNoSentencePaysTheColdStartAgain()
     {
         var (synth, queue) = Rig();
         const string line =
@@ -151,11 +151,26 @@ public sealed class StreamingPlaybackTests
 
         await Handler(synth, queue).SpeakAsync(null, Speaker, line, CancellationToken.None);
 
-        Assert.Equal(2, queue.Enqueued.Count);
+        Assert.Single(queue.Enqueued);
+        Assert.NotNull(queue.Enqueued[0].Stream);
+        Assert.Equal(0, queue.Enqueued[0].LineId);
+        Assert.Equal(line, Assert.Single(synth.StreamingCalls).Text);
+    }
+
+    [Fact]
+    public async Task LinesOverThreeHundredChars_StillSplitAtSentenceEnds_EachStreamingUnderOneLineId()
+    {
+        var (synth, queue) = Rig();
+        var line = string.Join(" ", Enumerable.Range(1, 8).Select(i => $"Sentence number {i} is a fairly ordinary stretch of dialogue spoken here."));
+
+        await Handler(synth, queue).SpeakAsync(null, Speaker, line, CancellationToken.None);
+
+        Assert.True(queue.Enqueued.Count >= 2);
         Assert.All(queue.Enqueued, i => Assert.NotNull(i.Stream));
         Assert.NotEqual(0, queue.Enqueued[0].LineId);
-        Assert.Equal(queue.Enqueued[0].LineId, queue.Enqueued[1].LineId);
-        Assert.Equal(2, synth.StreamingCalls.Count);
+        Assert.All(queue.Enqueued, i => Assert.Equal(queue.Enqueued[0].LineId, i.LineId));
+        Assert.All(synth.StreamingCalls, c => Assert.True(c.Text.Length <= 300 && c.Text.EndsWith('.')));
+        Assert.Equal(line, string.Join(" ", synth.StreamingCalls.Select(c => c.Text)));
     }
 
     [Fact]
