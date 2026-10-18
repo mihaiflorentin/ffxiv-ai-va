@@ -166,4 +166,16 @@ public sealed class EngineViewModelTests
             "Running on your graphics card (RTX 4070). " + AIVoiceActing.Domain.PrecisionNotes.FullSizeIgnoredOnGpu,
             Describe(status).Detail);
     }
+
+    [Fact]
+    public void ReadyOnTheProcessorForNow_IsNotAProblem_AndSaysWhyInThePortsWords()
+    {
+        const string reason = "Running on your processor right now: the game is keeping the graphics card busy, so the processor is faster. It switches back by itself.";
+        var view = Describe(new EngineStatus(EngineState.Ready, DeviceMode.Auto, ActiveDevice.Cpu, reason, false, OnProcessorForNow: true));
+
+        Assert.Equal(Severity.Info, view.Severity);
+        Assert.Equal(EngineViewModel.ReadyWord, view.Word);
+        Assert.Equal(reason, view.Detail);
+        Assert.False(Labels.ContainsJargon(view.Detail), view.Detail);
+    }
 }

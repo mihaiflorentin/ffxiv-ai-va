@@ -115,4 +115,38 @@ public sealed class DiagnosticsReportTests
 
         Assert.Contains("Free space: unknown", DiagnosticsReport.Build(input));
     }
+
+    [Fact]
+    public void WhenLinesRunOnTheProcessorForNow_TheReportSaysSoAndGivesTheSpeedOfEachDevice()
+    {
+        var status = new EngineStatus(
+            EngineState.Ready,
+            DeviceMode.Auto,
+            ActiveDevice.Cpu,
+            "Running on your processor right now.",
+            false,
+            OnProcessorForNow: true,
+            Rates: new LmDeviceRates(45.4, 12.2));
+
+        var report = DiagnosticsReport.Build(Input(turboStatus: status));
+
+        Assert.Contains("running on the processor for now", report);
+        Assert.Contains("graphics card 45 ms, processor 12 ms", report);
+    }
+
+    [Fact]
+    public void ADeviceThatWasNeverMeasured_IsSaidSo()
+    {
+        var status = new EngineStatus(
+            EngineState.Ready,
+            DeviceMode.Auto,
+            new ActiveDevice(DeviceEp.WebGpu),
+            string.Empty,
+            false,
+            Rates: new LmDeviceRates(8.0, 0));
+
+        var report = DiagnosticsReport.Build(Input(turboStatus: status));
+
+        Assert.Contains("graphics card 8 ms, processor not measured", report);
+    }
 }

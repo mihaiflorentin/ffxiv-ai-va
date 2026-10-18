@@ -41,6 +41,7 @@ internal static class Program
         string? linesFile = null;
         var stream = false;
         var simulate = false;
+        double? primeGpuMs = null;
         int? promptTokens = null;
         int? firstChunk = null;
         int? maxChunk = null;
@@ -170,6 +171,10 @@ internal static class Program
                 case "--lines" when i + 1 < args.Length:
                     linesFile = args[++i];
                     break;
+                case "--prime-gpu-ms" when i + 1 < args.Length && double.TryParse(args[i + 1], System.Globalization.CultureInfo.InvariantCulture, out var pg):
+                    primeGpuMs = pg;
+                    i++;
+                    break;
                 case "--sim":
                     simulate = true;
                     stream = true;
@@ -297,6 +302,21 @@ internal static class Program
                     halfFade ?? defaults.HalfFadeSamples);
             }
 
+            // Stands in for a game that keeps the card busy (the real load is not reproducible here): before every line the
+            // chooser is told the card took this long per speech token, as the plugin's own measurements would say.
+            Action? beforeLine = null;
+            if (primeGpuMs is { } primed && synthesizer is ChatterboxSynthesizer primeTarget)
+            {
+                primeTarget.WarmUpAsync(CancellationToken.None).GetAwaiter().GetResult();
+                beforeLine = () =>
+                {
+                    for (var n = 0; n < 6; n++)
+                    {
+                        primeTarget.DeviceChooser?.Record(LmDevice.Gpu, primed, 50);
+                    }
+                };
+            }
+
             var request = new SynthesisRequest(
                 ReferenceVoiceId: engine == "kokoro" ? reference ?? "af_heart" : "default",
                 Text: text,
@@ -313,7 +333,7 @@ internal static class Program
                 {
                     lineNumber++;
                     var each = stream
-                        ? RunStreaming(synthesizer, request with { Text = line }, out _, simulate)
+                        ? RunStreaming(synthesizer, request with { Text = line }, out _, simulate, beforeLine)
                         : synthesizer.SynthesizeAsync(request with { Text = line }, CancellationToken.None).GetAwaiter().GetResult();
                     var stem = Path.Combine(Path.GetDirectoryName(output) ?? ".", Path.GetFileNameWithoutExtension(output));
                     WavCodec.WriteMono24k($"{stem}-{lineNumber}.wav", each.Samples);
@@ -331,7 +351,7 @@ internal static class Program
             var clock = Stopwatch.StartNew();
             double firstAudio = -1;
             var result = stream
-                ? RunStreaming(synthesizer, request, out firstAudio, simulate)
+                ? RunStreaming(synthesizer, request, out firstAudio, simulate, beforeLine)
                 : synthesizer.SynthesizeAsync(request, CancellationToken.None).GetAwaiter().GetResult();
             clock.Stop();
 
@@ -373,7 +393,7 @@ internal static class Program
                     var timer = Stopwatch.StartNew();
                     double first = -1;
                     var again = stream
-                        ? RunStreaming(synthesizer, request, out first, simulate)
+                        ? RunStreaming(synthesizer, request, out first, simulate, beforeLine)
                         : synthesizer.SynthesizeAsync(request, CancellationToken.None).GetAwaiter().GetResult();
                     timer.Stop();
                     runs.Add(timer.Elapsed.TotalSeconds / (again.Samples.Length / (double)again.SampleRate));
@@ -396,6 +416,11 @@ internal static class Program
             }
 
             var status = synthesizer.Status;
+            if (synthesizer is ChatterboxSynthesizer { DeviceChooser: { } chooser })
+            {
+                Console.WriteLine($"device:      last line on {(synthesizer as ChatterboxSynthesizer)!.LastLmDevice?.ToString() ?? "n/a"}; graphics card {chooser.GpuMsPerToken:0} ms, processor {chooser.CpuMsPerToken:0} ms per speech token; processor session {((synthesizer as ChatterboxSynthesizer)!.CpuSessionReady ? "built" : "not built")}");
+            }
+
             Console.WriteLine($"status:      {status.State}, requested {status.RequestedDevice}, active {status.ActiveDevice.Ep}{(status.ActiveDevice.Adapter.Length > 0 ? $" on {status.ActiveDevice.Adapter}" : string.Empty)}");
             if (status.Reason.Length > 0)
             {
@@ -460,8 +485,9 @@ internal static class Program
             Precision: () => precision);
     }
 
-    private static SynthesisResult RunStreaming(ISpeechSynthesizer synthesizer, SynthesisRequest request, out double firstAudioSeconds, bool simulate = false)
+    private static SynthesisResult RunStreaming(ISpeechSynthesizer synthesizer, SynthesisRequest request, out double firstAudioSeconds, bool simulate = false, Action? beforeLine = null)
     {
+        beforeLine?.Invoke();
         var clock = Stopwatch.StartNew();
         var first = -1.0;
         var timer = new LineTimer(request.Text.Length, Environment.TickCount64);
@@ -603,6 +629,8 @@ internal static class Program
               --bench                Time 5 more runs after the first and print min/median/max RTF and time to first audio.
               --bench-out <file>     With --bench: also write the first benchmark run's audio.
               --stream               Turbo: use the chunked streaming decode (first audio while the line renders).
+              --prime-gpu-ms <n>     With --device gpu --stream: before every line, tell the device chooser the card took n ms per
+                                     speech token (stands in for a game keeping the card busy; try 45).
               --sim                  With --stream: also play the line into the plugin's stream and polish source on a real clock
                                      and print the underruns and silence a sound device would have seen.
               --first-chunk/--max-chunk <tokens>, --left/--lookahead <tokens>, --half-fade <samples>, --prompt-tokens <n>

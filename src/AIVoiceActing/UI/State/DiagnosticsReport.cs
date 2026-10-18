@@ -197,15 +197,22 @@ public static class DiagnosticsReport
 
         var where = s.ActiveDevice.IsGpu
             ? $"graphics card{(string.IsNullOrWhiteSpace(s.ActiveDevice.Adapter) ? string.Empty : " (" + s.ActiveDevice.Adapter.Trim() + ")")}"
-            : "processor";
+            : s.OnProcessorForNow ? "processor for now (the graphics card is slower right now)" : "processor";
         var line = $"  {engine.Name}: {s.State}, running on the {where}, asked for {s.RequestedDevice}";
         if (!string.IsNullOrWhiteSpace(s.Reason))
         {
             line += $". {s.Reason.Trim()}";
         }
 
+        if (s.Rates is { } rates)
+        {
+            line += $" Speech speed per step (lower is faster, under 40 ms keeps up with the voice): graphics card {RateText(rates.GpuMsPerToken)}, processor {RateText(rates.CpuMsPerToken)}.";
+        }
+
         return s.CanRetryGpu ? line + " (A retry on the graphics card is possible.)" : line;
     }
+
+    private static string RateText(double ms) => ms > 0 ? $"{ms.ToString("0", CultureInfo.InvariantCulture)} ms" : "not measured";
 
     private static string YesNo(bool value) => value ? "yes" : "no";
 }

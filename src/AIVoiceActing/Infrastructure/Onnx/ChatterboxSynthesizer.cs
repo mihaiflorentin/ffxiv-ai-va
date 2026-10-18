@@ -139,8 +139,11 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
     private bool GpuLoopReady => this.devices is { LmGpuLoopReady: true };
 
-    /// <summary>Speech tokens the warm-up line asks the language model for: enough to build its pipelines, not enough to cost a second.</summary>
-    private const int WarmUpTokens = 8;
+    /// <summary>
+    /// Speech tokens the warm-up line asks the language model for: enough to build its pipelines and to take a first
+    /// reading of the device's speed (a median over 15 steps), not enough to cost a second.
+    /// </summary>
+    private const int WarmUpTokens = 16;
 
     /// <summary>
     /// Builds all sessions ahead of the first line, then speaks a few words of the default voice and throws
@@ -182,14 +185,26 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             var reference = this.ReferenceFor(clip, eng, null);
             var textIds = tokenizer.Encode(BuildPromptText([], "Ready.")).Select(id => (long)id).ToArray();
             var tokens = new List<long>();
+            var steps = new LatencyHistogram();
             eng.Loop.Run(
                 new TurboDecodeInput(reference.CondEmb, reference.CondShape[1], textIds),
                 ct,
                 tokens.Add,
-                maxNewTokens: WarmUpTokens);
+                maxNewTokens: WarmUpTokens,
+                steps: steps);
+            if (eng.CpuLmFactory is not null)
+            {
+                // A card that is already slow now gets its processor session before the first real line.
+                eng.Chooser.Record(LmDevice.Gpu, steps.P50, steps.Count);
+                if (eng.Chooser.WantsCpu)
+                {
+                    eng.BeginCpuBuild(this.log);
+                }
+            }
+
             var window = tokens.Concat(Enumerable.Repeat((long)TurboSilenceToken, SilenceSuffixCount)).ToArray();
             _ = this.DecodeWindow(eng, reference.Trimmed(this.Streaming.PromptTokens), window);
-            this.log?.Info($"Turbo warm-up line done in {clock.ElapsedMilliseconds} ms ({EngineLabel(eng)}).");
+            this.log?.Info($"Turbo warm-up line done in {clock.ElapsedMilliseconds} ms ({EngineLabel(eng, eng.LmEp != DeviceEp.Cpu)}).");
         }
         catch (OperationCanceledException)
         {
@@ -246,7 +261,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             var current = this.engine;
             if (current.IsValueCreated && current.Value.DeviceStatus is { } built)
             {
-                return built with { RequestedDevice = requested };
+                return AdaptiveStatus(built with { RequestedDevice = requested }, current.Value);
             }
 
             if (this.gpuFailure is { } gpuDown)
@@ -258,6 +273,32 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             var resolved = this.Resolve(cheap: true);
             return StatusFor(requested, resolved.Plan, services, services.Planner.Preferences.GpuDisabledByCrashGuard, gpuFailed: false);
         }
+    }
+
+    /// <summary>What the player is told while lines run on the processor by choice (the card is the engine's plan, the processor is faster right now).</summary>
+    public const string OnProcessorForNowText =
+        "Running on your processor right now: the game is keeping the graphics card busy, so the processor is faster. It switches back by itself.";
+
+    /// <summary>
+    /// An engine that chooses a device per line reports the measured speed of each, and says plainly when its lines are
+    /// on the processor for now. Anything else (a CPU plan, a fall back) keeps the status it was built with.
+    /// </summary>
+    private static EngineStatus AdaptiveStatus(EngineStatus built, Engine eng)
+    {
+        if (eng.CpuLmFactory is null)
+        {
+            return built;
+        }
+
+        var rates = eng.Chooser.GpuMsPerToken > 0 || eng.Chooser.CpuMsPerToken > 0
+            ? new LmDeviceRates(eng.Chooser.GpuMsPerToken, eng.Chooser.CpuMsPerToken)
+            : null;
+        if (built.State == EngineState.Ready && built.ActiveDevice.IsGpu && eng.Chooser.Preferred == LmDevice.Cpu && eng.CpuLoop is not null)
+        {
+            return built with { ActiveDevice = ActiveDevice.Cpu, Reason = OnProcessorForNowText, OnProcessorForNow = true, Rates = rates };
+        }
+
+        return built with { Rates = rates };
     }
 
     private DeviceMode? ModeOverride
@@ -531,27 +572,29 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         // A bad reference clip is the clip's problem, not the GPU's: encode (always on the CPU) before the
         // guarded decode.
         var phase = System.Diagnostics.Stopwatch.StartNew();
-        timer?.SetEngine(EngineLabel(eng));
+        var pick = this.PickDevice(eng, request.Text.Length);
+        timer?.SetEngine(EngineLabel(eng, pick.OnGpu));
         var reference = this.ReferenceFor(referencePath, eng, timer);
         var referenceMs = phase.ElapsedMilliseconds;
         phase.Restart();
         List<long> generated;
         try
         {
-            generated = this.Decode(eng, reference, textIds, timer, ct);
+            generated = this.Decode(eng, pick, reference, textIds, timer, ct);
             timer?.AddLanguageModel(SpeechCount(generated), phase.ElapsedMilliseconds);
             this.log?.Info($"Turbo timing: reference {referenceMs} ms, language model {phase.ElapsedMilliseconds} ms for {SpeechCount(generated)} tokens.");
         }
-        catch (Exception ex) when (this.IsGpuFailure(eng, ex, ct))
+        catch (Exception ex) when (this.IsGpuFailure(eng, pick, ex, ct))
         {
             // A managed failure on the GPU means the process is alive: close the crash scope, run this
             // line on the CPU, and stay there until the player retries.
             eng = this.FallBackToCpu(eng, ex);
+            pick = this.PickDevice(eng, request.Text.Length);
             timer?.ResetAttempt();
-            timer?.SetEngine(EngineLabel(eng));
+            timer?.SetEngine(EngineLabel(eng, pick.OnGpu));
             reference = this.ReferenceFor(referencePath, eng, timer);
             phase.Restart();
-            generated = this.Decode(eng, reference, textIds, timer, ct);
+            generated = this.Decode(eng, pick, reference, textIds, timer, ct);
             timer?.AddLanguageModel(SpeechCount(generated), phase.ElapsedMilliseconds);
             this.log?.Info($"Turbo timing: language model {phase.ElapsedMilliseconds} ms for {SpeechCount(generated)} tokens (CPU after a GPU failure).");
         }
@@ -585,7 +628,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             NamedOnnxValue.CreateFromTensor("speaker_features", reference.PromptFeat),
         };
 
-        this.log?.Info($"Generated {speechOnly.Length} speech tokens (total {speechTokens.Dimensions[1]} with prompt; {eng.Files.Label} on {eng.LmEp}).");
+        this.log?.Info($"Generated {speechOnly.Length} speech tokens (total {speechTokens.Dimensions[1]} with prompt; {eng.Files.Label} on {(pick.OnGpu ? eng.LmEp : DeviceEp.Cpu)}).");
         float[] wav;
         phase.Restart();
         using (var decoderOutputs = RunSession(eng.Decoder, decoderInputs))
@@ -626,25 +669,32 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
     public bool SupportsStreaming => this.StreamingOverride ?? this.StreamsByPlan();
 
+    /// <summary>The slowest language model, in ms per speech token, that is still streamed: below half of real time no hold would cover the line.</summary>
+    private const double SlowestStreamedMsPerToken = 80.0;
+
     /// <summary>
-    /// A built engine answers by where its language model really runs. Before that (the engine is still
-    /// loading, or has not been asked yet) the plan answers, so a line that arrives early is not rendered
-    /// whole just because the sessions were not up a moment ago; a failed graphics card says no.
+    /// Every engine that follows a device plan streams, on the processor as on the graphics card: the pre-roll gate
+    /// holds the sound back until the rest of the line will be made in time, so a slow machine waits longer instead of
+    /// stuttering. The exception is a language model measured slower than half of real time (see
+    /// <see cref="SlowestStreamedMsPerToken"/>), where the whole-line render wastes less. Before the engine is built
+    /// the plan answers, so a line that arrives early is not rendered whole just because the sessions were not up a
+    /// moment ago. Engines without device services (tools, tests) stay on the whole-line path unless forced.
     /// </summary>
     private bool StreamsByPlan()
     {
-        var current = this.engine;
-        if (current.IsValueCreated)
-        {
-            return current.Value.LmEp != DeviceEp.Cpu;
-        }
-
-        if (this.devices is null || this.gpuFailure is not null || this.loadFailure is not null)
+        if (this.devices is null || this.loadFailure is not null)
         {
             return false;
         }
 
-        return this.Resolve(cheap: true).Plan.IsGpu && this.GpuLoopReady;
+        var current = this.engine;
+        if (current.IsValueCreated)
+        {
+            var measured = current.Value.MsPerToken;
+            return measured <= 0 || measured <= SlowestStreamedMsPerToken;
+        }
+
+        return true;
     }
 
     public int StreamingSampleRate => SampleRate;
@@ -694,7 +744,8 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
         var textIds = tokenizer.Encode(BuildPromptText(request.Tags, request.Text)).Select(id => (long)id).ToArray();
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        timer?.SetEngine(EngineLabel(eng));
+        var pick = this.PickDevice(eng, request.Text.Length);
+        timer?.SetEngine(EngineLabel(eng, pick.OnGpu));
         var reference = this.ReferenceFor(referencePath, eng, timer);
 
         var whole = new List<float>();
@@ -718,16 +769,17 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         StreamingStats stats;
         try
         {
-            stats = this.RunStreaming(eng, reference, textIds, request.Text.Length, Emit, timer, ct);
+            stats = this.RunStreaming(eng, pick, reference, textIds, request.Text.Length, Emit, timer, ct);
         }
-        catch (Exception ex) when (whole.Count == 0 && this.IsGpuFailure(eng, ex, ct))
+        catch (Exception ex) when (whole.Count == 0 && this.IsGpuFailure(eng, pick, ex, ct))
         {
             // Nothing was heard yet, so the line can start over on the CPU like a whole-line render.
             eng = this.FallBackToCpu(eng, ex);
+            pick = this.PickDevice(eng, request.Text.Length);
             timer?.ResetAttempt();
-            timer?.SetEngine(EngineLabel(eng));
+            timer?.SetEngine(EngineLabel(eng, pick.OnGpu));
             reference = this.ReferenceFor(referencePath, eng, timer);
-            stats = this.RunStreaming(eng, reference, textIds, request.Text.Length, Emit, timer, ct);
+            stats = this.RunStreaming(eng, pick, reference, textIds, request.Text.Length, Emit, timer, ct);
         }
 
         this.LastStreamingStats = stats with { FirstAudioMs = firstAudioMs, TotalMs = clock.ElapsedMilliseconds };
@@ -744,7 +796,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     /// sessions are idle when the synthesis gate opens again.
     /// </summary>
     private StreamingStats RunStreaming(
-        Engine eng, ReferenceEmbeddings reference, long[] textIds, int textChars, Action<float[]> emit, LineTimer? timer, CancellationToken ct)
+        Engine eng, LinePick pick, ReferenceEmbeddings reference, long[] textIds, int textChars, Action<float[]> emit, LineTimer? timer, CancellationToken ct)
     {
         var options = this.Streaming;
         var gate = new PrerollGate(this.PrerollNow(), textChars, () => Environment.TickCount64, options.Chunks);
@@ -755,6 +807,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         var stitcher = new ChunkStitcher(SamplesPerToken, options.HalfFadeSamples);
         var prompt = reference.Trimmed(options.PromptTokens);
         long lmMs = 0;
+        var steps = new LatencyHistogram();
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var producer = Task.Run(
             () =>
@@ -762,7 +815,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
                 try
                 {
                     var lmClock = System.Diagnostics.Stopwatch.StartNew();
-                    eng.Loop.Run(
+                    pick.Loop.Run(
                         new TurboDecodeInput(reference.CondEmb, reference.CondShape[1], textIds),
                         stop.Token,
                         token =>
@@ -770,10 +823,16 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
                             feed.Add(token);
                             gate.TokenProduced();
                         },
-                        timer);
+                        timer,
+                        steps: steps);
                     lmMs = lmClock.ElapsedMilliseconds;
                     gate.LanguageModelFinished();
-                    eng.LmGuard?.Succeeded();
+                    if (pick.OnGpu)
+                    {
+                        eng.LmGuard?.Succeeded();
+                    }
+
+                    this.NoteLine(eng, pick, steps);
                     this.lastTokens = feed.SpeechTokens();
                     feed.Finish(Enumerable.Repeat((long)TurboSilenceToken, SilenceSuffixCount));
                 }
@@ -824,6 +883,62 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             ? this.Preroll with { MaxMs = Math.Clamp(max, 0, 20000) }
             : this.Preroll;
 
+    // ---- which device runs the language model of a line ------------------------------------------------
+
+    /// <summary>The loop a line runs on, and whether that is the graphics card (the crash marker and failure handling follow the card).</summary>
+    private sealed record LinePick(TurboDecodeLoop Loop, bool OnGpu);
+
+    /// <summary>
+    /// Decides, once and before the line starts, where its language model runs. Only an engine whose language model
+    /// is on the graphics card has a choice (Processor = CPU, or a plan that already fell back, never has): it follows
+    /// <see cref="LmDeviceChooser"/>, which compares the measured speed of the two. The processor session is built in
+    /// the background the first time the card is measured too slow, and the lines stay on the card until it exists.
+    /// </summary>
+    private LinePick PickDevice(Engine eng, int lineChars)
+    {
+        if (eng.CpuLmFactory is null)
+        {
+            return new LinePick(eng.Loop, eng.LmEp != DeviceEp.Cpu);
+        }
+
+        if (eng.Chooser.WantsCpu)
+        {
+            eng.BeginCpuBuild(this.log);
+        }
+
+        var cpu = eng.CpuLoop;
+        var device = eng.Chooser.Choose(lineChars, cpu is not null);
+        var previous = this.lastLmDevice;
+        this.lastLmDevice = device;
+        if (device != previous && previous is not null)
+        {
+            this.log?.Info(
+                device == LmDevice.Cpu
+                    ? $"Turbo language model moves to the processor ({RatesText(eng.Chooser)})."
+                    : $"Turbo language model moves back to the graphics card ({RatesText(eng.Chooser)}).");
+        }
+
+        return device == LmDevice.Cpu && cpu is not null ? new LinePick(cpu, false) : new LinePick(eng.Loop, true);
+    }
+
+    private static string RatesText(LmDeviceChooser chooser) =>
+        $"graphics card {chooser.GpuMsPerToken:0} ms and processor {chooser.CpuMsPerToken:0} ms per speech token";
+
+    /// <summary>A line finished: its median step time feeds the choice of device for the next one.</summary>
+    private void NoteLine(Engine eng, LinePick pick, LatencyHistogram steps) =>
+        eng.Chooser.Record(pick.OnGpu ? LmDevice.Gpu : LmDevice.Cpu, steps.P50, steps.Count);
+
+    private LmDevice? lastLmDevice;
+
+    /// <summary>Where the language model of the last line ran; null before the first line, or when the engine has no choice.</summary>
+    public LmDevice? LastLmDevice => this.lastLmDevice;
+
+    /// <summary>The engine's measurements and choice of device (null before the engine is built); for tools and tests.</summary>
+    public LmDeviceChooser? DeviceChooser => this.engine.IsValueCreated ? this.engine.Value.Chooser : null;
+
+    /// <summary>True once the processor session of a graphics card engine exists (it is built on demand).</summary>
+    public bool CpuSessionReady => this.engine.IsValueCreated && this.engine.Value.CpuLoop is not null;
+
     private float[] DecodeWindow(Engine eng, ReferenceEmbeddings prompt, long[] window)
     {
         var speechTokens = new DenseTensor<long>([1, prompt.PromptToken.Length + window.Length]);
@@ -870,22 +985,30 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             });
 
     /// <summary>Engine and place for the timing log, for example "turbo gpu q4f16".</summary>
-    private static string EngineLabel(Engine eng) => $"turbo {(eng.LmEp == DeviceEp.Cpu ? "cpu" : "gpu")} {eng.Files.Label}";
+    private static string EngineLabel(Engine eng, bool onGpu) => $"turbo {(onGpu ? "gpu" : "cpu")} {eng.Files.Label}";
 
-    private List<long> Decode(Engine eng, ReferenceEmbeddings reference, long[] textIds, LineTimer? timer, CancellationToken ct)
+    private List<long> Decode(Engine eng, LinePick pick, ReferenceEmbeddings reference, long[] textIds, LineTimer? timer, CancellationToken ct)
     {
-        var generated = eng.Loop.Run(
+        var steps = new LatencyHistogram();
+        var generated = pick.Loop.Run(
             new TurboDecodeInput(reference.CondEmb, reference.CondShape[1], textIds),
             ct,
-            timer: timer);
+            timer: timer,
+            steps: steps);
 
         // The language model survived a whole line on this device: the crash marker has done its job.
-        eng.LmGuard?.Succeeded();
+        if (pick.OnGpu)
+        {
+            eng.LmGuard?.Succeeded();
+        }
+
+        this.NoteLine(eng, pick, steps);
         return generated;
     }
 
-    private bool IsGpuFailure(Engine eng, Exception ex, CancellationToken ct) =>
-        eng.LmEp != DeviceEp.Cpu
+    private bool IsGpuFailure(Engine eng, LinePick pick, Exception ex, CancellationToken ct) =>
+        pick.OnGpu
+        && eng.LmEp != DeviceEp.Cpu
         && this.devices is not null
         && !ct.IsCancellationRequested
         && ex is not (OperationCanceledException or SpeechSynthesisEngineDisposedException or ObjectDisposedException);
@@ -1172,6 +1295,9 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
                 FallbackReason = lmBuild.FallbackReason,
                 LmGuard = lmBuild.Guard,
                 KvMemory = lmBuild.IsGpu ? lmBuild.DeviceMemory : null,
+
+                // A graphics card engine can also run a line on the processor; that session is only built when the card proves slow.
+                CpuLmFactory = lmBuild.IsGpu ? () => this.BuildCpuLanguageModel(services, files) : null,
             };
         }
         catch (Exception)
@@ -1187,6 +1313,24 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
                 build.Guard?.FailedSafely();
             }
 
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// A second language model session of the engine's own file set on the processor, with the player's thread count
+    /// (Background load). About 0.2 to 0.6 GB of memory, so it is built on demand and kept until the engine goes.
+    /// </summary>
+    private (InferenceSession Session, SessionOptions Options) BuildCpuLanguageModel(TurboDeviceServices services, TurboFiles files)
+    {
+        var build = services.Sessions.Create(SessionRole.Lm, DevicePlan.OnCpu("Language model on the processor, beside the graphics card."), this.intraOpThreads);
+        try
+        {
+            return (this.CreateSession(files.Lm, build.Options, services), build.Options);
+        }
+        catch
+        {
+            build.Options.Dispose();
             throw;
         }
     }
@@ -1336,8 +1480,87 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         public TurboDecodeLoop Loop => this.loop ??= new TurboDecodeLoop(
             this.EmbedTokens, this.LanguageModel, this.KvMemory ?? OrtMemoryInfo.DefaultInstance, Layers);
 
+        /// <summary>Measures both devices and picks one per line (it only ever picks the graphics card when <see cref="CpuLmFactory"/> is null).</summary>
+        public LmDeviceChooser Chooser { get; } = new();
+
+        /// <summary>Builds the processor language model beside a graphics card one; null when the engine has no such choice.</summary>
+        public Func<(InferenceSession Session, SessionOptions Options)>? CpuLmFactory { get; init; }
+
+        private readonly object cpuGate = new();
+        private bool cpuBuildStarted;
+        private bool disposed;
+        private InferenceSession? cpuLm;
+        private SessionOptions? cpuOptions;
+        private volatile TurboDecodeLoop? cpuLoop;
+
+        /// <summary>The measured ms per speech token of the device the lines run on; 0 before any line.</summary>
+        public double MsPerToken => this.CpuLmFactory is not null
+            ? this.Chooser.PreferredMsPerToken
+            : this.LmEp == DeviceEp.Cpu ? this.Chooser.CpuMsPerToken : this.Chooser.GpuMsPerToken;
+
+        /// <summary>The decode loop of the processor session once it exists; null until then.</summary>
+        public TurboDecodeLoop? CpuLoop => this.cpuLoop;
+
+        /// <summary>Starts building the processor session on a worker; does nothing when it was started, failed, or the engine is gone.</summary>
+        public void BeginCpuBuild(ILogSink? log)
+        {
+            if (this.CpuLmFactory is not { } factory)
+            {
+                return;
+            }
+
+            lock (this.cpuGate)
+            {
+                if (this.cpuBuildStarted || this.disposed)
+                {
+                    return;
+                }
+
+                this.cpuBuildStarted = true;
+            }
+
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    var (session, options) = factory();
+                    lock (this.cpuGate)
+                    {
+                        if (this.disposed)
+                        {
+                            session.Dispose();
+                            options.Dispose();
+                            return;
+                        }
+
+                        this.cpuLm = session;
+                        this.cpuOptions = options;
+                        this.cpuLoop = new TurboDecodeLoop(this.EmbedTokens, session, OrtMemoryInfo.DefaultInstance, Layers);
+                    }
+
+                    log?.Info($"Turbo processor language model ready in {clock.ElapsedMilliseconds} ms (the graphics card was slow; lines may move to it).");
+                }
+                catch (Exception ex)
+                {
+                    // Not retried: the lines simply stay on the graphics card.
+                    log?.Warn($"Turbo processor language model could not be built ({ex.GetType().Name}: {ex.Message}).");
+                }
+            });
+        }
+
         public void Dispose()
         {
+            lock (this.cpuGate)
+            {
+                this.disposed = true;
+                this.cpuLoop = null;
+                this.cpuLm?.Dispose();
+                this.cpuOptions?.Dispose();
+                this.cpuLm = null;
+                this.cpuOptions = null;
+            }
+
             this.Encoder.Dispose();
             this.EmbedTokens.Dispose();
             this.LanguageModel.Dispose();

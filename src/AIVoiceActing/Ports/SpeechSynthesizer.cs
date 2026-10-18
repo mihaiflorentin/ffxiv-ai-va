@@ -64,18 +64,33 @@ public enum EngineState
 }
 
 /// <summary>
+/// How fast the language model of an engine has been making speech on each device lately, as a running average of
+/// the median time of one speech token in milliseconds (a voice keeps up with real time at under 40 ms). 0 means
+/// that device has not been measured.
+/// </summary>
+public sealed record LmDeviceRates(double GpuMsPerToken, double CpuMsPerToken);
+
+/// <summary>
 /// Immutable snapshot of an engine's state, polled per frame. <see cref="Reason"/> is final
 /// user-facing text (empty when there is nothing to explain): the UI must not invent its own.
 /// </summary>
 /// <param name="RequestedDevice">What the settings asked for.</param>
 /// <param name="ActiveDevice">What actually runs.</param>
 /// <param name="CanRetryGpu">A retry on the GPU is worth offering (crash guard tripped or GPU failed).</param>
+/// <param name="OnProcessorForNow">
+/// The engine is set up for the graphics card and it works, but its lines are running on the processor for now
+/// because that is faster right now (the game is keeping the card busy); it moves back by itself. Not a fault:
+/// <see cref="State"/> stays <see cref="EngineState.Ready"/>.
+/// </param>
+/// <param name="Rates">Measured speed of each device when the engine chooses between them; null otherwise.</param>
 public sealed record EngineStatus(
     EngineState State,
     DeviceMode RequestedDevice,
     ActiveDevice ActiveDevice,
     string Reason,
-    bool CanRetryGpu)
+    bool CanRetryGpu,
+    bool OnProcessorForNow = false,
+    LmDeviceRates? Rates = null)
 {
     /// <summary>Status for engines that only know "ready or not" and always run on the CPU.</summary>
     public static EngineStatus FromReadiness(bool isReady, string notReadyReason) => isReady

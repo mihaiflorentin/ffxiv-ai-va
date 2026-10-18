@@ -102,10 +102,11 @@ public sealed class TurboDecodeLoop
     /// seeded START or the closing STOP), so a decoder can start on the first tokens while the loop goes on.
     /// <paramref name="timer"/>, when given, hears how long the first step (the prefill) took and the duration of
     /// every later language model step, which is the number a graphics card shared with the game inflates.
+    /// <paramref name="steps"/> hears the same step durations, for a caller that has no timer (the engine's choice of device).
     /// <paramref name="maxNewTokens"/> stops the loop early (warm-up runs a handful of steps); without it the loop
     /// runs to STOP within <see cref="TokenBudget"/> of the prompt's text tokens.
     /// </summary>
-    public List<long> Run(TurboDecodeInput input, CancellationToken ct, Action<long>? onToken = null, LineTimer? timer = null, int? maxNewTokens = null)
+    public List<long> Run(TurboDecodeInput input, CancellationToken ct, Action<long>? onToken = null, LineTimer? timer = null, int? maxNewTokens = null, LatencyHistogram? steps = null)
     {
         var generated = new List<long> { StartSpeechToken };
         var past = new OrtValue?[this.pastNames.Length];
@@ -152,18 +153,19 @@ public sealed class TurboDecodeLoop
                 var mask = new long[totalLength];
                 Array.Fill(mask, 1L);
 
-                var stepStart = timer is null ? 0 : System.Diagnostics.Stopwatch.GetTimestamp();
+                var stepStart = timer is null && steps is null ? 0 : System.Diagnostics.Stopwatch.GetTimestamp();
                 var logits = this.RunLanguageModel(runOptions, embeds, frames, width, mask, positions, past, ref previous);
-                if (timer is not null)
+                if (timer is not null || steps is not null)
                 {
                     var stepMs = (long)System.Diagnostics.Stopwatch.GetElapsedTime(stepStart).TotalMilliseconds;
                     if (step == 0)
                     {
-                        timer.AddPrefill(stepMs);
+                        timer?.AddPrefill(stepMs);
                     }
                     else
                     {
-                        timer.StepLatency.Add(stepMs);
+                        timer?.StepLatency.Add(stepMs);
+                        steps?.Add(stepMs);
                     }
                 }
 

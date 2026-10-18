@@ -47,6 +47,7 @@ public static class EngineViewModel
         {
             EngineState.NotInstalled => new EngineView(
                 Severity.Warning, NotInstalledWord, NonEmpty(status.Reason) ?? DownloadHint),
+            EngineState.Ready when status.OnProcessorForNow => new EngineView(Severity.Info, ReadyWord, NonEmpty(status.Reason) ?? "Running on your processor for now."),
             EngineState.Ready => new EngineView(Severity.Success, ReadyWord, ReadyDetail(status)),
             EngineState.FellBack => new EngineView(
                 Severity.Warning,

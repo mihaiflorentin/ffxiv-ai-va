@@ -175,4 +175,12 @@ public sealed class QualityTierModelTests
         Assert.Null(QualityTierModel.ProcessorWarning(QualityTier.MostExpressive, OnCpu(EngineState.Loading, "x")));
         Assert.Null(QualityTierModel.ProcessorWarning(QualityTier.MostExpressive, null));
     }
+
+    [Fact]
+    public void No_warning_while_the_processor_is_in_use_by_choice_because_it_is_faster()
+    {
+        var byChoice = new EngineStatus(EngineState.Ready, DeviceMode.Auto, ActiveDevice.Cpu, "Running on your processor right now.", false, OnProcessorForNow: true);
+
+        Assert.Null(QualityTierModel.ProcessorWarning(QualityTier.MostExpressive, byChoice));
+    }
 }

@@ -394,7 +394,7 @@ public sealed class TurboDecodeLoopTests : IDisposable
     }
 
     [Fact]
-    public async Task OnTheGpu_StreamingIsOffered_OnTheCpu_ItIsNot_UnlessForced()
+    public async Task StreamingIsOffered_OnTheGpuAndOnTheCpu_AndOffForANoDeviceEngine_UnlessForced()
     {
         var dir = this.Install(TinyTurboModels.Lm32, TinyTurboModels.Lm16, decoder: TinyTurboModels.StreamDecoder);
         using var gpu = this.NewRig(dir, "auto", plan: GpuPlan).Synth;
@@ -403,10 +403,11 @@ public sealed class TurboDecodeLoopTests : IDisposable
         Assert.True(gpu.SupportsStreaming);
 
         using var cpu = this.NewRig(this.Install(TinyTurboModels.Lm32, TinyTurboModels.Lm16), "fp32").Synth;
+        Assert.True(cpu.SupportsStreaming); // the pre-roll gate protects a slow processor, so it streams too
         await cpu.WarmUpAsync(CancellationToken.None);
-        Assert.False(cpu.SupportsStreaming);
-        cpu.StreamingOverride = true;
         Assert.True(cpu.SupportsStreaming);
+        cpu.StreamingOverride = false;
+        Assert.False(cpu.SupportsStreaming);
         Assert.Equal(24000, cpu.StreamingSampleRate);
     }
 
@@ -503,5 +504,154 @@ public sealed class TurboDecodeLoopTests : IDisposable
         TurboDecodeLoop.CapRun(logits, generated, TurboDecodeLoop.MaxRun);
 
         Assert.Equal(4L, TurboDecodeLoop.Argmax(logits));
+    }
+
+    // ---- streaming on the processor, and the choice of device per line ----------------------------------
+
+    private static async Task<bool> Eventually(Func<bool> condition)
+    {
+        for (var i = 0; i < 400 && !condition(); i++)
+        {
+            await Task.Delay(25);
+        }
+
+        return condition();
+    }
+
+    [Fact]
+    public async Task OnTheCpu_ALineStreamsByItself_InSeveralPieces()
+    {
+        var dir = this.Install(TinyTurboModels.Lm32, TinyTurboModels.Lm16, decoder: TinyTurboModels.StreamDecoder);
+        using var synth = this.NewRig(dir, "fp32").Synth;
+        synth.Streaming = TinyChunks;
+        Assert.True(synth.SupportsStreaming); // no override: the processor streams too
+
+        var (whole, pieces) = await Stream(synth);
+
+        Assert.True(pieces.Count >= 5, $"expected the line in several pieces, got {pieces.Count}");
+        Assert.Equal(whole.Samples, pieces.SelectMany(p => p).ToArray());
+        Assert.Equal(ExpectedTokens, synth.LastSpeechTokens);
+        Assert.Null(synth.LastLmDevice); // a processor engine has no choice to make
+        Assert.False(synth.CpuSessionReady);
+    }
+
+    [Fact]
+    public async Task AProcessorMeasuredSlowerThanHalfRealTime_IsNotStreamed()
+    {
+        var dir = this.Install(TinyTurboModels.Lm32, TinyTurboModels.Lm16);
+        using var synth = this.NewRig(dir, "fp32").Synth;
+        await synth.WarmUpAsync(CancellationToken.None);
+
+        synth.DeviceChooser!.Record(LmDevice.Cpu, 120, 50);
+
+        Assert.False(synth.SupportsStreaming);
+        synth.DeviceChooser.Record(LmDevice.Cpu, 20, 50);
+        synth.DeviceChooser.Record(LmDevice.Cpu, 20, 50);
+        synth.DeviceChooser.Record(LmDevice.Cpu, 20, 50);
+        synth.DeviceChooser.Record(LmDevice.Cpu, 20, 50);
+        synth.DeviceChooser.Record(LmDevice.Cpu, 20, 50);
+        Assert.True(synth.SupportsStreaming);
+    }
+
+    [Fact]
+    public async Task AGraphicsCardThatKeepsUp_NeverBuildsTheProcessorSession()
+    {
+        var dir = this.Install(TinyTurboModels.Lm32, TinyTurboModels.Lm16);
+        using var synth = this.NewRig(dir, "auto", plan: GpuPlan).Synth;
+        await synth.WarmUpAsync(CancellationToken.None);
+
+        for (var i = 0; i < 3; i++)
+        {
+            synth.DeviceChooser!.Record(LmDevice.Gpu, 8, 50);
+            await synth.SynthesizeAsync(Line(), CancellationToken.None);
+        }
+
+        Assert.Equal(LmDevice.Gpu, synth.LastLmDevice);
+        Assert.False(synth.CpuSessionReady);
+        Assert.False(synth.Status.OnProcessorForNow);
+    }
+
+    [Fact]
+    public async Task AGraphicsCardMeasuredSlow_GetsAProcessorSession_AndTheNextLineMovesThere_WithTheSameSpeech()
+    {
+        var dir = this.Install(TinyTurboModels.Lm32, TinyTurboModels.Lm16);
+        var rig = this.NewRig(dir, "auto", plan: GpuPlan);
+        using var synth = rig.Synth;
+        await synth.WarmUpAsync(CancellationToken.None);
+        var chooser = synth.DeviceChooser!;
+        Assert.False(synth.CpuSessionReady);
+
+        // The card is busy with the game: the first line still runs on it while the processor session is built.
+        for (var i = 0; i < 6; i++)
+        {
+            chooser.Record(LmDevice.Gpu, 45, 50);
+        }
+
+        await synth.SynthesizeAsync(Line(), CancellationToken.None);
+        Assert.Equal(LmDevice.Gpu, synth.LastLmDevice);
+        Assert.True(await Eventually(() => synth.CpuSessionReady), "the processor session never came up");
+
+        for (var i = 0; i < 6; i++)
+        {
+            chooser.Record(LmDevice.Gpu, 45, 50);
+        }
+
+        var audio = await synth.SynthesizeAsync(Line(), CancellationToken.None);
+
+        Assert.Equal(LmDevice.Cpu, synth.LastLmDevice);
+        Assert.Equal(ExpectedTokens, synth.LastSpeechTokens);
+        Assert.Equal(48, audio.Samples.Length);
+        var status = synth.Status;
+        Assert.Equal(EngineState.Ready, status.State);
+        Assert.True(status.OnProcessorForNow);
+        Assert.False(status.ActiveDevice.IsGpu);
+        Assert.Equal(ChatterboxSynthesizer.OnProcessorForNowText, status.Reason);
+        Assert.True(status.Rates!.GpuMsPerToken > 30);
+        Assert.Equal("q4f16/gpu/w32r12", synth.RenderVariant); // the engine's plan; the cache key does not flip with the load
+        Assert.False(File.Exists(rig.Guard.MarkerPath));
+    }
+
+    [Fact]
+    public async Task AStreamedLine_AlsoFollowsTheChoice_AndIsTheSameLineOnTheProcessor()
+    {
+        var dir = this.Install(TinyTurboModels.Lm32, TinyTurboModels.Lm16, decoder: TinyTurboModels.StreamDecoder);
+        using var synth = this.NewRig(dir, "auto", plan: GpuPlan).Synth;
+        synth.Streaming = TinyChunks;
+        await synth.WarmUpAsync(CancellationToken.None);
+        var chooser = synth.DeviceChooser!;
+        for (var i = 0; i < 6; i++)
+        {
+            chooser.Record(LmDevice.Gpu, 45, 50);
+        }
+
+        var (onCard, _) = await Stream(synth); // the processor session is built behind this one
+        Assert.True(await Eventually(() => synth.CpuSessionReady));
+        for (var i = 0; i < 6; i++)
+        {
+            chooser.Record(LmDevice.Gpu, 45, 50);
+        }
+
+        var (onProcessor, pieces) = await Stream(synth);
+
+        Assert.Equal(LmDevice.Cpu, synth.LastLmDevice);
+        Assert.True(pieces.Count >= 5);
+        Assert.Equal(onCard.Samples, onProcessor.Samples);
+        Assert.Equal(ExpectedTokens, synth.LastSpeechTokens);
+    }
+
+    [Fact]
+    public async Task APlanThatFellBackToTheProcessor_NeverGetsASecondSession()
+    {
+        var dir = this.Install(TinyTurboModels.Lm32, TinyTurboModels.LmBad16);
+        var rig = this.NewRig(dir, "auto", planByLm: lm => lm.Contains("q4f16") ? GpuPlan : DevicePlan.OnCpu("Running on the CPU.", wantedGpu: true));
+        using var synth = rig.Synth;
+        await synth.SynthesizeAsync(Line(), CancellationToken.None); // the card fails, the line finishes on the processor
+
+        synth.DeviceChooser!.Record(LmDevice.Gpu, 90, 50);
+        await synth.SynthesizeAsync(Line(), CancellationToken.None);
+
+        Assert.False(synth.CpuSessionReady);
+        Assert.Equal(EngineState.FellBack, synth.Status.State);
+        Assert.False(synth.Status.OnProcessorForNow);
     }
 }

@@ -73,9 +73,9 @@ public static class DeviceViewModel
     /// <summary>Plain line under the Processor choice.</summary>
     public static string ModeExplanation(string mode) => mode switch
     {
-        DeviceSettings.ModeGpu => "Use the graphics card for the voices that can. If it fails, they fall back to your processor.",
+        DeviceSettings.ModeGpu => "Prefer the graphics card for the voices that can. If it fails, or the game keeps it too busy for a while, they use your processor.",
         DeviceSettings.ModeCpu => "Always use your processor. Slower for expressive voices, but nothing touches the graphics card.",
-        _ => "Each voice runs where it works best. This is right for almost everyone.",
+        _ => "Each voice runs where it works best, and moves to your processor while the game keeps the graphics card too busy. This is right for almost everyone.",
     };
 
     public static string PreferenceExplanation(string preference) => preference == DeviceSettings.PreferenceLowPower

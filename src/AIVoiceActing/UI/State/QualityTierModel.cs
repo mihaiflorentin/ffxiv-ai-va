@@ -43,6 +43,7 @@ public static class QualityTierModel
         if (tier is not (QualityTier.Balanced or QualityTier.MostExpressive)
             || gpuEngine is not { State: EngineState.Ready or EngineState.FellBack } status
             || status.ActiveDevice.IsGpu
+            || status.OnProcessorForNow // temporary and by choice: the engine card says so
             || status.RequestedDevice == DeviceMode.Cpu)
         {
             return null;

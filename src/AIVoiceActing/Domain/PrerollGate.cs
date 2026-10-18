@@ -53,7 +53,7 @@ public sealed class PrerollGate
     private const int OvershootTokens = 25;
 
     /// <summary>The predicted arrival of a chunk is stretched by this share before it is compared with the moment it is needed.</summary>
-    private const double ArrivalSafety = 0.1;
+    private const double ArrivalSafety = 0.05;
 
     private const double MsPerToken = 1000.0 / TokensPerSecond;
 
@@ -295,7 +295,7 @@ public sealed class PrerollGate
 
             var readyMs = Math.Max(decoderFreeMs, modelReadyMs) + (cost * (end - start) * MsPerToken);
             decoderFreeMs = readyMs;
-            late = Math.Max(late, (readyMs * (1.0 + ArrivalSafety)) + (this.options.MarginMs / 2.0) - (start * MsPerToken));
+            late = Math.Max(late, (readyMs * (1.0 + ArrivalSafety)) + (this.options.MarginMs / 3.0) - (start * MsPerToken));
             start = end;
             index++;
         }
