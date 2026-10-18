@@ -221,23 +221,23 @@
   "lalafellFemale": [
    {
     "id": "bf_lily",
-    "pitch": 1.12,
+    "pitch": 1.22,
     "speed": 1.05
    },
    {
     "id": "bf_isabella",
-    "pitch": 1.12,
+    "pitch": 1.3,
     "speed": 1.05
    },
    {
-    "id": "isles.sth_f_01",
-    "pitch": 1.12,
-    "speed": 1.05
+    "id": "bf_emma",
+    "pitch": 1.28,
+    "speed": 1.07
    },
    {
-    "id": "isles.mid_f_01",
-    "pitch": 1.12,
-    "speed": 1.05
+    "id": "af_nova",
+    "pitch": 1.45,
+    "speed": 1.2
    }
   ],
   "miqoteMale": [

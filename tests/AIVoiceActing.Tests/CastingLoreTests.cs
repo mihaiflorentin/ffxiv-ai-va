@@ -6,6 +6,7 @@ using AIVoiceActing.Domain;
 using AIVoiceActing.Infrastructure.Storage;
 using AIVoiceActing.Ports;
 using AIVoiceActing.Tests.Mock;
+using System.Text.RegularExpressions;
 using Xunit;
 
 /// <summary>
@@ -62,18 +63,25 @@ public sealed class CastingLoreTests
     private static string Phonemizer(VoiceInfo voice) =>
         Phonemizers.Normalize(voice.Realizations.First(r => r.Kind == RealizationKind.StyleTensor).Phonemizer)!;
 
+    /// <summary>
+    /// American voices the owner chose by ear for a set, in spite of the rule (docs/casting-lore.md).
+    /// Generated blends still never mix them in (<see cref="VoiceBlend.IsAmerican"/>).
+    /// </summary>
+    private static readonly HashSet<(string Set, string Id)> OwnerPicks = [("set lalafellFemale", "af_nova")];
+
     [Fact]
     public void NoAmericanAccentVoice_AnywhereInVoicesJson()
     {
-        // Textual guard over the whole file (parked sets included): no stock af_/am_ id at all.
+        // Textual guard over the whole file (parked sets included): no stock af_/am_ id at all, apart
+        // from the owner's hand-picked exceptions.
         var text = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "voices.json"));
-        Assert.DoesNotMatch("\"id\":\\s*\"a[fm]_", text);
+        Assert.Equal(OwnerPicks.Count, Regex.Matches(text, "\"id\":\\s*\"a[fm]_").Count);
 
         // Semantic guard over everything the casting references: accent en-US is American, the
         // phonemizer is irrelevant (Isles voices use en-us G2P and are not American).
         foreach (var (where, slots) in CastingLists())
         {
-            foreach (var slot in slots)
+            foreach (var slot in slots.Where(s => !OwnerPicks.Contains((where, s.Id))))
             {
                 var voice = Voice(where, slot.Id);
                 Assert.False(VoiceBlend.IsAmerican(voice), $"{where}: {slot.Id} is American");
@@ -93,7 +101,7 @@ public sealed class CastingLoreTests
                 var voice = Voice(where, slot.Id);
                 Assert.True(VoiceBlend.IsEnglishPhonemizer(Phonemizer(voice)), $"{where}: {slot.Id} uses a non-English phonemizer");
                 // Stock ids: only the British bank (b*); non-English stock banks (e/f/h/i/j/p/z) never.
-                if (!slot.Id.Contains('.'))
+                if (!slot.Id.Contains('.') && !OwnerPicks.Contains((where, slot.Id)))
                 {
                     Assert.StartsWith("b", slot.Id, StringComparison.Ordinal);
                 }
