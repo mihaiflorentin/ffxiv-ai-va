@@ -83,6 +83,7 @@ public sealed class ServiceContainer : IDisposable
     private ExpressiveRouter? expressiveRouter;
     private ISpeechSynthesizer? kokoroReferenceRenderer;
     private readonly Func<int>? cpuThreadsFactory;
+    private readonly Func<bool>? decoderSpinningFactory;
     private readonly Func<string?>? kokoroVoicesDirFactory;
     private readonly Func<string?>? referenceClipsDirFactory;
     private readonly Func<IEmotionDirector?>? llmDirectorFactory;
@@ -102,6 +103,7 @@ public sealed class ServiceContainer : IDisposable
     private IVoiceLineDetector? voiceLineDetector;
 
     private ILogSink? logSink;
+    private ILineTimingLog? lineTimingLog;
     private IProfileStore? profileStore;
     private ICastingPresetStore? castingPresetStore;
     private IModelStore? modelStore;
@@ -162,6 +164,7 @@ public sealed class ServiceContainer : IDisposable
         Func<string>? selectedEpFactory = null,
         Func<string>? selectedEngineFactory = null,
         Func<int>? cpuThreadsFactory = null,
+        Func<bool>? decoderSpinningFactory = null,
         Func<string?>? kokoroVoicesDirFactory = null,
         Func<string?>? referenceClipsDirFactory = null,
         Func<IEmotionDirector?>? llmDirectorFactory = null,
@@ -245,6 +248,7 @@ public sealed class ServiceContainer : IDisposable
         this.selectedEpFactory = selectedEpFactory;
         this.selectedEngineFactory = selectedEngineFactory;
         this.cpuThreadsFactory = cpuThreadsFactory;
+        this.decoderSpinningFactory = decoderSpinningFactory;
         this.kokoroVoicesDirFactory = kokoroVoicesDirFactory;
         this.referenceClipsDirFactory = referenceClipsDirFactory;
         this.llmDirectorFactory = llmDirectorFactory;
@@ -451,7 +455,7 @@ public sealed class ServiceContainer : IDisposable
     private TurboDeviceServices TurboDevicesUnlocked(string engineId)
     {
         this.sessionFactory ??= new OnnxSessionFactory(
-            this.WebGpuRuntimeUnlocked(), this.GpuCrashGuardUnlocked(), this.LogSinkUnlocked());
+            this.WebGpuRuntimeUnlocked(), this.GpuCrashGuardUnlocked(), this.LogSinkUnlocked(), this.decoderSpinningFactory);
         return new TurboDeviceServices(
             this.DevicePlannerUnlocked(),
             this.sessionFactory,
@@ -716,6 +720,21 @@ public sealed class ServiceContainer : IDisposable
     /// </summary>
     private async Task<string?> PrepareExpressiveVoiceAsync(SynthesisRequest request, CancellationToken cancellationToken)
     {
+        var kind = string.Empty;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            return await this.PrepareExpressiveVoiceCoreAsync(request, cancellationToken, source => kind = source);
+        }
+        finally
+        {
+            LineTimer.Current?.SetReference(kind, clock.ElapsedMilliseconds);
+        }
+    }
+
+    private async Task<string?> PrepareExpressiveVoiceCoreAsync(
+        SynthesisRequest request, CancellationToken cancellationToken, Action<string> clipSource)
+    {
         var voiceId = request.ReferenceVoiceId;
         if (string.IsNullOrWhiteSpace(voiceId) || voiceId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
         {
@@ -725,6 +744,7 @@ public sealed class ServiceContainer : IDisposable
         var userClip = Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav");
         if (File.Exists(userClip))
         {
+            clipSource("user clip");
             this.LogClipChoice(voiceId, "user clip", userClip);
             return userClip;
         }
@@ -733,6 +753,7 @@ public sealed class ServiceContainer : IDisposable
         if (this.RealClipFor(voiceId) is { } real)
         {
             var pitched = this.PitchedCopy(real.Path, voiceId, pitchTag);
+            clipSource(pitchTag == 100 ? "pack clip" : "pack clip pitched");
             this.LogClipChoice(voiceId, real.Source, pitched);
             return pitched;
         }
@@ -740,6 +761,7 @@ public sealed class ServiceContainer : IDisposable
         var clip = Path.Combine(this.ModelsDir, ExpressiveClipsFolder, $"{voiceId}_p{pitchTag:000}.wav");
         if (File.Exists(clip))
         {
+            clipSource("cached");
             this.LogClipChoice(voiceId, "rendered", clip);
             return clip;
         }
@@ -763,6 +785,7 @@ public sealed class ServiceContainer : IDisposable
         Infrastructure.Onnx.WavCodec.WriteMono24k(partial, reference.Samples);
         File.Move(partial, clip, overwrite: true);
         this.LogSinkOptional?.Info($"Rendered expressive reference clip for \"{voiceId}\" (pitch {pitchTag / 100f:0.00}).");
+        clipSource("rendered");
         this.LogClipChoice(voiceId, "rendered", clip);
         return clip;
     }
@@ -1071,6 +1094,21 @@ public sealed class ServiceContainer : IDisposable
         return SynthesisCache.EngineKey(id, this.RoutedSynthesizer.RenderVariant);
     }
 
+    /// <summary>Stage timings of the last few spoken lines, for the diagnostics report.</summary>
+    public ILineTimingLog LineTimingLog
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.LineTimingLogUnlocked();
+            }
+        }
+    }
+
+    private ILineTimingLog LineTimingLogUnlocked() =>
+        this.lineTimingLog ??= new Infrastructure.Diagnostics.RingLineTimingLog();
+
     public SpeechRequestHandler SpeechHandler
     {
         get
@@ -1097,7 +1135,8 @@ public sealed class ServiceContainer : IDisposable
                     log: this.LogSinkUnlocked(),
                     streamSentences: this.streamSentencesFactory,
                     cache: this.SynthesisCache,
-                    engineKey: this.RenderEngineKey);
+                    engineKey: this.RenderEngineKey,
+                    timings: this.LineTimingLogUnlocked());
             }
         }
     }

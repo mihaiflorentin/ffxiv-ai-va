@@ -3,6 +3,7 @@ namespace AIVoiceActing.Tests;
 using AIVoiceActing;
 using AIVoiceActing.Infrastructure.Engines;
 using AIVoiceActing.Domain;
+using AIVoiceActing.Ports;
 using AIVoiceActing.UI.State;
 using Xunit;
 
@@ -138,5 +139,40 @@ public sealed class QualityTierModelTests
             Assert.DoesNotContain('\n', text);
             Assert.False(Labels.ContainsJargon(text), text);
         }
+    }
+
+    private static EngineStatus OnCpu(EngineState state, string reason, DeviceMode requested = DeviceMode.Gpu) =>
+        new(state, requested, ActiveDevice.Cpu, reason, false);
+
+    [Theory]
+    [InlineData(QualityTier.Balanced)]
+    [InlineData(QualityTier.MostExpressive)]
+    public void A_tier_that_expects_the_graphics_card_warns_with_the_ports_reason(QualityTier tier)
+    {
+        var warning = QualityTierModel.ProcessorWarning(tier, OnCpu(EngineState.FellBack, "Precision is set to full precision."));
+
+        Assert.Equal("Precision is set to full precision.", warning);
+    }
+
+    [Fact]
+    public void Without_a_reason_the_warning_still_says_what_is_wrong()
+    {
+        var warning = QualityTierModel.ProcessorWarning(QualityTier.MostExpressive, OnCpu(EngineState.Ready, string.Empty));
+
+        Assert.Contains("expects your graphics card", warning);
+        Assert.False(Labels.ContainsJargon(warning!), warning);
+    }
+
+    [Fact]
+    public void No_warning_when_all_is_as_expected()
+    {
+        var onGpu = new EngineStatus(EngineState.Ready, DeviceMode.Gpu, new ActiveDevice(DeviceEp.WebGpu, "RTX"), string.Empty, false);
+
+        Assert.Null(QualityTierModel.ProcessorWarning(QualityTier.Fast, OnCpu(EngineState.FellBack, "x")));
+        Assert.Null(QualityTierModel.ProcessorWarning(null, OnCpu(EngineState.FellBack, "x")));
+        Assert.Null(QualityTierModel.ProcessorWarning(QualityTier.MostExpressive, onGpu));
+        Assert.Null(QualityTierModel.ProcessorWarning(QualityTier.MostExpressive, OnCpu(EngineState.Ready, "x", DeviceMode.Cpu)));
+        Assert.Null(QualityTierModel.ProcessorWarning(QualityTier.MostExpressive, OnCpu(EngineState.Loading, "x")));
+        Assert.Null(QualityTierModel.ProcessorWarning(QualityTier.MostExpressive, null));
     }
 }

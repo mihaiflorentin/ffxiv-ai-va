@@ -27,6 +27,7 @@ public sealed class SpeechRequestHandler
     private readonly Func<bool>? streamSentences;
     private readonly SynthesisCache? cache;
     private readonly Func<string>? engineKey;
+    private readonly ILineTimingLog? timings;
     private readonly ILogSink? log;
     private static long nextLineId;
 
@@ -43,8 +44,10 @@ public sealed class SpeechRequestHandler
         ILogSink? log = null,
         Func<bool>? streamSentences = null,
         SynthesisCache? cache = null,
-        Func<string>? engineKey = null)
+        Func<string>? engineKey = null,
+        ILineTimingLog? timings = null)
     {
+        this.timings = timings;
         this.lexicon = lexicon;
         this.dialogueSessions = dialogueSessions;
         this.synthesizer = synthesizer;
@@ -71,11 +74,36 @@ public sealed class SpeechRequestHandler
     /// profileless speaker never pays for director inference; the rolling context window
     /// fills regardless of engine readiness (the director's context must survive a down
     /// engine). Cancellation propagates into synthesis and aborts the line.
+    /// <paramref name="arrivedAtTicks"/> is <c>Environment.TickCount64</c> when the line reached the pipeline
+    /// (default: now); the time since then is the line's queue wait in the timing log.
     /// </summary>
     public async Task SpeakAsync(
         string? sessionId,
         SpeakerIdentity speaker,
         string text,
+        CancellationToken cancellationToken,
+        long? arrivedAtTicks = null)
+    {
+        var timer = new LineTimer(text.Length, arrivedAtTicks ?? Environment.TickCount64, this.timings);
+        timer.SetEngine(this.engineKey?.Invoke() ?? string.Empty);
+        LineTimer.Current = timer;
+        try
+        {
+            await this.SpeakCoreAsync(sessionId, speaker, text, timer, cancellationToken);
+        }
+        finally
+        {
+            LineTimer.Current = null;
+            timer.MarkRenderDone();
+            timer.Commit();
+        }
+    }
+
+    private async Task SpeakCoreAsync(
+        string? sessionId,
+        SpeakerIdentity speaker,
+        string text,
+        LineTimer timer,
         CancellationToken cancellationToken)
     {
         // Staleness is measured from ARRIVAL (pre-synthesis): slow engines must not
@@ -85,9 +113,12 @@ public sealed class SpeechRequestHandler
             $"Speak requested: \"{speaker.Key}\" ({text.Length} chars): {Truncate(text)} " +
             $"[race={speaker.Race?.ToString() ?? "?"} tribe={speaker.Tribe?.ToString() ?? "?"} " +
             $"sex={speaker.Sex?.ToString() ?? "?"} model={speaker.ModelCharaId?.ToString() ?? "?"}]");
+        var phase = System.Diagnostics.Stopwatch.StartNew();
         var profile = this.profileLookup(speaker);
+        timer.SetProfile(phase.ElapsedMilliseconds);
         if (profile is null)
         {
+            timer.Discard();
             this.log?.Warn($"No voice profile for \"{speaker.Key}\"; skipping line.");
             return;
         }
@@ -105,7 +136,9 @@ public sealed class SpeechRequestHandler
             $"Text prepared for \"{speaker.Key}\": {processed.Length} chars" +
             (styleTags.Count > 0 ? $" (tags: {string.Join(", ", styleTags)})" : string.Empty));
 
+        phase.Restart();
         var plan = await this.PlanAsync(sessionId ?? "adhoc", speaker, processed, cancellationToken);
+        timer.SetPlan(phase.ElapsedMilliseconds);
         this.log?.Info(
             $"Plan for \"{speaker.Key}\": {plan.Emotion} @ {plan.Exaggeration:0.00}" +
             (plan.Tags.Count > 0 ? $" [{string.Join(", ", plan.Tags)}]" : string.Empty));
@@ -127,6 +160,7 @@ public sealed class SpeechRequestHandler
         var synth = this.Synth;
         if (!synth.IsReady)
         {
+            timer.Discard();
             this.log?.Warn($"Speech engine not ready ({synth.NotReadyReason}); skipping line for \"{speaker.Key}\".");
             return;
         }
@@ -136,6 +170,7 @@ public sealed class SpeechRequestHandler
         var chunks = this.streamSentences?.Invoke() == true
             ? SentenceChunker.Split(processed)
             : [processed];
+        timer.SetChunks(chunks.Count);
         var lineId = chunks.Count > 1 ? Interlocked.Increment(ref nextLineId) : 0;
         // Engines that decode in pieces (Turbo with the language model on the GPU) hand audio over while
         // the line renders; the queue then plays it as it arrives. The same setting that splits long lines
@@ -154,7 +189,7 @@ public sealed class SpeechRequestHandler
 
             if (streamAudio && synth.SupportsStreamingFor(request) && !this.IsCached(request))
             {
-                if (!await this.StreamChunkAsync(request, speaker, plan, index, chunks.Count, lineId, requestedAtTicks, cancellationToken))
+                if (!await this.StreamChunkAsync(request, speaker, plan, index, chunks.Count, lineId, requestedAtTicks, timer, cancellationToken))
                 {
                     return;
                 }
@@ -184,7 +219,9 @@ public sealed class SpeechRequestHandler
             this.log?.Info(
                 $"Queued {(chunks.Count > 1 ? $"chunk {index + 1}/{chunks.Count}" : "line")} for \"{speaker.Key}\": " +
                 $"{audio.Samples.Length} samples @ {audio.SampleRate} Hz (voice \"{request.ReferenceVoiceId}\").");
-            this.queue.Enqueue(new SpeechItem(speaker, request, audio, requestedAtTicks, lineId, plan.Emotion));
+            timer.AddAudio(audio.Samples.Length, audio.SampleRate);
+            timer.MarkFirstAudio();
+            this.queue.Enqueue(new SpeechItem(speaker, request, audio, requestedAtTicks, lineId, plan.Emotion, Timer: timer));
         }
     }
 
@@ -206,8 +243,10 @@ public sealed class SpeechRequestHandler
         int chunkCount,
         long lineId,
         long requestedAtTicks,
+        LineTimer timer,
         CancellationToken cancellationToken)
     {
+        timer.SetStreamed();
         for (var attempt = 0; ; attempt++)
         {
             var synth = this.Synth;
@@ -229,6 +268,7 @@ public sealed class SpeechRequestHandler
                 }
 
                 stream.Append(samples.Span);
+                timer.MarkFirstAudio();
                 this.queue.Enqueue(new SpeechItem(
                     speaker,
                     request,
@@ -236,7 +276,8 @@ public sealed class SpeechRequestHandler
                     requestedAtTicks,
                     lineId,
                     plan.Emotion,
-                    stream));
+                    stream,
+                    timer));
             }
 
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, stream.Cancelled);
@@ -244,6 +285,7 @@ public sealed class SpeechRequestHandler
             {
                 var whole = await synth.SynthesizeStreamingAsync(request, OnSamples, linked.Token);
                 stream.Complete();
+                timer.AddAudio(whole.Samples.Length, whole.SampleRate);
                 this.cache?.Put(SynthesisCache.KeyFor(this.engineKey?.Invoke() ?? string.Empty, request), whole);
                 this.log?.Info(
                     $"Streamed {(chunkCount > 1 ? $"chunk {index + 1}/{chunkCount}" : "line")} for \"{speaker.Key}\": " +

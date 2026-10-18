@@ -1,5 +1,12 @@
 namespace AIVoiceActing.Ports;
 
+/// <summary>What the sink measured while it played one line (see <see cref="IAudioSink.LastPlayback"/>).</summary>
+/// <param name="DeviceOpenMs">From deciding to play to the device running (-1 when it never ran).</param>
+/// <param name="UnderrunCount">Times the device asked for sound that was not there yet.</param>
+/// <param name="SilenceMs">Silence played to cover them.</param>
+/// <param name="FirstSoundAtTicks"><c>Environment.TickCount64</c> when the device was first fed real sound; 0 if never.</param>
+public sealed record PlaybackReport(long DeviceOpenMs, int UnderrunCount, long SilenceMs, long FirstSoundAtTicks);
+
 /// <summary>Driven port rendering <see cref="SynthesisResult"/>s to the audio device.</summary>
 public interface IAudioSink
 {
@@ -37,6 +44,12 @@ public interface IAudioSink
             this.Play(new SynthesisResult([.. all], source.SampleRate), volume);
         }
     }
+
+    /// <summary>
+    /// What the last <see cref="Play"/> or <see cref="PlayStream"/> measured; null when nothing was measured.
+    /// Read it right after the call returns: the sink plays one line at a time.
+    /// </summary>
+    PlaybackReport? LastPlayback => null;
 
     /// <summary>Stops current playback immediately (text-advance courtesy).</summary>
     void Cancel();

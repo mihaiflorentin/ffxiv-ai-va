@@ -95,4 +95,24 @@ public sealed class EnginePrecisionModelTests
 
         Assert.Empty(map);
     }
+
+    [Fact]
+    public void WithTheGraphicsCardChosen_FullSizeIsLabelledProcessorOnly()
+    {
+        var onGpu = EnginePrecisionModel.Choices(Turbo, graphicsCardChosen: true);
+        var plain = EnginePrecisionModel.Choices(Turbo);
+
+        Assert.Contains("(fp32, processor only)", onGpu.Single(c => c.Value == "fp32").Label);
+        Assert.DoesNotContain("processor only", plain.Single(c => c.Value == "fp32").Label);
+        Assert.Equal(plain.Single(c => c.Value == "fp16").Label, onGpu.Single(c => c.Value == "fp16").Label);
+    }
+
+    [Fact]
+    public void TheHelpSaysFullSizeIsIgnoredOnlyWhileTheGraphicsCardIsChosen()
+    {
+        Assert.Contains("ignored while Processor is set to Graphics card", EnginePrecisionModel.Help("fp32", true, false));
+        Assert.DoesNotContain("ignored", EnginePrecisionModel.Help("fp32", false, false));
+        Assert.DoesNotContain("ignored", EnginePrecisionModel.Help("fp16", true, false));
+        Assert.Contains("not downloaded", EnginePrecisionModel.Help("fp32", true, true));
+    }
 }

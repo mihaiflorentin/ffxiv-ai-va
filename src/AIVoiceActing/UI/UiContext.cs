@@ -30,6 +30,8 @@ public sealed record UiContext
 
     public required ISpeechQueue Queue { get; init; }
 
+    public required ILineTimingLog LineTimings { get; init; }
+
     public required IProfileStore Profiles { get; init; }
 
     public required Func<IReadOnlyList<(ModelAsset Asset, string Group)>> ModelAssets { get; init; }

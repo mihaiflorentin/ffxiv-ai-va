@@ -53,8 +53,11 @@ public sealed class OnnxSessionFactory
     private readonly GpuCrashGuard guard;
     private readonly ILogSink? log;
 
-    public OnnxSessionFactory(IWebGpuRuntime runtime, GpuCrashGuard guard, ILogSink? log = null)
+    private readonly Func<bool>? decoderSpinning;
+
+    public OnnxSessionFactory(IWebGpuRuntime runtime, GpuCrashGuard guard, ILogSink? log = null, Func<bool>? decoderSpinning = null)
     {
+        this.decoderSpinning = decoderSpinning;
         this.runtime = runtime;
         this.guard = guard;
         this.log = log;
@@ -65,7 +68,18 @@ public sealed class OnnxSessionFactory
         ArgumentNullException.ThrowIfNull(plan);
         if (role != SessionRole.Lm || !plan.IsGpu)
         {
-            return Cpu(role == SessionRole.Decoder ? DecoderThreads(intraOpThreads) : intraOpThreads, string.Empty);
+            if (role != SessionRole.Decoder)
+            {
+                return Cpu(intraOpThreads, string.Empty);
+            }
+
+            var decoder = Cpu(DecoderThreads(intraOpThreads), string.Empty);
+            if (this.decoderSpinning?.Invoke() == true)
+            {
+                decoder.Options.WithSpinning();
+            }
+
+            return decoder;
         }
 
         if (!this.guard.TryBegin($"{plan.Ep} session for the language model", out var scope))
@@ -107,15 +121,16 @@ public sealed class OnnxSessionFactory
     /// matrices (one per chunk of a streamed line) that already run faster than real time on two threads,
     /// where more threads mostly spin: the same call costs 0.7 CPU seconds on one thread, 1.2 on two, 1.9 on
     /// four and 3.5 on eight (docs/plans/2026-10-gpu-spike-results.md), and the CPU is shared with the game.
-    /// An explicit thread setting (the CPU impact choice) is respected as given.
+    /// The cap applies whatever the background load setting says (8 threads on "high"): more threads here only
+    /// take cores from the game, and a smaller explicit count is kept.
     /// </summary>
     public const int DecoderDefaultMaxThreads = 2;
 
-    /// <summary>The decoder's thread count: the explicit setting, else half the logical cores capped at <see cref="DecoderDefaultMaxThreads"/>.</summary>
+    /// <summary>The decoder's thread count: the explicit setting capped at <see cref="DecoderDefaultMaxThreads"/>, else half the logical cores under the same cap.</summary>
     public static int DecoderThreads(int? explicitThreads) =>
-        explicitThreads is { } threads && threads > 0
-            ? threads
-            : Math.Min(DecoderDefaultMaxThreads, Math.Max(2, Environment.ProcessorCount / 2));
+        Math.Min(
+            DecoderDefaultMaxThreads,
+            explicitThreads is { } threads && threads > 0 ? threads : Math.Max(2, Environment.ProcessorCount / 2));
 
     private static SessionBuild Cpu(int? intraOpThreads, string fallbackReason) =>
         new(EpSelector.CreateSessionOptions("cpu", intraOpThreads: intraOpThreads).Options, DeviceEp.Cpu, fallbackReason, null);

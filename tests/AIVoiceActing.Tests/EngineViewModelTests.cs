@@ -127,4 +127,43 @@ public sealed class EngineViewModelTests
             Assert.False(string.IsNullOrWhiteSpace(view.Word));
         }
     }
+
+    [Fact]
+    public void ReadyOnTheProcessor_KeepsThePortsReasonWhenTheGraphicsCardWasAskedFor()
+    {
+        var status = new EngineStatus(EngineState.Ready, DeviceMode.Gpu, ActiveDevice.Cpu, "No graphics card was found.", false);
+
+        var view = Describe(status);
+
+        Assert.Equal(EngineViewModel.ReadyWord, view.Word);
+        Assert.Equal("Running on your processor. No graphics card was found.", view.Detail);
+    }
+
+    [Fact]
+    public void ReadyOnTheProcessor_ByChoice_AddsNothing()
+    {
+        var status = new EngineStatus(EngineState.Ready, DeviceMode.Cpu, ActiveDevice.Cpu, "Running on the CPU, as you chose.", false);
+
+        Assert.Equal("Running on your processor.", Describe(status).Detail);
+    }
+
+    [Fact]
+    public void ReadyOnTheProcessor_DoesNotRepeatAReasonThatAlreadySaysSo()
+    {
+        var reason = "Running on your processor because Precision is set to full precision.";
+        var status = new EngineStatus(EngineState.Ready, DeviceMode.Gpu, ActiveDevice.Cpu, reason, false);
+
+        Assert.Equal(reason, Describe(status).Detail);
+    }
+
+    [Fact]
+    public void ReadyOnTheGraphicsCard_ExplainsAnIgnoredFullSizePin()
+    {
+        var status = new EngineStatus(
+            EngineState.Ready, DeviceMode.Gpu, new ActiveDevice(DeviceEp.WebGpu, "RTX 4070"), AIVoiceActing.Domain.PrecisionNotes.FullSizeIgnoredOnGpu, false);
+
+        Assert.Equal(
+            "Running on your graphics card (RTX 4070). " + AIVoiceActing.Domain.PrecisionNotes.FullSizeIgnoredOnGpu,
+            Describe(status).Detail);
+    }
 }

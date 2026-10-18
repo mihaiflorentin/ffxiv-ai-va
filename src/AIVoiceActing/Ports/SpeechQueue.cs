@@ -17,6 +17,7 @@ using AIVoiceActing.Domain;
 /// When set, the line is still being synthesized: the queue plays the stream as it fills and
 /// <paramref name="Audio"/> is empty. Cancelling playback cancels the stream, which tells the synthesizer to stop.
 /// </param>
+/// <param name="Timer">Collects this line's stage timings; the queue adds what playback measured.</param>
 public sealed record SpeechItem(
     SpeakerIdentity Speaker,
     SynthesisRequest Request,
@@ -24,7 +25,8 @@ public sealed record SpeechItem(
     long RequestedAtTicks = 0,
     long LineId = 0,
     string? Emotion = null,
-    SpeechAudioStream? Stream = null);
+    SpeechAudioStream? Stream = null,
+    LineTimer? Timer = null);
 
 /// <summary>Driven port serializing speech so overlapping lines play in order instead of mixing.</summary>
 public interface ISpeechQueue

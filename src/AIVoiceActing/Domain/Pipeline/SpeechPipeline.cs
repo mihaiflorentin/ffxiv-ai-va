@@ -39,7 +39,8 @@ public sealed class SpeechPipeline : IDisposable
     private CancellationTokenSource dialogueLines = new();
     private CancellationTokenSource chatLines = new();
 
-    private sealed record PendingLine(string? SessionId, SpeakerIdentity Speaker, string Text, CancellationToken Token);
+    private sealed record PendingLine(
+        string? SessionId, SpeakerIdentity Speaker, string Text, CancellationToken Token, long ArrivedAtTicks);
 
     public SpeechPipeline(
         IReadOnlyList<PipelineSource<TextEmitEvent>> captureSources,
@@ -161,7 +162,7 @@ public sealed class SpeechPipeline : IDisposable
     {
         try
         {
-            await this.handler.SpeakAsync(line.SessionId, line.Speaker, line.Text, line.Token).ConfigureAwait(false);
+            await this.handler.SpeakAsync(line.SessionId, line.Speaker, line.Text, line.Token, line.ArrivedAtTicks).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -211,7 +212,7 @@ public sealed class SpeechPipeline : IDisposable
             token = ev.Source == TextSource.Chat ? this.chatLines.Token : this.dialogueLines.Token;
         }
 
-        return new PendingLine(sessionId, speaker, ev.Text, token);
+        return new PendingLine(sessionId, speaker, ev.Text, token, Environment.TickCount64);
     }
 
     public void Dispose()

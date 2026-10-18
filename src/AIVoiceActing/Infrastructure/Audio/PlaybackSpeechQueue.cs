@@ -171,6 +171,7 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
                 {
                     this.nowPlaying = null;
                     stream.Cancel(); // the line is over; a producer still running has nothing left to feed
+                    this.ReportPlayback(item);
                 }
 
                 return;
@@ -186,12 +187,29 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
             finally
             {
                 this.nowPlaying = null;
+                this.ReportPlayback(item);
             }
         }
         catch (Exception ex)
         {
             this.log?.Error($"Playback failed for \"{item.Speaker.Key}\".", ex);
         }
+    }
+
+    /// <summary>Hands what the sink measured for the item that just played to its line's timer.</summary>
+    private void ReportPlayback(SpeechItem item)
+    {
+        if (item.Timer is not { } timer)
+        {
+            return;
+        }
+
+        if (this.sink.LastPlayback is { } report)
+        {
+            timer.AddPlayback(report);
+        }
+
+        timer.Commit();
     }
 
     public void Dispose()

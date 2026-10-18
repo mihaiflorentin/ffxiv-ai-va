@@ -218,10 +218,45 @@ public sealed class TurboPlacementTests : IDisposable
         Assert.Equal("fp32", synth.EffectivePrecision);
     }
 
-    [Fact]
-    public async Task Fp32_ByChoice_RunsOnTheCpu_EvenWhenTheGpuIsUsable()
+    [Theory]
+    [InlineData(DeviceMode.Gpu)]
+    [InlineData(DeviceMode.Auto)]
+    public async Task Fp32_WithAGraphicsCardSetting_PlansLikeAutomatic_AndSaysSo(DeviceMode mode)
     {
         var rig = this.NewRig("fp32", q4f16: true);
+        rig.Planner.Preferences = DevicePreferences.Default with { Mode = mode };
+        using var synth = rig.Synth;
+
+        await synth.WarmUpAsync(CancellationToken.None);
+
+        Assert.Equal(ModelCatalog.TurboLanguageModelFileName.Replace(".onnx", "-q4f16.onnx"), rig.Opened[2]);
+        Assert.Equal("q4f16", synth.EffectivePrecision);
+        Assert.NotEmpty(rig.Runtime.Appended);
+        Assert.Equal(EngineState.Ready, synth.Status.State);
+        Assert.True(synth.Status.ActiveDevice.IsGpu);
+        Assert.Equal(PrecisionNotes.FullSizeIgnoredOnGpu, synth.Status.Reason);
+    }
+
+    [Fact]
+    public async Task Fp32_WithAGraphicsCardSetting_StillFallsBackWithTheRealReason_WhenTheGpuIsUnusable()
+    {
+        var rig = this.NewRig("fp32", q4f16: true);
+        rig.Planner.Preferences = DevicePreferences.Default with { Mode = DeviceMode.Gpu };
+        rig.Planner.Plan = DevicePlan.OnCpu("No compatible graphics card was found. Running on the CPU.", wantedGpu: true);
+        using var synth = rig.Synth;
+
+        await synth.WarmUpAsync(CancellationToken.None);
+
+        Assert.Equal("fp32", synth.EffectivePrecision);
+        Assert.Equal(EngineState.FellBack, synth.Status.State);
+        Assert.Contains("No compatible graphics card", synth.Status.Reason);
+    }
+
+    [Fact]
+    public async Task Fp32_WithTheProcessorSetting_AppliesAndRunsOnTheProcessor()
+    {
+        var rig = this.NewRig("fp32", q4f16: true);
+        rig.Planner.Preferences = DevicePreferences.Default with { Mode = DeviceMode.Cpu };
         using var synth = rig.Synth;
 
         await synth.WarmUpAsync(CancellationToken.None);
@@ -230,6 +265,19 @@ public sealed class TurboPlacementTests : IDisposable
         Assert.Empty(rig.Runtime.Appended);
         Assert.Equal(EngineState.Ready, synth.Status.State);
         Assert.Equal(DeviceEp.Cpu, synth.Status.ActiveDevice.Ep);
+    }
+
+    [Fact]
+    public async Task AModeOverride_FromARetry_DecidesWhetherTheFullSizePinApplies()
+    {
+        var rig = this.NewRig("fp32", q4f16: true);
+        rig.Planner.Preferences = DevicePreferences.Default with { Mode = DeviceMode.Cpu };
+        using var synth = rig.Synth;
+        await synth.WarmUpAsync(CancellationToken.None);
+
+        await synth.RetryAsync(DeviceMode.Gpu);
+
+        Assert.Equal("q4f16", synth.EffectivePrecision);
     }
 
     [Fact]

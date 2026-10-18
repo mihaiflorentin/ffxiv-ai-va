@@ -1,5 +1,6 @@
 namespace AIVoiceActing.Infrastructure.Onnx;
 
+using AIVoiceActing.Domain;
 using AIVoiceActing.Ports;
 using Microsoft.ML.OnnxRuntime;
 
@@ -73,8 +74,10 @@ public sealed class TurboDecodeLoop
     /// stopped by itself (the same shape the reference recipe slices from).
     /// <paramref name="onToken"/>, when given, hears every speech token the moment it is picked (never the
     /// seeded START or the closing STOP), so a decoder can start on the first tokens while the loop goes on.
+    /// <paramref name="timer"/>, when given, hears how long the first step (the prefill) took and the duration of
+    /// every later language model step, which is the number a graphics card shared with the game inflates.
     /// </summary>
-    public List<long> Run(TurboDecodeInput input, CancellationToken ct, Action<long>? onToken = null)
+    public List<long> Run(TurboDecodeInput input, CancellationToken ct, Action<long>? onToken = null, LineTimer? timer = null)
     {
         var generated = new List<long> { StartSpeechToken };
         var seen = new HashSet<long> { StartSpeechToken };
@@ -121,7 +124,20 @@ public sealed class TurboDecodeLoop
                 var mask = new long[totalLength];
                 Array.Fill(mask, 1L);
 
+                var stepClock = timer is null ? null : System.Diagnostics.Stopwatch.StartNew();
                 var logits = this.RunLanguageModel(runOptions, embeds, frames, width, mask, positions, past, ref previous);
+                if (stepClock is not null)
+                {
+                    if (step == 0)
+                    {
+                        timer!.AddPrefill(stepClock.ElapsedMilliseconds);
+                    }
+                    else
+                    {
+                        timer!.StepLatency.Add(stepClock.ElapsedMilliseconds);
+                    }
+                }
+
                 ApplyRepetitionPenalty(logits, seen);
                 // DEVIATION (documented): on short prompts this export can emit STOP as its very first token,
                 // yielding zero speech tokens and no audio. FFXIV dialogue lines are short, so while under

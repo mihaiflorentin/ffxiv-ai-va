@@ -1,5 +1,6 @@
 namespace AIVoiceActing.Infrastructure.Audio;
 
+using AIVoiceActing.Domain;
 using AIVoiceActing.Ports;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
@@ -27,6 +28,7 @@ public sealed class NAudioSink : IAudioSink
     private bool unsupportedLogged;
     private int? wasapiFailedDevice;
     private IWavePlayer? current;
+    private volatile PlaybackReport? lastPlayback;
 
     public NAudioSink(Func<int>? deviceIndexFactory = null, ILogSink? log = null)
     {
@@ -35,6 +37,9 @@ public sealed class NAudioSink : IAudioSink
     }
 
     public bool IsSupported => OperatingSystem.IsWindows();
+
+    /// <summary>What the last line measured: device start-up, underruns and silence, when sound first reached the device.</summary>
+    public PlaybackReport? LastPlayback => this.lastPlayback;
 
     /// <summary>Static output-device listing for the configuration UI (empty off-Windows).</summary>
     public static IReadOnlyList<(int Index, string Name)> EnumerateOutputDevices()
@@ -58,6 +63,8 @@ public sealed class NAudioSink : IAudioSink
             return;
         }
 
+        this.lastPlayback = null;
+        var opening = System.Diagnostics.Stopwatch.StartNew();
         var scaled = new VolumeSampleProvider(new MonoFloatSampleProvider(audio.Samples, audio.SampleRate))
         {
             Volume = Math.Clamp(volume, 0f, 2f),
@@ -67,7 +74,7 @@ public sealed class NAudioSink : IAudioSink
         {
             try
             {
-                this.PlayOn(output, backend, scaled, audio, null);
+                this.PlayOn(output, backend, scaled, audio, null, opening, null);
                 return;
             }
             catch (Exception ex)
@@ -101,6 +108,8 @@ public sealed class NAudioSink : IAudioSink
             return;
         }
 
+        this.lastPlayback = null;
+
         // Do not open the device (and its start-up latency) before there is something to say.
         var waited = 0;
         while (!source.WaitForData(100))
@@ -118,7 +127,9 @@ public sealed class NAudioSink : IAudioSink
             return;
         }
 
-        var scaled = new VolumeSampleProvider(new PcmSourceSampleProvider(source))
+        var meter = new PlaybackMeter(source.SampleRate);
+        var opening = System.Diagnostics.Stopwatch.StartNew();
+        var scaled = new VolumeSampleProvider(new PcmSourceSampleProvider(source, meter))
         {
             Volume = Math.Clamp(volume, 0f, 2f),
         };
@@ -127,7 +138,7 @@ public sealed class NAudioSink : IAudioSink
         {
             try
             {
-                this.PlayOn(output, backend, scaled, null, source);
+                this.PlayOn(output, backend, scaled, null, source, opening, meter);
                 return;
             }
             catch (Exception ex)
@@ -163,7 +174,9 @@ public sealed class NAudioSink : IAudioSink
         string backend,
         ISampleProvider scaled,
         SynthesisResult? audio,
-        IPcmSource? live)
+        IPcmSource? live,
+        System.Diagnostics.Stopwatch opening,
+        PlaybackMeter? meter)
     {
         this.log?.Info(audio is { } whole
             ? $"Playing {whole.Samples.Length / (float)whole.SampleRate:0.0}s via {backend}."
@@ -172,6 +185,8 @@ public sealed class NAudioSink : IAudioSink
         output.PlaybackStopped += (_, _) => finished.Set();
         output.Init(scaled);
         output.Play();
+        var openMs = opening.ElapsedMilliseconds;
+        var playingAtTicks = Environment.TickCount64;
         // Register only once playback has begun: a Cancel landing before this point
         // must never be silently no-op'd by the Stop below — the worst case is that
         // it misses the first milliseconds of a just-started line instead.
@@ -206,6 +221,11 @@ public sealed class NAudioSink : IAudioSink
                 finished.Wait(100);
             }
 
+            this.lastPlayback = new PlaybackReport(
+                openMs,
+                meter?.UnderrunCount ?? 0,
+                meter?.SilenceMs ?? 0,
+                meter is { FirstSoundAtTicks: > 0 } heard ? heard.FirstSoundAtTicks : playingAtTicks);
             this.log?.Info("Playback finished.");
         }
         finally
@@ -279,13 +299,14 @@ public sealed class NAudioSink : IAudioSink
 /// Adapts a live <see cref="IPcmSource"/> to NAudio: when the synthesizer has not produced enough yet the
 /// device gets silence (the line stalls instead of ending); once the source is finished it reports the end.
 /// </summary>
-internal sealed class PcmSourceSampleProvider(IPcmSource source) : ISampleProvider
+internal sealed class PcmSourceSampleProvider(IPcmSource source, PlaybackMeter? meter = null) : ISampleProvider
 {
     public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(source.SampleRate, 1);
 
     public int Read(float[] buffer, int offset, int count)
     {
         var read = source.Read(buffer.AsSpan(offset, count));
+        meter?.OnRead(count, read, source.IsFinished);
         if (read == 0 && source.IsFinished)
         {
             return 0;

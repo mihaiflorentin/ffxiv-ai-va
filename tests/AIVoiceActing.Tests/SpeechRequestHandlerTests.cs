@@ -350,4 +350,34 @@ public sealed class SpeechRequestHandlerTests
         Assert.Contains("model=748", line.Message);
         Assert.Contains("world=66", line.Message);
     }
+
+    [Fact]
+    public async Task EachLine_LeavesATimingEntry_WithTheQueueWait_AndNoText()
+    {
+        var timings = new FakeLineTimingLog();
+        var handler = new SpeechRequestHandler(
+            new FakeLexicon(), new DialogueSessionFactory(), () => new FakeSpeechSynthesizer(), new FakeSpeechQueue(),
+            _ => Profile(), () => null, timings: timings);
+
+        await handler.SpeakAsync("s", Speaker, "Hello there, traveller.", CancellationToken.None, Environment.TickCount64 - 1500);
+
+        var timing = Assert.Single(timings.Recorded);
+        Assert.Equal("Hello there, traveller.".Length, timing.LineChars);
+        Assert.InRange(timing.QueueWaitMs, 1500, 5000);
+        Assert.Equal(1, timing.Chunks);
+        Assert.True(timing.FirstAudioMs >= 1500);
+    }
+
+    [Fact]
+    public async Task ALineWithoutAVoice_LeavesNoTimingEntry()
+    {
+        var timings = new FakeLineTimingLog();
+        var handler = new SpeechRequestHandler(
+            new FakeLexicon(), new DialogueSessionFactory(), () => new FakeSpeechSynthesizer(), new FakeSpeechQueue(),
+            _ => null, () => null, timings: timings);
+
+        await handler.SpeakAsync("s", Speaker, "Hello.", CancellationToken.None);
+
+        Assert.Empty(timings.Recorded);
+    }
 }

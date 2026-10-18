@@ -66,6 +66,12 @@ public sealed class DeviceSettings
     public const string PreferencePerformance = "performance";
     public const string PreferenceLowPower = "lowpower";
 
+    /// <summary>
+    /// Advanced, for measuring: let the voice decoder's two worker threads spin-wait between short jobs.
+    /// Off by default (every session parks idle threads so the game keeps its cores).
+    /// </summary>
+    public bool DecoderSpinning { get; set; }
+
     /// <summary>Advanced: auto | webgpu | directml.</summary>
     public string Backend { get; set; } = "auto";
 

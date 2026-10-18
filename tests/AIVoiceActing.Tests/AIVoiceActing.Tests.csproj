@@ -46,6 +46,7 @@
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Dalamud\HarvestLogSink.cs" Link="AIVoiceActing\Infrastructure\HarvestLogSink.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Dalamud\GameObjectSpeakerDirectory.cs" Link="AIVoiceActing\Infrastructure\GameObjectSpeakerDirectory.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Onnx\**\*.cs" Link="AIVoiceActing\Infrastructure\Onnx\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Diagnostics\**\*.cs" Link="AIVoiceActing\Infrastructure\Diagnostics\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Kokoro\**\*.cs" Link="AIVoiceActing\Infrastructure\Kokoro\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Net\RemoteSynthesizer.cs" Link="AIVoiceActing\Infrastructure\Net\RemoteSynthesizer.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Net\HuggingFaceProvisioner.cs" Link="AIVoiceActing\Infrastructure\Net\HuggingFaceProvisioner.cs" />

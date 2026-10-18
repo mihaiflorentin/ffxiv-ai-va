@@ -378,17 +378,20 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         SynthesisRequest request,
         CancellationToken cancellationToken)
     {
+        var timer = LineTimer.Current;
         return await Task.Run(
             async () =>
             {
                 this.ThrowIfDisposed();
+                var waited = System.Diagnostics.Stopwatch.StartNew();
                 await this.synthesisGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                timer?.AddGateWait(waited.ElapsedMilliseconds);
                 try
                 {
                     // Disposed while queued behind another line.
                     this.ThrowIfDisposed();
                     var started = Environment.TickCount64;
-                    var result = this.SynthesizeCore(request, cancellationToken);
+                    var result = this.SynthesizeCore(request, timer, cancellationToken);
                     this.log?.Info(
                         $"Chatterbox synthesis complete: {result.Samples.Length} samples @ {result.SampleRate} Hz " +
                         $"({(Environment.TickCount64 - started)} ms, voice \"{request.ReferenceVoiceId}\").");
@@ -454,7 +457,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         }
     }
 
-    private SynthesisResult SynthesizeCore(SynthesisRequest request, CancellationToken ct)
+    private SynthesisResult SynthesizeCore(SynthesisRequest request, LineTimer? timer, CancellationToken ct)
     {
         this.ThrowIfDisposed();
         var eng = this.engine.Value;
@@ -474,13 +477,15 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         // A bad reference clip is the clip's problem, not the GPU's: encode (always on the CPU) before the
         // guarded decode.
         var phase = System.Diagnostics.Stopwatch.StartNew();
-        var reference = this.ReferenceFor(referencePath, eng);
+        timer?.SetEngine(EngineLabel(eng));
+        var reference = this.ReferenceFor(referencePath, eng, timer);
         var referenceMs = phase.ElapsedMilliseconds;
         phase.Restart();
         List<long> generated;
         try
         {
-            generated = this.Decode(eng, reference, textIds, ct);
+            generated = this.Decode(eng, reference, textIds, timer, ct);
+            timer?.AddLanguageModel(generated.Count - 1, phase.ElapsedMilliseconds);
             this.log?.Info($"Turbo timing: reference {referenceMs} ms, language model {phase.ElapsedMilliseconds} ms for {generated.Count - 1} tokens.");
         }
         catch (Exception ex) when (this.IsGpuFailure(eng, ex, ct))
@@ -488,9 +493,11 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             // A managed failure on the GPU means the process is alive: close the crash scope, run this
             // line on the CPU, and stay there until the player retries.
             eng = this.FallBackToCpu(eng, ex);
-            reference = this.ReferenceFor(referencePath, eng);
+            timer?.SetEngine(EngineLabel(eng));
+            reference = this.ReferenceFor(referencePath, eng, timer);
             phase.Restart();
-            generated = this.Decode(eng, reference, textIds, ct);
+            generated = this.Decode(eng, reference, textIds, timer, ct);
+            timer?.AddLanguageModel(generated.Count - 1, phase.ElapsedMilliseconds);
             this.log?.Info($"Turbo timing: language model {phase.ElapsedMilliseconds} ms for {generated.Count - 1} tokens (CPU after a GPU failure).");
         }
 
@@ -531,6 +538,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             wav = TensorSpan(unwrap<float>(decoderOutputs[0])).ToArray(); // [1, samples] squeezed below
         }
 
+        timer?.AddDecoder(phase.ElapsedMilliseconds, 1);
         this.log?.Info($"Turbo timing: decoder {phase.ElapsedMilliseconds} ms for {wav.Length / (double)SampleRate:0.0} s of audio.");
 
         // np.squeeze(axis=0) + clip to [-1, 1].
@@ -568,16 +576,19 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         Action<ReadOnlyMemory<float>> onSamples,
         CancellationToken cancellationToken)
     {
+        var timer = LineTimer.Current;
         return await Task.Run(
             async () =>
             {
                 this.ThrowIfDisposed();
+                var waited = System.Diagnostics.Stopwatch.StartNew();
                 await this.synthesisGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                timer?.AddGateWait(waited.ElapsedMilliseconds);
                 try
                 {
                     this.ThrowIfDisposed();
                     var started = Environment.TickCount64;
-                    var result = this.StreamCore(request, onSamples, cancellationToken);
+                    var result = this.StreamCore(request, onSamples, timer, cancellationToken);
                     this.log?.Info(
                         $"Chatterbox streamed synthesis complete: {result.Samples.Length} samples @ {result.SampleRate} Hz " +
                         $"({Environment.TickCount64 - started} ms, voice \"{request.ReferenceVoiceId}\").");
@@ -591,7 +602,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             cancellationToken).ConfigureAwait(false);
     }
 
-    private SynthesisResult StreamCore(SynthesisRequest request, Action<ReadOnlyMemory<float>> onSamples, CancellationToken ct)
+    private SynthesisResult StreamCore(SynthesisRequest request, Action<ReadOnlyMemory<float>> onSamples, LineTimer? timer, CancellationToken ct)
     {
         this.ThrowIfDisposed();
         var eng = this.engine.Value;
@@ -605,7 +616,8 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
 
         var textIds = tokenizer.Encode(BuildPromptText(request.Tags, request.Text)).Select(id => (long)id).ToArray();
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        var reference = this.ReferenceFor(referencePath, eng);
+        timer?.SetEngine(EngineLabel(eng));
+        var reference = this.ReferenceFor(referencePath, eng, timer);
 
         var whole = new List<float>();
         long firstAudioMs = -1;
@@ -628,14 +640,15 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         StreamingStats stats;
         try
         {
-            stats = this.RunStreaming(eng, reference, textIds, Emit, ct);
+            stats = this.RunStreaming(eng, reference, textIds, Emit, timer, ct);
         }
         catch (Exception ex) when (whole.Count == 0 && this.IsGpuFailure(eng, ex, ct))
         {
             // Nothing was heard yet, so the line can start over on the CPU like a whole-line render.
             eng = this.FallBackToCpu(eng, ex);
-            reference = this.ReferenceFor(referencePath, eng);
-            stats = this.RunStreaming(eng, reference, textIds, Emit, ct);
+            timer?.SetEngine(EngineLabel(eng));
+            reference = this.ReferenceFor(referencePath, eng, timer);
+            stats = this.RunStreaming(eng, reference, textIds, Emit, timer, ct);
         }
 
         this.LastStreamingStats = stats with { FirstAudioMs = firstAudioMs, TotalMs = clock.ElapsedMilliseconds };
@@ -651,7 +664,8 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     /// <paramref name="emit"/>. The worker is always finished (or cancelled) before this returns, so the
     /// sessions are idle when the synthesis gate opens again.
     /// </summary>
-    private StreamingStats RunStreaming(Engine eng, ReferenceEmbeddings reference, long[] textIds, Action<float[]> emit, CancellationToken ct)
+    private StreamingStats RunStreaming(
+        Engine eng, ReferenceEmbeddings reference, long[] textIds, Action<float[]> emit, LineTimer? timer, CancellationToken ct)
     {
         var options = this.Streaming;
         var feed = new SpeechTokenFeed();
@@ -665,12 +679,13 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             {
                 try
                 {
-                    var timer = System.Diagnostics.Stopwatch.StartNew();
+                    var lmClock = System.Diagnostics.Stopwatch.StartNew();
                     eng.Loop.Run(
                         new TurboDecodeInput(reference.CondEmb, reference.CondShape[1], textIds),
                         stop.Token,
-                        feed.Add);
-                    lmMs = timer.ElapsedMilliseconds;
+                        feed.Add,
+                        timer);
+                    lmMs = lmClock.ElapsedMilliseconds;
                     eng.LmGuard?.Succeeded();
                     this.lastTokens = feed.SpeechTokens();
                     feed.Finish(Enumerable.Repeat((long)TurboSilenceToken, SilenceSuffixCount));
@@ -688,10 +703,10 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         {
             while (feed.WaitForPlan(schedule, ct) is { } plan)
             {
-                var timer = System.Diagnostics.Stopwatch.StartNew();
+                var decoding = System.Diagnostics.Stopwatch.StartNew();
                 var window = feed.Slice(plan.WindowStart, plan.WindowEnd);
                 var audio = this.DecodeWindow(eng, prompt, window);
-                decoderMs += timer.ElapsedMilliseconds;
+                decoderMs += decoding.ElapsedMilliseconds;
                 chunks++;
                 emit(stitcher.Add(plan, audio));
             }
@@ -702,7 +717,10 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
             producer.Wait();
         }
 
-        return new StreamingStats(0, 0, chunks, feed.SpeechTokens().Length, lmMs, decoderMs, stitcher.LengthMismatches);
+        var speechTokens = feed.SpeechTokens().Length;
+        timer?.AddLanguageModel(speechTokens, lmMs);
+        timer?.AddDecoder(decoderMs, chunks);
+        return new StreamingStats(0, 0, chunks, speechTokens, lmMs, decoderMs, stitcher.LengthMismatches);
     }
 
     private float[] DecodeWindow(Engine eng, ReferenceEmbeddings prompt, long[] window)
@@ -735,14 +753,26 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         return wav;
     }
 
-    private ReferenceEmbeddings ReferenceFor(string referencePath, Engine eng) =>
-        this.referenceCache.GetOrAdd($"{eng.Files.Label}|{referencePath}", _ => this.EncodeReference(referencePath, eng));
+    private ReferenceEmbeddings ReferenceFor(string referencePath, Engine eng, LineTimer? timer) =>
+        this.referenceCache.GetOrAdd(
+            $"{eng.Files.Label}|{referencePath}",
+            _ =>
+            {
+                var encoding = System.Diagnostics.Stopwatch.StartNew();
+                var encoded = this.EncodeReference(referencePath, eng);
+                timer?.AddEncoder(encoding.ElapsedMilliseconds);
+                return encoded;
+            });
 
-    private List<long> Decode(Engine eng, ReferenceEmbeddings reference, long[] textIds, CancellationToken ct)
+    /// <summary>Engine and place for the timing log, for example "turbo gpu q4f16".</summary>
+    private static string EngineLabel(Engine eng) => $"turbo {(eng.LmEp == DeviceEp.Cpu ? "cpu" : "gpu")} {eng.Files.Label}";
+
+    private List<long> Decode(Engine eng, ReferenceEmbeddings reference, long[] textIds, LineTimer? timer, CancellationToken ct)
     {
         var generated = eng.Loop.Run(
             new TurboDecodeInput(reference.CondEmb, reference.CondShape[1], textIds),
-            ct);
+            ct,
+            timer: timer);
 
         // The language model survived a whole line on this device: the crash marker has done its job.
         eng.LmGuard?.Succeeded();
@@ -852,13 +882,32 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     /// </summary>
     private Resolution Resolve(bool cheap)
     {
+        var resolved = this.ResolveCore(cheap);
+        // A full-size pin that Processor = Graphics card overrode: say so, unless the GPU failed anyway (that reason wins).
+        return this.devices is { } services && this.PinIgnored(services) && resolved.Plan.IsGpu
+            ? resolved with { Plan = resolved.Plan with { Reason = PrecisionNotes.FullSizeIgnoredOnGpu } }
+            : resolved;
+    }
+
+    /// <summary>The precision setting after the processor choice had its say: a full-size pin means nothing on the graphics card.</summary>
+    private TurboPrecisionRequest EffectiveRequest(TurboDeviceServices services) =>
+        TurboModelSet.Effective(
+            TurboModelSet.Parse(services.Precision?.Invoke()),
+            this.ModeOverride ?? services.Planner.Preferences.Mode);
+
+    private bool PinIgnored(TurboDeviceServices services) =>
+        TurboModelSet.Parse(services.Precision?.Invoke()) == TurboPrecisionRequest.Fp32
+        && this.EffectiveRequest(services) != TurboPrecisionRequest.Fp32;
+
+    private Resolution ResolveCore(bool cheap)
+    {
         if (this.devices is not { } services)
         {
             return new Resolution(
                 TurboFiles.For(TurboPrecision.Fp32), DevicePlan.OnCpu("Running on the CPU."), string.Empty);
         }
 
-        var request = TurboModelSet.Parse(services.Precision?.Invoke());
+        var request = this.EffectiveRequest(services);
         Resolution? first = null;
         var note = string.Empty;
         foreach (var precision in TurboModelSet.Candidates(request))
@@ -983,7 +1032,7 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
     /// <summary>The set to use on the CPU when the GPU plan did not work out: auto goes back to full precision.</summary>
     private TurboFiles CpuFilesFor(TurboFiles chosen)
     {
-        var request = this.devices is { } services ? TurboModelSet.Parse(services.Precision?.Invoke()) : TurboPrecisionRequest.Auto;
+        var request = this.devices is { } services ? this.EffectiveRequest(services) : TurboPrecisionRequest.Auto;
         var full = TurboFiles.For(TurboPrecision.Fp32);
         return request == TurboPrecisionRequest.Auto && full.IsInstalled(this.modelsDir) ? full : chosen;
     }

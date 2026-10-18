@@ -1,6 +1,7 @@
 namespace AIVoiceActing.Infrastructure.Onnx;
 
 using AIVoiceActing.Infrastructure.Storage;
+using AIVoiceActing.Ports;
 
 /// <summary>Numeric precision of one Turbo file set. The names match <c>EngineOptions.Precision</c>.</summary>
 public enum TurboPrecision
@@ -89,6 +90,14 @@ public static class TurboModelSet
         "q4f16" => TurboPrecisionRequest.Q4F16,
         _ => TurboPrecisionRequest.Auto,
     };
+
+    /// <summary>
+    /// The request after the processor choice: full-size files only run on the processor, so a full-size pin
+    /// means nothing unless the player chose the processor. With Graphics card (or Automatic) it plans like Automatic,
+    /// which still ends on the full-size files when no graphics card can be used.
+    /// </summary>
+    public static TurboPrecisionRequest Effective(TurboPrecisionRequest request, DeviceMode mode) =>
+        request == TurboPrecisionRequest.Fp32 && mode != DeviceMode.Cpu ? TurboPrecisionRequest.Auto : request;
 
     /// <summary>
     /// Sets worth trying in order. Auto prefers the smallest GPU-verified set (q4f16, then fp16) and

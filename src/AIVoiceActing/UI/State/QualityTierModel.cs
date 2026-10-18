@@ -33,6 +33,26 @@ public static class QualityTierModel
         _ => "The most lifelike delivery for every line. Needs a graphics card and a large download.",
     };
 
+    /// <summary>
+    /// A plain warning for the quality card when a tier that expects the graphics card (Balanced, Most expressive)
+    /// is running its expressive voice on the processor; null when all is as expected. <paramref name="gpuEngine"/>
+    /// is the status of the engine that can use the graphics card. The port's own reason is shown when it has one.
+    /// </summary>
+    public static string? ProcessorWarning(QualityTier? tier, EngineStatus? gpuEngine)
+    {
+        if (tier is not (QualityTier.Balanced or QualityTier.MostExpressive)
+            || gpuEngine is not { State: EngineState.Ready or EngineState.FellBack } status
+            || status.ActiveDevice.IsGpu
+            || status.RequestedDevice == DeviceMode.Cpu)
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(status.Reason)
+            ? $"{Label(tier.Value)} expects your graphics card, but its voice is running on your processor."
+            : status.Reason.Trim();
+    }
+
     /// <summary>Engine ids the tier needs on disk, in download order.</summary>
     public static IReadOnlyList<string> EnginesFor(QualityTier tier) => tier switch
     {

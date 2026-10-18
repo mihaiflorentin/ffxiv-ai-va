@@ -17,7 +17,8 @@ public static class EnginePrecisionModel
 
     private static readonly string[] Order = ["fp32", "fp16", "q4f16"];
 
-    public static IReadOnlyList<PrecisionChoice> Choices(EngineInfo engine)
+    /// <param name="graphicsCardChosen">Processor = Graphics card: full size only runs on the processor, so its entry says so.</param>
+    public static IReadOnlyList<PrecisionChoice> Choices(EngineInfo engine, bool graphicsCardChosen = false)
     {
         var sizes = engine.ApproxBytesByPrecision;
         if (sizes.Count < 2)
@@ -28,7 +29,10 @@ public static class EnginePrecisionModel
         var choices = new List<PrecisionChoice> { new(Auto, "Automatic (recommended)") };
         foreach (var precision in Order.Where(sizes.ContainsKey))
         {
-            choices.Add(new PrecisionChoice(precision, Label(precision, sizes[precision])));
+            var label = Label(precision, sizes[precision]);
+            choices.Add(new PrecisionChoice(
+                precision,
+                graphicsCardChosen && precision == "fp32" ? label.Replace("(fp32)", "(fp32, processor only)") : label));
         }
 
         return choices;
@@ -41,6 +45,19 @@ public static class EnginePrecisionModel
         "q4f16" => $"Lightest, {Labels.FileSize(bytes)} (q4f16)",
         _ => $"{precision}, {Labels.FileSize(bytes)}",
     };
+
+    /// <summary>The help line under the picker; says a full-size pick is ignored while the graphics card is chosen.</summary>
+    public static string Help(string current, bool graphicsCardChosen, bool filesMissing)
+    {
+        if (filesMissing)
+        {
+            return "Its files are not downloaded yet. Download them under Downloads. Takes effect the next time the voices load.";
+        }
+
+        return graphicsCardChosen && current == "fp32"
+            ? "Full size only runs on the processor, so it is ignored while Processor is set to Graphics card. Choose Automatic to match."
+            : "A smaller precision needs less graphics memory and may sound slightly less lifelike. Takes effect the next time the voices load.";
+    }
 
     /// <summary>The download group that holds the files of <paramref name="precision"/>; null for automatic or unknown.</summary>
     public static string? GroupFor(EngineInfo engine, string precision)

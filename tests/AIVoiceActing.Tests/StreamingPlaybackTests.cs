@@ -346,4 +346,23 @@ public sealed class StreamingPlaybackTests
         Assert.True(SpinWait.SpinUntil(() => sink.Played.Count == 1, TimeSpan.FromSeconds(5)));
         Assert.Equal(3000, sink.Played[0].Audio.Samples.Length);
     }
+
+    [Fact]
+    public void TheQueue_HandsWhatTheSinkMeasuredToTheLinesTimer()
+    {
+        var log = new FakeLineTimingLog();
+        var timer = new LineTimer(10, Environment.TickCount64, log);
+        var sink = new FakeAudioSink { LastPlayback = new PlaybackReport(320, 2, 1800, Environment.TickCount64) };
+        using var queue = new PlaybackSpeechQueue(sink);
+        var stream = new SpeechAudioStream(24000);
+        stream.Append(Enumerable.Repeat(0.2f, 2000).ToArray());
+        stream.Complete();
+        queue.Enqueue(Streamed(stream) with { Timer = timer });
+
+        Assert.True(SpinWait.SpinUntil(() => log.Recorded.Count > 0, TimeSpan.FromSeconds(5)));
+        var timing = log.Recorded[^1];
+        Assert.Equal(320, timing.DeviceOpenMs);
+        Assert.Equal(2, timing.UnderrunCount);
+        Assert.Equal(1800, timing.SilenceMs);
+    }
 }

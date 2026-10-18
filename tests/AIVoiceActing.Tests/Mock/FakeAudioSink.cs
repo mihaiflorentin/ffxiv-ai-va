@@ -23,6 +23,9 @@ public sealed class FakeAudioSink : IAudioSink
 
     public bool IsSupported { get; set; } = true;
 
+    /// <summary>What the next play reports as measured; tests set it.</summary>
+    public PlaybackReport? LastPlayback { get; set; }
+
     public void Play(SynthesisResult audio, float volume)
     {
         lock (this.gate)

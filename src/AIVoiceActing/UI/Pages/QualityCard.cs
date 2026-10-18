@@ -55,6 +55,11 @@ internal sealed class QualityCard(UiContext ctx, SettingsInputs inputs)
                 "Pick a quality above to go back to a standard setup.");
         }
 
+        if (QualityTierModel.ProcessorWarning(current, SettingsParts.GpuEngine(ctx)?.Synth.Status) is { } onProcessor)
+        {
+            StatusPill.Draw(Severity.Warning, onProcessor);
+        }
+
         if (this.UnavailableReason(QualityTier.MostExpressive, setup) is { } unavailable)
         {
             Ui.MutedText("Most expressive: " + unavailable);

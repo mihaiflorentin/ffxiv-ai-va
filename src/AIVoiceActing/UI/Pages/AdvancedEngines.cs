@@ -89,6 +89,21 @@ internal sealed class AdvancedEngines(UiContext ctx, SettingsInputs inputs)
         }
 
         this.DrawPrecision(engine);
+        if (key == ConfigMigrator.TurboId)
+        {
+            Ui.Gap(Ui.Space1);
+            SettingsParts.Toggle(
+                "Let the voice decoder wait actively",
+                "For finding slow starts: keeps two processor threads busy between jobs instead of sleeping. Uses more of your processor while the game runs. Takes effect the next time the voices load.",
+                () => ctx.Config.Device.DecoderSpinning,
+                v =>
+                {
+                    ctx.Config.Device.DecoderSpinning = v;
+                    ctx.Save();
+                    ctx.InvalidateSynthesizer();
+                });
+        }
+
         if (key == RemoteEndpointModel.EngineId)
         {
             this.DrawRemote();
@@ -126,7 +141,8 @@ internal sealed class AdvancedEngines(UiContext ctx, SettingsInputs inputs)
 
     private void DrawPrecision(EngineInfo engine)
     {
-        var choices = EnginePrecisionModel.Choices(engine);
+        var graphicsCard = ctx.Config.Device.Mode == DeviceSettings.ModeGpu;
+        var choices = EnginePrecisionModel.Choices(engine, graphicsCard);
         if (choices.Count == 0)
         {
             return;
@@ -155,10 +171,7 @@ internal sealed class AdvancedEngines(UiContext ctx, SettingsInputs inputs)
 
         var group = EnginePrecisionModel.GroupFor(engine, current);
         var row = group is null ? null : inputs.Rows.FirstOrDefault(r => r.Group == group);
-        SettingsParts.RowHelp(
-            row is { Installed: false }
-                ? "Its files are not downloaded yet. Download them under Downloads. Takes effect the next time the voices load."
-                : "A smaller precision needs less graphics memory and may sound slightly less lifelike. Takes effect the next time the voices load.");
+        SettingsParts.RowHelp(EnginePrecisionModel.Help(current, graphicsCard, row is { Installed: false }));
     }
 
     private string Suffix(EngineInfo engine, string precision)

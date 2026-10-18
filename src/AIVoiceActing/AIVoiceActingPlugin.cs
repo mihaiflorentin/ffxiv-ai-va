@@ -208,6 +208,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
                 ? remote.Extra
                 : new Dictionary<string, string>(),
             cpuThreadsFactory: () => config.Device.CpuThreads(),
+            decoderSpinningFactory: () => config.Device.DecoderSpinning,
             // Dalamud loads plugin assemblies with an empty Assembly.Location, so the
             // adapter cannot find the package's voices/ folder relative to itself —
             kokoroVoicesDirFactory: () => Path.Combine(
@@ -351,6 +352,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             Synthesizer = () => this.services.SpeechSynthesizer,
             InvalidateSynthesizer = () => this.services.InvalidateSpeechSynthesizer(),
             Queue = this.services.SpeechQueue,
+            LineTimings = this.services.LineTimingLog,
             Profiles = this.services.ProfileStore,
             ModelAssets = () => [.. ModelCatalog.Assets.Select(a => (a.Asset, a.Group))],
             Provisioner = () => this.services.ModelProvisioner,

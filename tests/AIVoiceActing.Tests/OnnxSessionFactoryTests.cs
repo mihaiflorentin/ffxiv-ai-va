@@ -114,26 +114,39 @@ public sealed class OnnxSessionFactoryTests : IDisposable
     }
 
     [Fact]
-    public void TheDecoder_DefaultsToAtMostTwoThreads_ButAnExplicitSettingIsRespected()
+    public void TheDecoder_NeverTakesMoreThanTwoThreads_WhateverTheBackgroundLoad()
     {
         var factory = Factory(new FakeWebGpuRuntime());
 
         using var byDefault = factory.Create(SessionRole.Decoder, GpuPlan).Options;
-        using var explicitEight = factory.Create(SessionRole.Decoder, GpuPlan, intraOpThreads: 8).Options;
-        using var explicitTwo = factory.Create(SessionRole.Decoder, GpuPlan, intraOpThreads: 2).Options;
-        using var encoder = factory.Create(SessionRole.Encoder, GpuPlan).Options;
+        using var eight = factory.Create(SessionRole.Decoder, GpuPlan, intraOpThreads: 8).Options;
+        using var four = factory.Create(SessionRole.Decoder, GpuPlan, intraOpThreads: 4).Options;
+        using var one = factory.Create(SessionRole.Decoder, GpuPlan, intraOpThreads: 1).Options;
+        using var encoder = factory.Create(SessionRole.Encoder, GpuPlan, intraOpThreads: 8).Options;
 
         Assert.InRange(byDefault.IntraOpNumThreads, 2, OnnxSessionFactory.DecoderDefaultMaxThreads);
-        Assert.Equal(8, explicitEight.IntraOpNumThreads);
-        Assert.Equal(2, explicitTwo.IntraOpNumThreads);
-        Assert.Equal(Math.Max(2, Environment.ProcessorCount / 2), encoder.IntraOpNumThreads); // other roles keep the old default
+        Assert.Equal(2, eight.IntraOpNumThreads);
+        Assert.Equal(2, four.IntraOpNumThreads);
+        Assert.Equal(1, one.IntraOpNumThreads);
+        Assert.Equal(8, encoder.IntraOpNumThreads); // other roles keep the background load setting
+    }
+
+    [Fact]
+    public void TheSpinningSwitch_KeepsTheDecoderThreadCap()
+    {
+        var spinning = new OnnxSessionFactory(new FakeWebGpuRuntime(), new GpuCrashGuard(Path.Combine(this.dir, "m2")), new FakeLogSink(), () => true);
+
+        using var decoder = spinning.Create(SessionRole.Decoder, GpuPlan, intraOpThreads: 8).Options;
+
+        Assert.Equal(2, decoder.IntraOpNumThreads);
     }
 
     [Theory]
     [InlineData(null, 2)]
     [InlineData(0, 2)]
     [InlineData(1, 1)]
-    [InlineData(16, 16)]
+    [InlineData(2, 2)]
+    [InlineData(16, 2)]
     public void DecoderThreads_FollowsTheRule(int? explicitThreads, int expected)
     {
         var threads = OnnxSessionFactory.DecoderThreads(explicitThreads);

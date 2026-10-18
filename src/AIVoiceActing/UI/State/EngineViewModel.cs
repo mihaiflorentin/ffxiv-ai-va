@@ -1,5 +1,6 @@
 namespace AIVoiceActing.UI.State;
 
+using AIVoiceActing.Domain;
 using AIVoiceActing.Ports;
 
 /// <summary>What the card of one engine knows. <see cref="Status"/> is null for an engine that is not running right now.</summary>
@@ -46,7 +47,7 @@ public static class EngineViewModel
         {
             EngineState.NotInstalled => new EngineView(
                 Severity.Warning, NotInstalledWord, NonEmpty(status.Reason) ?? DownloadHint),
-            EngineState.Ready => new EngineView(Severity.Success, ReadyWord, WhereItRuns(status.ActiveDevice)),
+            EngineState.Ready => new EngineView(Severity.Success, ReadyWord, ReadyDetail(status)),
             EngineState.FellBack => new EngineView(
                 Severity.Warning,
                 FellBackWord,
@@ -69,6 +70,26 @@ public static class EngineViewModel
         return string.IsNullOrWhiteSpace(device.Adapter)
             ? "Running on your graphics card."
             : $"Running on your graphics card ({device.Adapter.Trim()}).";
+    }
+
+    /// <summary>
+    /// Where a ready engine runs. On the processor when the player asked for more than that, the port's reason
+    /// follows, so "Ready" never hides why the graphics card is not in use.
+    /// </summary>
+    private static string ReadyDetail(EngineStatus status)
+    {
+        var where = WhereItRuns(status.ActiveDevice);
+        if (status.ActiveDevice.IsGpu && status.Reason == PrecisionNotes.FullSizeIgnoredOnGpu)
+        {
+            return $"{where} {status.Reason}";
+        }
+
+        if (status.ActiveDevice.IsGpu || status.RequestedDevice == DeviceMode.Cpu || NonEmpty(status.Reason) is not { } reason)
+        {
+            return where;
+        }
+
+        return reason.StartsWith(where.TrimEnd('.'), StringComparison.Ordinal) ? reason : $"{where} {reason}";
     }
 
     private static string LoadingDetail(string name, EngineStatus status) =>
