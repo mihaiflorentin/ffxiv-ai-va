@@ -11,7 +11,7 @@ using Microsoft.ML.OnnxRuntime.Tensors;
 /// Chatterbox Turbo speech synthesizer (official ResembleAI ONNX export): four sessions, speech encoder
 /// (once per reference clip, cached), token embedding, language model (greedy loop with a key-value cache,
 /// <see cref="TurboDecodeLoop"/>) and conditional decoder; START/STOP speech tokens 6561/6562, repetition
-/// penalty 1.2, max 256 new tokens, three SILENCE tokens appended, 24 kHz mono out. Only the language
+/// penalty 1.2, a speech-token budget that grows with the text (TurboDecodeLoop.TokenBudget), three SILENCE tokens appended, 24 kHz mono out. Only the language
 /// model may run on the GPU; the encoder, embedding and decoder always run on the CPU
 /// (docs/plans/2026-10-gpu-spike-results.md). The PerTh watermarker is absent from the ONNX graphs, so
 /// output is unwatermarked by construction.
@@ -127,11 +127,11 @@ public sealed class ChatterboxSynthesizer : ISpeechSynthesizer, IDisposable
         {
             if (this.engine.IsValueCreated && this.engine.Value is { } built)
             {
-                return $"{built.Files.Label}/{(built.LmEp == DeviceEp.Cpu ? "cpu" : "gpu")}";
+                return $"{built.Files.Label}/{(built.LmEp == DeviceEp.Cpu ? "cpu" : "gpu")}/{TurboDecodeLoop.Recipe}";
             }
 
             var resolved = this.Resolve(cheap: true);
-            return $"{resolved.Files.Label}/{(resolved.Plan.IsGpu && this.GpuLoopReady ? "gpu" : "cpu")}";
+            return $"{resolved.Files.Label}/{(resolved.Plan.IsGpu && this.GpuLoopReady ? "gpu" : "cpu")}/{TurboDecodeLoop.Recipe}";
         }
     }
 

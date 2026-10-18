@@ -7,7 +7,7 @@ public sealed class PrerollGateTests
 {
     private long now = 1000;
 
-    private PrerollGate Gate(PrerollOptions? options = null, int chars = 231) =>
+    private PrerollGate Gate(PrerollOptions? options = null, int chars = 98) =>
         new(options ?? PrerollOptions.Default, chars, () => this.now);
 
     /// <summary>The language model picks <paramref name="count"/> tokens, one every <paramref name="everyMs"/>.</summary>
@@ -140,7 +140,7 @@ public sealed class PrerollBufferTests
 
     private (PrerollBuffer Buffer, List<float[]> Out, PrerollGate Gate) Rig(PrerollOptions? options = null)
     {
-        var gate = new PrerollGate(options ?? PrerollOptions.Default, 231, () => this.now);
+        var gate = new PrerollGate(options ?? PrerollOptions.Default, 98, () => this.now);
         var output = new List<float[]>();
         return (new PrerollBuffer(gate, 1000, output.Add), output, gate);
     }

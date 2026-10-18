@@ -23,9 +23,35 @@ public sealed class TurboDecodeLoop
 {
     public const int StartSpeechToken = 6561;
     public const int StopSpeechToken = 6562;
-    public const int MaxNewTokens = 256;
+    /// <summary>Hard ceiling on new speech tokens per call: 40 s of audio (25 tokens a second), as upstream Turbo.</summary>
+    public const int MaxNewTokens = 1000;
+
+    /// <summary>The least budget any line gets (about 10 s of audio).</summary>
+    public const int MinTokenBudget = 256;
+
+    /// <summary>
+    /// The speech-token budget for a prompt of <paramref name="textTokens"/> text tokens. Speech runs at about seven
+    /// speech tokens per text token; the budget allows more than twice that so pauses and slow delivery never cut a
+    /// line short (a fixed 256 stopped 150-character lines mid-sentence), while a model that never says STOP still
+    /// ends near the line's own length instead of babbling for the full ceiling.
+    /// </summary>
+    public static int TokenBudget(int textTokens) => Math.Clamp(60 + (16 * textTokens), MinTokenBudget, MaxNewTokens);
     public const int MinSpeechTokens = 30;
     public const float RepetitionPenalty = 1.2f;
+
+    /// <summary>
+    /// The repetition penalty looks at the last this many tokens only. Over the whole history (the ONNX card's
+    /// recipe) greedy q4f16 decoding cannot reuse the sounds of a repeated word ("eating well, sleeping well"),
+    /// drifts into seconds of silence or babble and often never says STOP; a 32-token window brought it level
+    /// with fp32 (docs/plans/2026-10-gpu-audio-artifacts.md).
+    /// </summary>
+    public const int PenaltyWindow = 32;
+
+    /// <summary>A token picked this many times in a row is masked for the next step (a stuck silence or hum).</summary>
+    public const int MaxRun = 12;
+
+    /// <summary>Names the decoding recipe in render-cache keys, so audio made by an older recipe is not replayed.</summary>
+    public const string Recipe = "w32r12";
     public const int NumKvHeads = 16;
     public const int HeadDim = 64;
 
@@ -76,12 +102,12 @@ public sealed class TurboDecodeLoop
     /// seeded START or the closing STOP), so a decoder can start on the first tokens while the loop goes on.
     /// <paramref name="timer"/>, when given, hears how long the first step (the prefill) took and the duration of
     /// every later language model step, which is the number a graphics card shared with the game inflates.
-    /// <paramref name="maxNewTokens"/> stops the loop early (warm-up runs a handful of steps); the cap never exceeds <see cref="MaxNewTokens"/>.
+    /// <paramref name="maxNewTokens"/> stops the loop early (warm-up runs a handful of steps); without it the loop
+    /// runs to STOP within <see cref="TokenBudget"/> of the prompt's text tokens.
     /// </summary>
-    public List<long> Run(TurboDecodeInput input, CancellationToken ct, Action<long>? onToken = null, LineTimer? timer = null, int maxNewTokens = MaxNewTokens)
+    public List<long> Run(TurboDecodeInput input, CancellationToken ct, Action<long>? onToken = null, LineTimer? timer = null, int? maxNewTokens = null)
     {
         var generated = new List<long> { StartSpeechToken };
-        var seen = new HashSet<long> { StartSpeechToken };
         var past = new OrtValue?[this.pastNames.Length];
         IDisposableReadOnlyCollection<OrtValue>? previous = null;
         using var runOptions = new RunOptions();
@@ -90,7 +116,8 @@ public sealed class TurboDecodeLoop
             long[] ids = input.TextIds;
             long lastPosition = 0;
             long totalLength = 0;
-            for (var step = 0; step < Math.Min(maxNewTokens, MaxNewTokens); step++)
+            var budget = Math.Min(maxNewTokens ?? TokenBudget(input.TextIds.Length), MaxNewTokens);
+            for (var step = 0; step < budget; step++)
             {
                 ct.ThrowIfCancellationRequested();
                 var textEmbeds = this.EmbedTokens(ids, out var width);
@@ -140,7 +167,7 @@ public sealed class TurboDecodeLoop
                     }
                 }
 
-                ApplyRepetitionPenalty(logits, seen);
+                ApplyRepetitionPenalty(logits, RecentDistinct(generated, PenaltyWindow));
                 // DEVIATION (documented): on short prompts this export can emit STOP as its very first token,
                 // yielding zero speech tokens and no audio. FFXIV dialogue lines are short, so while under
                 // MinSpeechTokens (~1 s of speech) the STOP logit is masked to guarantee a minimum utterance.
@@ -149,9 +176,9 @@ public sealed class TurboDecodeLoop
                     logits[StopSpeechToken] = float.NegativeInfinity;
                 }
 
+                CapRun(logits, generated, MaxRun);
                 var next = Argmax(logits);
                 generated.Add(next);
-                seen.Add(next);
                 if (next == StopSpeechToken)
                 {
                     break;
@@ -285,6 +312,41 @@ public sealed class TurboDecodeLoop
                 ref var score = ref logits[(int)token];
                 score = score < 0 ? score * RepetitionPenalty : score / RepetitionPenalty;
             }
+        }
+    }
+
+    /// <summary>The distinct tokens among the last <paramref name="window"/> of <paramref name="generated"/>.</summary>
+    internal static HashSet<long> RecentDistinct(List<long> generated, int window)
+    {
+        var recent = new HashSet<long>();
+        for (var i = Math.Max(0, generated.Count - window); i < generated.Count; i++)
+        {
+            recent.Add(generated[i]);
+        }
+
+        return recent;
+    }
+
+    /// <summary>Masks the last token when it already ends a run of <paramref name="maxRun"/> identical picks.</summary>
+    internal static void CapRun(float[] logits, List<long> generated, int maxRun)
+    {
+        if (generated.Count < maxRun)
+        {
+            return;
+        }
+
+        var last = generated[^1];
+        for (var i = generated.Count - maxRun; i < generated.Count; i++)
+        {
+            if (generated[i] != last)
+            {
+                return;
+            }
+        }
+
+        if (last >= 0 && last < logits.Length)
+        {
+            logits[(int)last] = float.NegativeInfinity;
         }
     }
 

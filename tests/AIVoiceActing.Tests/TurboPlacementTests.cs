@@ -130,7 +130,7 @@ public sealed class TurboPlacementTests : IDisposable
         Assert.True(File.Exists(rig.Marker), "the crash marker stays until the first line decoded");
         Assert.Equal(EngineState.Ready, synth.Status.State);
         Assert.Equal(DeviceEp.WebGpu, synth.Status.ActiveDevice.Ep);
-        Assert.Equal("q4f16/gpu", synth.RenderVariant);
+        Assert.Equal("q4f16/gpu/w32r12", synth.RenderVariant);
     }
 
     [Fact]
@@ -188,7 +188,7 @@ public sealed class TurboPlacementTests : IDisposable
             rig.Opened);
         Assert.Empty(rig.Runtime.Appended);
         Assert.False(File.Exists(rig.Marker));
-        Assert.Equal("fp32/cpu", synth.RenderVariant);
+        Assert.Equal("fp32/cpu/w32r12", synth.RenderVariant);
     }
 
     [Fact]
@@ -319,7 +319,7 @@ public sealed class TurboPlacementTests : IDisposable
         Assert.Contains("CPU", status.Reason);
         Assert.False(File.Exists(rig.Marker));
         Assert.Contains(ModelCatalog.TurboLanguageModelFileName, opened); // auto goes back to full precision on the CPU
-        Assert.Equal("fp32/cpu", synth.RenderVariant);
+        Assert.Equal("fp32/cpu/w32r12", synth.RenderVariant);
     }
 
     [Fact]
@@ -341,7 +341,7 @@ public sealed class TurboPlacementTests : IDisposable
         await synth.WarmUpAsync(CancellationToken.None);
 
         Assert.Empty(runtime.Appended);
-        Assert.Equal("fp32/cpu", synth.RenderVariant);
+        Assert.Equal("fp32/cpu/w32r12", synth.RenderVariant);
     }
 
     [Fact]
@@ -358,11 +358,11 @@ public sealed class TurboPlacementTests : IDisposable
         using var c = gpuFp16.Synth;
         using var d = lowPower.Synth;
 
-        Assert.Equal("q4f16/gpu", a.RenderVariant);
-        Assert.Equal("q4f16/cpu", b.RenderVariant);
-        Assert.Equal("fp16/gpu", c.RenderVariant);
+        Assert.Equal("q4f16/gpu/w32r12", a.RenderVariant);
+        Assert.Equal("q4f16/cpu/w32r12", b.RenderVariant);
+        Assert.Equal("fp16/gpu/w32r12", c.RenderVariant);
         Assert.Equal(a.RenderVariant, d.RenderVariant);
-        Assert.Equal(4, new[] { a.RenderVariant, b.RenderVariant, c.RenderVariant }.Append("fp32/cpu").Distinct().Count());
+        Assert.Equal(4, new[] { a.RenderVariant, b.RenderVariant, c.RenderVariant }.Append("fp32/cpu/w32r12").Distinct().Count());
     }
 
     // ---- the small graphics card install: base files + q4f16 set, no full-size files ---------------------
@@ -376,7 +376,7 @@ public sealed class TurboPlacementTests : IDisposable
         Assert.True(synth.IsReady);
         await synth.WarmUpAsync(CancellationToken.None);
 
-        Assert.Equal("q4f16/gpu", synth.RenderVariant);
+        Assert.Equal("q4f16/gpu/w32r12", synth.RenderVariant);
         Assert.Equal(
             [
                 "turbo-speech-encoder-q4f16.onnx",
@@ -399,7 +399,7 @@ public sealed class TurboPlacementTests : IDisposable
         Assert.True(synth.IsReady);
         await synth.WarmUpAsync(CancellationToken.None);
 
-        Assert.Equal("q4f16/cpu", synth.RenderVariant);
+        Assert.Equal("q4f16/cpu/w32r12", synth.RenderVariant);
         Assert.Empty(rig.Runtime.Appended);
         Assert.Equal(EngineState.FellBack, synth.Status.State);
     }

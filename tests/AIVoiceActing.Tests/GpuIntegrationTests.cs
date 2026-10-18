@@ -150,13 +150,13 @@ public sealed class GpuIntegrationTests : IDisposable
         var gpuTokens = gpu.LastSpeechTokens.ToArray();
 
         Assert.Equal(DeviceEp.WebGpu, gpu.Status.ActiveDevice.Ep);
-        Assert.Equal("q4f16/gpu", gpu.RenderVariant);
+        Assert.Equal("q4f16/gpu/w32r12", gpu.RenderVariant);
         Assert.False(File.Exists(gpuGuard.MarkerPath), "the first decoded line must close the crash marker");
 
         using var cpu = this.NewTurbo(models, DeviceMode.Cpu, "q4f16", "cpu", out _);
         var cpuAudio = await cpu.SynthesizeAsync(request, CancellationToken.None);
 
-        Assert.Equal("q4f16/cpu", cpu.RenderVariant);
+        Assert.Equal("q4f16/cpu/w32r12", cpu.RenderVariant);
         Assert.NotEmpty(gpuTokens);
 
         // Greedy decoding on a different device can flip a near-tie (float math differs in the last bits) and
@@ -178,7 +178,7 @@ public sealed class GpuIntegrationTests : IDisposable
         using var cpu = this.NewTurbo(models, DeviceMode.Cpu, "fp32", "fp32", out _);
         var audio = await cpu.SynthesizeAsync(new SynthesisRequest("default", "Hello there.", 0.5f, []), CancellationToken.None);
 
-        Assert.Equal("fp32/cpu", cpu.RenderVariant);
+        Assert.Equal("fp32/cpu/w32r12", cpu.RenderVariant);
         Assert.NotEmpty(cpu.LastSpeechTokens);
         Assert.True(audio.Samples.Length > 12000);
     }

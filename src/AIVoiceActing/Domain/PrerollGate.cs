@@ -5,13 +5,14 @@ namespace AIVoiceActing.Domain;
 /// playback starts with the first audio). <see cref="MinMs"/> is the least audio buffered before the sound
 /// starts, <see cref="MarginMs"/> spare room for a window that comes in late, and
 /// <see cref="TokensPerChar"/> turns the text length into an expected number of speech tokens until the
-/// language model has finished (156 tokens for 231 characters in the measured example).
+/// language model has finished (about 1.6: Turbo speaks 25 tokens a second, and a 97-character line took
+/// 156 tokens, 6.4 s of audio, on the 9070 XT).
 /// </summary>
 public sealed record PrerollOptions(
     int MaxMs = 6000,
     int MinMs = 1000,
     int MarginMs = 300,
-    double TokensPerChar = 0.68)
+    double TokensPerChar = 1.6)
 {
     public static PrerollOptions Default { get; } = new();
 }

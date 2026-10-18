@@ -140,7 +140,7 @@ public sealed class ContainerExpressiveTests : IDisposable
         precision = "q4f16"; // not downloaded here: falls back to full precision, so the key must not change
         var notInstalled = container.RenderEngineKey();
 
-        Assert.Equal("chatterbox-turbo:fp32/cpu", fp32);
+        Assert.Equal("chatterbox-turbo:fp32/cpu/w32r12", fp32);
         Assert.Equal(fp32, notInstalled);
     }
 
@@ -155,7 +155,7 @@ public sealed class ContainerExpressiveTests : IDisposable
         mode = DeviceMode.Gpu; // no verified model/probe here, so the plan stays on the CPU but wants the GPU: same audio class
         var wantedGpu = container.RenderEngineKey();
 
-        Assert.Equal("chatterbox-turbo:fp32/cpu", cpu);
+        Assert.Equal("chatterbox-turbo:fp32/cpu/w32r12", cpu);
         Assert.Equal(cpu, wantedGpu);
     }
 
@@ -167,7 +167,7 @@ public sealed class ContainerExpressiveTests : IDisposable
 
         this.InstallTurboBase();
         using var routed = this.Container();
-        Assert.Equal("kokoro:x:fp32/cpu", routed.RenderEngineKey());
+        Assert.Equal("kokoro:x:fp32/cpu/w32r12", routed.RenderEngineKey());
     }
 
     [Fact]

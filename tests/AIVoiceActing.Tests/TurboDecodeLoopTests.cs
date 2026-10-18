@@ -168,7 +168,7 @@ public sealed class TurboDecodeLoopTests : IDisposable
 
         Assert.Equal(ExpectedTokens, synth.LastSpeechTokens);
         Assert.Equal(5 + 40 + 3, audio.Samples.Length); // prompt tokens + speech tokens + three silence tokens
-        Assert.Equal("fp32/cpu", synth.RenderVariant);
+        Assert.Equal("fp32/cpu/w32r12", synth.RenderVariant);
     }
 
     [Fact]
@@ -181,7 +181,7 @@ public sealed class TurboDecodeLoopTests : IDisposable
         await synth.SynthesizeAsync(Line(), CancellationToken.None);
 
         Assert.Equal(ExpectedTokens, synth.LastSpeechTokens);
-        Assert.Equal("q4f16/cpu", synth.RenderVariant);
+        Assert.Equal("q4f16/cpu/w32r12", synth.RenderVariant);
     }
 
     [Fact]
@@ -197,7 +197,7 @@ public sealed class TurboDecodeLoopTests : IDisposable
 
         Assert.Equal(ExpectedTokens, synth.LastSpeechTokens);
         Assert.False(File.Exists(rig.Guard.MarkerPath));
-        Assert.Equal("q4f16/gpu", synth.RenderVariant);
+        Assert.Equal("q4f16/gpu/w32r12", synth.RenderVariant);
         Assert.Equal(EngineState.Ready, synth.Status.State);
     }
 
@@ -219,7 +219,7 @@ public sealed class TurboDecodeLoopTests : IDisposable
         Assert.True(status.CanRetryGpu);
         Assert.Contains("GPU", status.Reason);
         Assert.False(File.Exists(rig.Guard.MarkerPath), "a managed failure closes the scope as 'failed safely'");
-        Assert.Equal("fp32/cpu", synth.RenderVariant);
+        Assert.Equal("fp32/cpu/w32r12", synth.RenderVariant);
 
         // The next line stays on the CPU without trying the GPU again.
         var appendsBefore = rig.Runtime.Appended.Count;
@@ -245,7 +245,7 @@ public sealed class TurboDecodeLoopTests : IDisposable
 
         await Assert.ThrowsAsync<SpeechSynthesisException>(() => synth.SynthesizeAsync(Line(), CancellationToken.None));
 
-        Assert.Equal("q4f16/gpu", synth.RenderVariant); // still the GPU engine: no fallback happened
+        Assert.Equal("q4f16/gpu/w32r12", synth.RenderVariant); // still the GPU engine: no fallback happened
         Assert.True(File.Exists(rig.Guard.MarkerPath), "no GPU run finished, and none failed");
     }
 
@@ -424,7 +424,7 @@ public sealed class TurboDecodeLoopTests : IDisposable
 
         Assert.Equal(43 * Spt, whole.Samples.Length);
         Assert.False(File.Exists(rig.Guard.MarkerPath));
-        Assert.Equal("q4f16/gpu", synth.RenderVariant);
+        Assert.Equal("q4f16/gpu/w32r12", synth.RenderVariant);
     }
 
     [Fact]
@@ -441,7 +441,7 @@ public sealed class TurboDecodeLoopTests : IDisposable
         Assert.Equal(ExpectedTokens, synth.LastSpeechTokens);
         Assert.Equal(whole.Samples, pieces.SelectMany(p => p).ToArray()); // the failed attempt handed nothing out
         Assert.Equal(EngineState.FellBack, synth.Status.State);
-        Assert.Equal("fp32/cpu", synth.RenderVariant);
+        Assert.Equal("fp32/cpu/w32r12", synth.RenderVariant);
     }
 
     [Fact]
@@ -453,5 +453,55 @@ public sealed class TurboDecodeLoopTests : IDisposable
 
         Assert.Equal(43 * Spt, audio.Samples.Length);
         Assert.Null(synth.LastStreamingStats);
+    }
+
+    [Theory]
+    [InlineData(1, 256)]
+    [InlineData(35, 620)]
+    [InlineData(500, 1000)]
+    public void TokenBudget_GrowsWithTheText_BetweenTheFloorAndTheCeiling(int textTokens, int expected)
+    {
+        // 35 text tokens is a 150-character line: a fixed 256 cut such lines mid-sentence.
+        Assert.Equal(expected, TurboDecodeLoop.TokenBudget(textTokens));
+    }
+
+    [Fact]
+    public void RepetitionPenalty_OnlyLooksAtTheRecentWindow()
+    {
+        // A word said 40 tokens ago may be said again: only the last 32 picks are penalised.
+        var generated = new List<long> { TurboDecodeLoop.StartSpeechToken, 7 };
+        generated.AddRange(Enumerable.Range(100, 40).Select(i => (long)i));
+
+        var recent = TurboDecodeLoop.RecentDistinct(generated, TurboDecodeLoop.PenaltyWindow);
+
+        Assert.DoesNotContain(7L, recent);
+        Assert.Contains(139L, recent);
+        Assert.Equal(TurboDecodeLoop.PenaltyWindow, recent.Count);
+    }
+
+    [Fact]
+    public void ARunOfIdenticalTokens_IsBrokenAtTheCap()
+    {
+        var logits = new float[10];
+        logits[4] = 5f;
+        var generated = Enumerable.Repeat(4L, TurboDecodeLoop.MaxRun).ToList();
+
+        TurboDecodeLoop.CapRun(logits, generated, TurboDecodeLoop.MaxRun);
+
+        Assert.Equal(float.NegativeInfinity, logits[4]);
+        Assert.NotEqual(4L, TurboDecodeLoop.Argmax(logits));
+    }
+
+    [Fact]
+    public void AShorterRun_IsLeftAlone()
+    {
+        var logits = new float[10];
+        logits[4] = 5f;
+        var generated = new List<long> { 3 };
+        generated.AddRange(Enumerable.Repeat(4L, TurboDecodeLoop.MaxRun - 1));
+
+        TurboDecodeLoop.CapRun(logits, generated, TurboDecodeLoop.MaxRun);
+
+        Assert.Equal(4L, TurboDecodeLoop.Argmax(logits));
     }
 }
