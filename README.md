@@ -10,14 +10,14 @@ Local AI voice acting for FFXIV. The plugin captures quest Talk dialogue, Battle
 - **Responsive playback**: speech work runs off the game thread, long lines start after their first sentence, repeated lines play from a cache, and loudness is levelled across voices. An optional now-speaking panel shows who is talking with Replay, Skip and Stop.
 - **The game's own voice acting always wins**: when a voiced line plays in-game, the plugin cancels its speech and stays silent for that line.
 
-Kokoro's accent banks cover English (US/UK), French, Spanish, Italian, Portuguese, Hindi, and Chinese. The Japanese bank is parked (it does not render English); f5, turbo, and legacy Chatterbox engines remain in the code but are hidden from the UI.
+Kokoro's accent banks cover English (US/UK), French, Spanish, Italian, Portuguese, Hindi, and Chinese. The Japanese bank is parked (it does not render English). Chatterbox Turbo is the optional expressive engine; F5 and the original Chatterbox were retired and old settings that used them switch to Kokoro.
 
 
 ## Requirements
 
 - Windows 10/11 for in-game use (FFXIV + Dalamud via XIVLauncher). The audio sink (WASAPI) and the DirectML execution provider are Windows-only.
 - .NET 10 desktop runtime, installed by XIVLauncher/Dalamud.
-- ~350 MB of model files for the default Kokoro engine, downloaded once from the **Engine** tab on first use (download only starts when you press the button). The parked f5/turbo engines add ~1.4 GB / ~1.1 GB if ever enabled.
+- ~350 MB of model files for the default Kokoro engine, downloaded once from the **Engine** tab on first use (download only starts when you press the button). Chatterbox Turbo (expressive lines) adds ~3.3 GB for its base set plus ~0.55 GB for the compact GPU build.
 - macOS: the engine runs for local development and XIV on Mac builds load with the CPU execution provider — see [GPU notes](#gpu-notes).
 
 ## Models and licenses
@@ -27,7 +27,7 @@ Kokoro's accent banks cover English (US/UK), French, Spanish, Italian, Portugues
 | Kokoro v1.0 ONNX model (`kokoro-v1.0.onnx`, ~310 MB) | [Kokoro](https://huggingface.co/hexgrad/kokoro) (KokoroSharp ships the export) | Apache-2.0 |
 | Voice bank (`voices/*.npy`, 54 voices) | Kokoro v1.0/v1.1 style vectors, shipped with the plugin | Apache-2.0 |
 | Optional emotion reader (`emotion-classifier.onnx`, ~500 MB) | [`SamLowe/roberta-base-go_emotions-onnx`](https://huggingface.co/SamLowe/roberta-base-go_emotions-onnx) | MIT |
-| Legacy Chatterbox assets (engine parked; only if manually enabled) | [`onnx-community/chatterbox-ONNX`](https://huggingface.co/onnx-community/chatterbox-ONNX) | MIT |
+| Chatterbox Turbo assets | [`ResembleAI/chatterbox-turbo-ONNX`](https://huggingface.co/ResembleAI/chatterbox-turbo-ONNX) | MIT |
 
 Models are downloaded to `ConfigDirectory/models/` at runtime; nothing model-sized ships in the plugin zip.
 
@@ -81,7 +81,7 @@ Synthesis runs through ONNX Runtime execution providers, on a background thread 
 - **Kokoro is real-time on CPU**: measured real-time factor ≈ 0.54 on a Ryzen 9800X3D (1 s of audio in ~0.5 s); older CPUs still keep up with dialogue pacing.
 - **DirectML stays CPU under Wine**: the DML EP fails in-game; the code falls back to CPU automatically. The execution-provider selector remains in the Engine tab for native Windows experiments.
 - **macOS** (XIV on Mac): CPU is the default and works.
-- The parked f5/turbo engines are an order of magnitude slower (F5 ≈ 8× real time on CPU) — why they stay out of the UI.
+- **Chatterbox Turbo runs its language model on the GPU** (WebGPU, any vendor; Vulkan under Wine) with a device-resident key-value cache; the encoder, embedding and decoder stay on the CPU. On the CPU alone it is several times slower than real time, so without a verified GPU it is only used for the occasional emotional line.
 
 ## Voiced-line courtesy
 
@@ -102,7 +102,7 @@ The game ships real voice acting for main-story cutscenes and some quest dialogu
 | `/enabletts` / `/disabletts` | Enable/disable explicitly |
 | `/aivapreset <name>` | Apply a named channel preset |
 | `/aivavolume <0-200>` | Set master volume; `+N` / `-N` adjust relatively |
-| `/aivastyles` | Open the style-tags window |
+| `/aivastyles` | Open the style tag settings (What's read, More options) |
 
 ## Configuration
 
@@ -114,6 +114,6 @@ The game ships real voice acting for main-story cutscenes and some quest dialogu
 5. **Chat** — master enable, keybinds, capture sources, channel presets, and triggers/exclusions.
 6. **Test** — free-text synthesis with speaker picker, emotion dropdown, forced-emotion audition, and rules-vs-context director buttons; failures surface in an in-window status line.
 
-Every capture source, filter, and courtesy behavior can be toggled individually; defaults follow TextToTalk where options are shared. `/aivastyles` opens the style-tag editor (custom styles, tag delimiter, style regex).
+Every capture source, filter, and courtesy behavior can be toggled individually; defaults follow TextToTalk where options are shared. `/aivastyles` opens the style tag settings under What's read, More options (on/off, marker character, a line tester).
 
 Voice assignments persist in `ConfigDirectory/voice-assignments.json`; delete a row there (or via the UI) to re-roll a character.

@@ -1,6 +1,7 @@
 namespace AIVoiceActing;
 
 using System.Reflection;
+using System.Runtime.InteropServices;
 using AIVoiceActing.Container;
 using AIVoiceActing.Domain;
 using AIVoiceActing.Domain.Pipeline;
@@ -9,6 +10,8 @@ using AIVoiceActing.Infrastructure.Onnx;
 using AIVoiceActing.Ports;
 using AIVoiceActing.Infrastructure.Dalamud;
 using AIVoiceActing.UI;
+using AIVoiceActing.UI.Components;
+using AIVoiceActing.UI.State;
 using Dalamud.Interface.Windowing;
 using Dalamud.Game.ClientState;
 using Dalamud.Game.ClientState.Keys;
@@ -41,6 +44,9 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
 
     [PluginService]
     public static IPluginLog PluginLog { get; private set; } = null!;
+
+    [PluginService]
+    public static INotificationManager NotificationManager { get; private set; } = null!;
 
     [PluginService]
     public static IFramework Framework { get; private set; } = null!;
@@ -89,8 +95,10 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
     private readonly VoiceLineDetector voiceLineDetector;
     private readonly WindowSystem windowSystem = new("AIVoiceActing");
     private readonly ConfigurationWindow configWindow;
-    private readonly StylesWindow stylesWindow;
     private readonly NowSpeakingWindow nowSpeakingWindow;
+
+    /// <summary>Toast channel for UI pages (nothing calls it yet; the page tickets will).</summary>
+    public IToastSink Toasts { get; } = new DalamudToastSink(NotificationManager);
     private readonly Action openConfigUiHook;
 
     public AIVoiceActingPlugin()
@@ -133,11 +141,12 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         this.pluginConfig = PluginInterface.GetPluginConfig() as PluginConfiguration
             ?? new PluginConfiguration();
         var config = this.pluginConfig;
+        MigrateConfiguration(config);
         PluginLog.Information(
-            "[AIVoiceActing] Plugin init: version {Version}, engine \"{Engine}\", ep \"{Ep}\", config dir {ConfigDir}",
+            "[AIVoiceActing] Plugin init: version {Version}, engine \"{Engine}\", device \"{Device}\", config dir {ConfigDir}",
             typeof(AIVoiceActingPlugin).Assembly.GetName().Version,
-            config.SelectedEngine,
-            config.SelectedEp,
+            config.Engine.Primary,
+            config.Device.Mode,
             configDir);
         // Audio sink first so the queue factory closure never sees a null field.
         this.audioSink = new NAudioSink(
@@ -156,7 +165,14 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             keepTempoWhenPitchedFactory: () => config.KeepTempoWhenPitched,
             ageAwareCastingFactory: () => config.AgeAwareCasting,
             streamSentencesFactory: () => config.StreamSentences,
-            expressiveEngineFactory: () => config.ExpressiveEngine,
+            expressiveEngineFactory: () => config.Engine.Expressive.Enabled,
+            expressiveEngineIdFactory: () => config.Engine.Expressive.EngineId,
+            enginePrecisionFactory: engineId => config.Engine.PerEngine.TryGetValue(engineId, out var options)
+                ? options.Precision
+                : "auto",
+            engineDeviceFactory: engineId => config.Engine.PerEngine.TryGetValue(engineId, out var options)
+                ? options.Device
+                : "inherit",
             modelsDirFactory: () => Path.Combine(configDir, "models"),
             voicesManifestFactory: () => ExtractVoicesManifest(configDir),
             // Re-read on first use and whenever the processor sees changed files; the
@@ -186,27 +202,62 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             cutsceneActiveFactory: () => conditions.OccupiedInCutscene || conditions.WatchingCutscene,
             talkVisibleFactory: () => this.talkPoller.IsVisible(),
             defaultExaggerationFactory: () => config.DefaultExaggeration,
-            selectedEpFactory: () => config.SelectedEp,
-            useFp32LanguageModelFactory: () => config.UseFp32LanguageModel,
-            selectedEngineFactory: () => config.SelectedEngine,
-            cpuThreadsFactory: () => config.CpuImpact switch
-            {
-                "low" => 2,
-                "high" => 8,
-                _ => 4,
-            },
+            selectedEpFactory: () => config.Device.ToExecutionProvider(),
+            selectedEngineFactory: () => config.Engine.Primary,
+            remoteExtraFactory: () => config.Engine.PerEngine.TryGetValue("remote", out var remote)
+                ? remote.Extra
+                : new Dictionary<string, string>(),
+            cpuThreadsFactory: () => config.Device.CpuThreads(),
+            decoderSpinningFactory: () => config.Device.DecoderSpinning,
+            maxPrerollMsFactory: () => (int)MathF.Round(Math.Max(0f, config.MaxPrerollSeconds) * 1000f),
             // Dalamud loads plugin assemblies with an empty Assembly.Location, so the
             // adapter cannot find the package's voices/ folder relative to itself —
             kokoroVoicesDirFactory: () => Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
                 "voices"),
-            f5VoicesDirFactory: () => Path.Combine(
+            referenceClipsDirFactory: () => Path.Combine(
                 PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
-                "voices-f5"),
+                ReferenceClipBank.FolderName),
+            // Voice packs: bundled next to the plugin, user packs in the config folder, then
+            // any extra folders from the settings. Order decides who wins an id collision.
+            voicePackRootsFactory: () =>
+            [
+                Path.Combine(PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir, "voicepacks"),
+                Path.Combine(configDir, "voicepacks"),
+                .. config.Voices.ExtraPackDirs,
+            ],
+            disabledVoicePacksFactory: () => config.Voices.DisabledPacks,
             emotionClassifierEnabledFactory: () => config.DirectorEnabled,
             useRaceVoicePresetsFactory: () => config.UseRaceVoicePresets,
+            uniqueVoicePerCharacterFactory: () => config.Voices.UniquePerCharacter,
+            generatedVoicesDirFactory: () => Path.Combine(configDir, "voices-generated"),
             adHocStyleTagsFactory: () => config.AdHocStyleTagsEnabled,
-            styleTagRegexFactory: () => config.StyleRegex);
+            styleTagRegexFactory: () => config.StyleRegex,
+            devicePreferencesFactory: () => config.Device.ToPreferences(),
+            clearGpuCrashFlag: () =>
+            {
+                config.Device.GpuDisabledByCrashGuard = false;
+                this.SaveConfig();
+            },
+            pluginDirectoryFactory: () => PluginInterface.AssemblyLocation.Directory?.FullName,
+            isWineFactory: DetectWine,
+            gpuMarkerPathFactory: () => Path.Combine(configDir, "gpu-session.pending"));
+        // A marker left by a previous process means it died inside native GPU code: keep the GPU off
+        // until the user retries. Flag first, then clear the marker (see GpuCrashGuard.TripIfLeftover).
+        try
+        {
+            this.services.GpuCrashGuard.TripIfLeftover(detail =>
+            {
+                config.Device.GpuDisabledByCrashGuard = true;
+                this.SaveConfig();
+                PluginLog.Warning("[AIVoiceActing] GPU turned off after a crash: {Detail}", detail);
+            });
+        }
+        catch (Exception ex)
+        {
+            PluginLog.Warning($"[AIVoiceActing] GPU crash-guard startup check failed: {ex.Message}");
+        }
+
         this.npcSheets = new NpcSheetIndexLoader(DataManager, PluginLog);
         _ = this.npcSheets.StartAsync();
         this.hints = new ObjectTableHintProvider(ObjectTable, npcSheets: () => this.npcSheets.Index);
@@ -272,61 +323,130 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
 
         // UI (Step 7): the windows receive container-resolved ports only — the UI layer
         // never references Infrastructure types directly.
-        this.configWindow = new ConfigurationWindow(
-            config,
-            save: this.SaveConfig,
-            speech: this.services.SpeechHandler,
-            synthesizer: () => this.services.SpeechSynthesizer,
-            invalidateSynthesizer: () => this.services.InvalidateSpeechSynthesizer(),
-            queue: this.services.SpeechQueue,
-            profiles: this.services.ProfileStore,
-            modelAssets: () => [.. ModelCatalog.Assets.Select(a => (a.Asset, a.Group))],
-            provisioner: () => this.services.ModelProvisioner,
-            modelStore: () => this.services.ModelStore,
-            voiceMap: () => this.services.VoiceMap,
-            sessions: () => this.services.DialogueSessions,
-            modelsDir: () => this.services.ModelsDir,
-            voicesDir: () => Path.Combine(this.services.ModelsDir, "voices"),
-            localPlayer: () => ObjectTable.LocalPlayer is { } player
+        var status = new StatusCenter();
+        var openDirectory = (string path) =>
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo { FileName = path, UseShellExecute = true });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning($"Could not open \"{path}\": {ex.Message}");
+                return false;
+            }
+        };
+        Action<string> logInfo = message => this.services.LogSink.Info(message);
+        Action<string, Exception?> logError = (message, ex) => this.services.LogSink.Error(message, ex);
+        var nav = new NavModel(config.LastPage, page =>
+        {
+            config.LastPage = page;
+            this.SaveConfig();
+        });
+        this.configWindow = new ConfigurationWindow(new UiContext
+        {
+            Config = config,
+            Save = this.SaveConfig,
+            Speech = this.services.SpeechHandler,
+            Synthesizer = () => this.services.SpeechSynthesizer,
+            InvalidateSynthesizer = () => this.services.InvalidateSpeechSynthesizer(),
+            Queue = this.services.SpeechQueue,
+            LineTimings = this.services.LineTimingLog,
+            Profiles = this.services.ProfileStore,
+            ModelAssets = () => [.. ModelCatalog.Assets.Select(a => (a.Asset, a.Group))],
+            Provisioner = () => this.services.ModelProvisioner,
+            ModelStore = () => this.services.ModelStore,
+            VoiceMap = () => this.services.VoiceMap,
+            Sessions = () => this.services.DialogueSessions,
+            ModelsDir = () => this.services.ModelsDir,
+            VoicesDir = () => Path.Combine(this.services.ModelsDir, "voices"),
+            PacksDir = () =>
+            {
+                var packs = Path.Combine(configDir, "voicepacks");
+                Directory.CreateDirectory(packs);
+                return packs;
+            },
+            LocalPlayer = () => ObjectTable.LocalPlayer is { } player
                 ? (player.Name.TextValue, (ushort)player.HomeWorld.RowId)
                 : null,
-            openDirectory: path =>
-            {
-                try
+            OpenDirectory = openDirectory,
+            ReportError = message => this.services.LogSink.Warn(message),
+            LogInfo = logInfo,
+            LogError = logError,
+            PresetStore = () => this.services.CastingPresetStore,
+            InvalidateVoiceMap = () => this.services.InvalidateVoiceMap(),
+            UnboundModels = this.services.UnboundModels,
+            DeviceProbe = this.services.DeviceProbe,
+            DeviceInfo = () => SetupDeviceInfo.From(
+                this.services.DeviceReportOrStartProbe(), config.Device.GpuDisabledByCrashGuard),
+            ExpressiveSynthesizer = () => this.services.ExpressiveSynthesizer,
+            EngineCatalog = this.services.EngineCatalog,
+            VoiceLibrary = this.services.VoiceLibrary,
+            Generator = () => this.services.GeneratedVoices,
+            Status = status,
+            Modals = new ModalHost(),
+            Toasts = this.Toasts,
+            Nav = nav,
+            Downloads = new DownloadQueueModel(() => this.services.ModelProvisioner, status, logInfo, logError),
+            EngineSession = new EngineSessionModel(status, logInfo, logError),
+            Probes = new CachedProbes(
+                () => DateTimeOffset.UtcNow,
+                () => ModelCatalog.Assets.Select(a => a.Asset),
+                asset => this.services.ModelProvisioner.IsDownloaded(asset),
+                () =>
                 {
-                    System.Diagnostics.Process.Start(
-                        new System.Diagnostics.ProcessStartInfo { FileName = path, UseShellExecute = true });
-                    return true;
-                }
-                catch (Exception ex)
+                    using var process = System.Diagnostics.Process.GetCurrentProcess();
+                    return process.WorkingSet64;
+                },
+                () =>
                 {
-                    PluginLog.Warning($"Could not open \"{path}\": {ex.Message}");
-                    return false;
-                }
-            },
-            reportError: message => this.services.LogSink.Warn(message),
-            logInfo: message => this.services.LogSink.Info(message),
-            logError: (message, ex) => this.services.LogSink.Error(message, ex),
-            presetStore: () => this.services.CastingPresetStore,
-            invalidateVoiceMap: () => this.services.InvalidateVoiceMap(),
-            voiceCatalog: () => VoiceCatalog.FromDirectory(Path.Combine(
-                PluginInterface.AssemblyLocation.Directory?.FullName ?? configDir,
-                "voices")),
-            unboundModels: this.services.UnboundModels,
-            worlds: () => [.. DataManager.GetExcelSheet<Lumina.Excel.Sheets.World>()
+                    try
+                    {
+                        return Directory.EnumerateFiles(this.services.ModelsDir, "*", SearchOption.AllDirectories)
+                            .Sum(file => new FileInfo(file).Length);
+                    }
+                    catch (Exception)
+                    {
+                        // Directory missing or unreadable: report zero rather than drawing errors.
+                        return 0L;
+                    }
+                }),
+            Preview = new PreviewController(
+                () => this.services.SpeechSynthesizer,
+                this.services.SpeechQueue,
+                status,
+                logInfo: logInfo,
+                logError: logError),
+            Worlds = new WorldDirectory(() => [.. DataManager.GetExcelSheet<Lumina.Excel.Sheets.World>()
                 .Where(w => w.IsPublic)
                 .Select(w => (w.RowId, w.Name.ExtractText()))
-                .Where(w => w.Item2.Length > 0)]);
-        this.stylesWindow = new StylesWindow(config, this.SaveConfig);
+                .Where(w => w.Item2.Length > 0)]),
+        });
         this.windowSystem.AddWindow(this.configWindow);
-        this.windowSystem.AddWindow(this.stylesWindow);
-        this.nowSpeakingWindow = new NowSpeakingWindow(config, this.SaveConfig, this.services.SpeechQueue);
+        this.nowSpeakingWindow = new NowSpeakingWindow(
+            config,
+            this.SaveConfig,
+            this.services.SpeechQueue,
+            this.services.VoiceLibrary,
+            () =>
+            {
+                nav.OpenAt(NavTab.Voices);
+                this.configWindow.IsOpen = true;
+            });
         this.windowSystem.AddWindow(this.nowSpeakingWindow);
 
         // /aivaconfig + /aivastyles route through the container hooks (headless-safe);
         // the game's own OpenConfigUi (system menu) opens our configuration window.
         this.services.OpenConfigurationUi = this.configWindow.Toggle;
-        this.services.OpenStylesUi = this.stylesWindow.Toggle;
+        // Style tags are a What's read setting now: the styles command opens the settings window
+        // there instead of a window of its own.
+        this.services.OpenStylesUi = () =>
+        {
+            nav.OpenStyleTags();
+            this.configWindow.IsOpen = true;
+        };
         this.openConfigUiHook = () => this.configWindow.IsOpen = true;
         var uiBuilder = PluginInterface.UiBuilder;
         // OpenMainUi is the modern Dalamud main-window hook (its absence raises a
@@ -336,7 +456,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         uiBuilder.OpenConfigUi += this.openConfigUiHook;
         uiBuilder.Draw += this.windowSystem.Draw;
 
-        this.services.LogSink.Info("AIVoiceActing UI: configuration and styles windows registered.");
+        this.services.LogSink.Info("AIVoiceActing UI: configuration window registered.");
         this.RegisterCommands();
 
         // Voiced-cutscene courtesy: the detector cancels current speech and re-samples the
@@ -362,7 +482,46 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
 
         this.services.LogSink.Info(
             $"AIVoiceActing loaded: capture sources and pipeline armed (volume " +
-            $"{config.GlobalVolume * 100f:0}%, EP \"{config.SelectedEp}\").");
+            $"{config.GlobalVolume * 100f:0}%, device \"{config.Device.Mode}\").");
+    }
+
+    /// <summary>Wine exports <c>wine_get_version</c> from ntdll; real Windows does not.</summary>
+    private static bool DetectWine() => RuntimeHost.DetectWine();
+
+    /// <summary>
+    /// Upgrades a v1 config in place (writing the one-time .v1.bak first). Must never throw:
+    /// a constructor exception fails the whole plugin load, and the migrator is idempotent so
+    /// a failed save simply retries on the next load.
+    /// </summary>
+    private static void MigrateConfiguration(PluginConfiguration config)
+    {
+        try
+        {
+            var result = ConfigMigrator.MigrateAndPersist(
+                config,
+                new MigrationContext(IsWine: DetectWine()),
+                PluginInterface.ConfigFile.FullName,
+                new SystemConfigFileOps(),
+                () => PluginInterface.SavePluginConfig(config));
+            if (result.Changed)
+            {
+                PluginLog.Information(
+                    "[AIVoiceActing] Config migrated to v{Version}: {Count} change(s) to report.",
+                    Configuration.CurrentVersion,
+                    result.Changes.Count);
+            }
+            else if (config.Version > Configuration.CurrentVersion)
+            {
+                PluginLog.Warning(
+                    "[AIVoiceActing] Config is v{Version}, newer than this plugin (v{Current}); leaving it untouched.",
+                    config.Version,
+                    Configuration.CurrentVersion);
+            }
+        }
+        catch (Exception ex)
+        {
+            PluginLog.Error(ex, "[AIVoiceActing] Config migration failed; continuing with the migrated in-memory values.");
+        }
     }
 
     private void OnClientLogin()
@@ -384,6 +543,16 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
             catch (Exception ex)
             {
                 this.services.LogSink.Warn($"Speech engine pre-warm failed (will retry on first line): {ex.Message}");
+            }
+
+            // The Kokoro that renders voice clips for Turbo, after the main engine so the two never fight for the processor.
+            try
+            {
+                await this.services.WarmReferenceRendererAsync(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                this.services.LogSink.Warn($"Voice clip renderer pre-warm failed (will retry on first new voice): {ex.Message}");
             }
         });
     }
@@ -412,7 +581,7 @@ public sealed class AIVoiceActingPlugin : IDalamudPlugin, IDisposable
         Add("/enabletts", "Enable AIVoiceActing's text-to-speech.");
         Add("/aivapreset", "Switch the active channel settings preset by name. Run with no arguments to show the current preset and list available presets.");
         Add("/aivavolume", "Adjust the global TTS volume. Pass a percentage (0-200) to set, or +N/-N to adjust relatively. Run with no arguments to show the current volume.");
-        Add("/aivastyles", "Toggle AIVoiceActing's styles window.");
+        Add("/aivastyles", "Open the style tag settings (What's read, More options).");
     }
 
     private void OnSpeechInterrupted()

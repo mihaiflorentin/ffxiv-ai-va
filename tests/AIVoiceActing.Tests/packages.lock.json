@@ -2,15 +2,6 @@
   "version": 1,
   "dependencies": {
     "net10.0": {
-      "Horus.F5Tts.Onnx": {
-        "type": "Direct",
-        "requested": "[0.3.1, )",
-        "resolved": "0.3.1",
-        "contentHash": "AeqX5GuQH5AA/Y43tjL0I64dpbIJQJ9VJojs4oLiHXQtDzBKIq0U8sCxCIzmFFlA1nsYn7G1oisJC05+vLMN6Q==",
-        "dependencies": {
-          "Microsoft.ML.OnnxRuntime.Managed": "1.20.1"
-        }
-      },
       "KokoroSharp": {
         "type": "Direct",
         "requested": "[0.8.4, )",
@@ -34,6 +25,12 @@
           "Microsoft.ML.OnnxRuntime.Managed": "1.24.4"
         }
       },
+      "Microsoft.ML.OnnxRuntime.EP.WebGpu": {
+        "type": "Direct",
+        "requested": "[0.2.1, 0.2.1]",
+        "resolved": "0.2.1",
+        "contentHash": "NNlkhD8uBvsZBuabN4Oes/uQr5ULOhyYaivpTmKlU85s6vddLlB0dRcJ/nm5IOe4zb7vfvuTvl69unQd/k3WOw=="
+      },
       "Microsoft.NET.Test.Sdk": {
         "type": "Direct",
         "requested": "[18.10.0, )",
@@ -43,6 +40,12 @@
           "Microsoft.CodeCoverage": "18.10.0",
           "Microsoft.TestPlatform.TestHost": "18.10.0"
         }
+      },
+      "Newtonsoft.Json": {
+        "type": "Direct",
+        "requested": "[13.0.4, )",
+        "resolved": "13.0.4",
+        "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
       },
       "Standart.Hash.xxHash": {
         "type": "Direct",

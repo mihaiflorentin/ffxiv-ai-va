@@ -1,0 +1,95 @@
+{
+  "pack": {
+    "id": "aiva-isles",
+    "version": "1.0.0",
+    "name": "British Isles accents",
+    "license": {
+      "spdx": "CC-BY-SA-4.0",
+      "attribution": "Derived from the ylacombe/english_dialects dataset (Google crowdsourced high-quality UK and Ireland English dialect speech, CC-BY-SA-4.0). Style tensors and reference clips are adaptations of those recordings; they are shared under the same license.",
+      "url": "https://creativecommons.org/licenses/by-sa/4.0/"
+    },
+    "dataset": "ylacombe/english_dialects",
+    "packDir": "src/AIVoiceActing/voicepacks/aiva-isles"
+  },
+  "defaults": {
+    "steps": 400, "targetSeconds": 12, "phonemizer": "en-us", "age": "adult",
+    "seedVoices": {
+      "male": ["am_adam", "am_eric", "am_liam", "am_michael", "am_echo", "bm_daniel", "bm_fable", "bm_george", "bm_lewis"],
+      "female": ["af_bella", "af_heart", "af_nicole", "af_sarah", "af_sky", "af_jessica", "bf_alice", "bf_emma", "bf_isabella", "bf_lily"]
+    }
+  },
+  "voices": [
+    {
+      "id": "isles.ie_m_01", "targetSeconds": 24, "dataset": "irish_male", "speaker": 2484,
+      "name": "Irish man, warm", "accent": "en-IE", "sex": "male",
+      "tags": ["warm", "irish"],
+      "description": "Irish English male, relaxed and friendly."
+    },
+    {
+      "id": "isles.ie_m_02", "dataset": "irish_male", "speaker": 3397,
+      "name": "Irish man, measured", "accent": "en-IE", "sex": "male",
+      "tags": ["measured", "irish"],
+      "description": "Irish English male, a second, steadier voice."
+    },
+    {
+      "id": "isles.sc_m_01", "targetSeconds": 24, "dataset": "scottish_male", "speaker": 2484,
+      "name": "Scottish man", "accent": "en-GB-SCT", "sex": "male",
+      "tags": ["scottish"],
+      "description": "Scottish English male."
+    },
+    {
+      "id": "isles.sc_f_01", "targetSeconds": 24, "dataset": "scottish_female", "speaker": 2484,
+      "name": "Scottish woman", "accent": "en-GB-SCT", "sex": "female",
+      "tags": ["scottish"],
+      "description": "Scottish English female."
+    },
+    {
+      "id": "isles.wl_m_01", "dataset": "welsh_male", "speaker": 2484,
+      "name": "Welsh man", "accent": "en-GB-WLS", "sex": "male",
+      "tags": ["welsh"],
+      "description": "Welsh English male."
+    },
+    {
+      "id": "isles.wl_f_01", "dataset": "welsh_female", "speaker": 2484,
+      "name": "Welsh woman", "accent": "en-GB-WLS", "sex": "female",
+      "tags": ["welsh"],
+      "description": "Welsh English female."
+    },
+    {
+      "id": "isles.nth_m_01", "dataset": "northern_male", "speaker": 2484,
+      "name": "Northern English man", "accent": "en-GB-NTH", "sex": "male",
+      "tags": ["northern", "plain-spoken"],
+      "description": "Northern English male."
+    },
+    {
+      "id": "isles.nth_f_01", "dataset": "northern_female", "speaker": 2484,
+      "name": "Northern English woman", "accent": "en-GB-NTH", "sex": "female",
+      "tags": ["northern", "plain-spoken"],
+      "description": "Northern English female."
+    },
+    {
+      "id": "isles.mid_m_01", "targetSeconds": 24, "dataset": "midlands_male", "speaker": 2484,
+      "name": "Midlands man", "accent": "en-GB-MID", "sex": "male",
+      "tags": ["midlands"],
+      "description": "Midlands English male."
+    },
+    {
+      "id": "isles.mid_f_01", "dataset": "midlands_female", "speaker": 2484,
+      "name": "Midlands woman", "accent": "en-GB-MID", "sex": "female",
+      "tags": ["midlands"],
+      "description": "Midlands English female."
+    },
+    {
+      "id": "isles.sth_m_01", "dataset": "southern_male", "speaker": 2484,
+      "name": "Southern English man", "accent": "en-GB-STH", "sex": "male",
+      "tags": ["southern"],
+      "description": "Southern English male."
+    },
+    {
+      "id": "isles.sth_f_01", "dataset": "southern_female", "speaker": 2484,
+      "name": "Southern English woman", "accent": "en-GB-STH", "sex": "female",
+      "tags": ["southern"],
+      "description": "Southern English female."
+    }
+  ]
+}

@@ -14,15 +14,6 @@
         "resolved": "1.2.39",
         "contentHash": "fcFN01tDTIQqDuTwr1jUQK/geofiwjG5DycJQOnC72i1SsLAk1ELe+apBOuZ11UMQG8YKFZG1FgvjZPbqHyatg=="
       },
-      "Horus.F5Tts.Onnx": {
-        "type": "Direct",
-        "requested": "[0.3.1, )",
-        "resolved": "0.3.1",
-        "contentHash": "AeqX5GuQH5AA/Y43tjL0I64dpbIJQJ9VJojs4oLiHXQtDzBKIq0U8sCxCIzmFFlA1nsYn7G1oisJC05+vLMN6Q==",
-        "dependencies": {
-          "Microsoft.ML.OnnxRuntime.Managed": "1.20.1"
-        }
-      },
       "KokoroSharp": {
         "type": "Direct",
         "requested": "[0.8.4, )",
@@ -46,6 +37,12 @@
           "Microsoft.AI.DirectML": "1.15.4",
           "Microsoft.ML.OnnxRuntime.Managed": "1.24.4"
         }
+      },
+      "Microsoft.ML.OnnxRuntime.EP.WebGpu": {
+        "type": "Direct",
+        "requested": "[0.2.1, 0.2.1]",
+        "resolved": "0.2.1",
+        "contentHash": "NNlkhD8uBvsZBuabN4Oes/uQr5ULOhyYaivpTmKlU85s6vddLlB0dRcJ/nm5IOe4zb7vfvuTvl69unQd/k3WOw=="
       },
       "Microsoft.ML.OnnxRuntime.Managed": {
         "type": "Direct",

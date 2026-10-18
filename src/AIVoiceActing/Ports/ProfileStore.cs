@@ -57,6 +57,14 @@ public interface IProfileStore
         float? pitch = null,
         float? speed = null);
 
+    /// <summary>
+    /// Swaps only the voice (and the manual-override flag) of an existing entry, keeping its
+    /// bias, pitch, speed and volume. Used when an automatic pick becomes a generated voice, on
+    /// Regenerate, and by "Keep as is" (<paramref name="custom"/> true). Null when the speaker
+    /// has no entry.
+    /// </summary>
+    VoiceProfile? SetVoice(string speakerKey, string referenceVoiceId, bool custom);
+
     /// <summary>Empties every persisted entry (overrides and first-sight assignments)
     /// and persists immediately. The next lookup picks randomly again.</summary>
     void Clear();

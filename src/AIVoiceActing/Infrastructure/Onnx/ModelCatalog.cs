@@ -1,9 +1,12 @@
 namespace AIVoiceActing.Infrastructure.Onnx;
 
+using System.Text.Json;
 using AIVoiceActing.Ports;
 
 /// <summary>
-/// Pinned Chatterbox ONNX model assets (onnx-community/chatterbox-ONNX, MIT).
+/// Pinned model assets. The legacy Chatterbox (onnx-community/chatterbox-ONNX, MIT) and F5 groups are
+/// retired engines kept only so the Models page can still show and delete their files; the Turbo
+/// groups below are the live Chatterbox. The old constants stay because the catalog data and its tests use them.
 /// Sizes verified byte-exact against the HF API tree on 2026-09-12 and against
 /// .superpowers/sdd/.../ref-chatterbox-recipe.md; sha256 values are the HF API
 /// LFS oids (absent for non-LFS files → null). The optional "director" group
@@ -65,8 +68,8 @@ public static class ModelCatalog
     /// Chatterbox Turbo ONNX (ResembleAI official export): distilled Chatterbox with
     /// native paralinguistic tags ([laugh]/[chuckle]/[cough] inline in text). Same
     /// four-session architecture as the legacy export, but 24 layers (vs 30), arange
-    /// position_ids, no exaggeration input, and a GPT2 BPE tokenizer (3.5 MB). ALL
-    /// sessions are fp32 (~3.2 GB): the int8-quantized kernels native-crashed inside
+    /// position_ids, no exaggeration input, and a GPT2 BPE tokenizer (3.5 MB). The default
+    /// group holds the fp32 sessions (~3.2 GB): the int8-quantized kernels native-crashed inside
     /// onnxruntime.dll in-game (same Zen5/AVX-512 kernel class that forced the fp32 LM
     /// on legacy), while the fp32 set ran clean on the same hardware.
     /// </summary>
@@ -90,7 +93,8 @@ public static class ModelCatalog
         || fileName is TurboSpeechEncoderDataFileName
             or TurboEmbedTokensDataFileName
             or TurboLanguageModelDataFileName
-            or TurboConditionalDecoderDataFileName;
+            or TurboConditionalDecoderDataFileName
+        || Assets.Any(a => a.Asset.FileName == fileName && a.Group.StartsWith("turbo", StringComparison.Ordinal));
     public const string TurboTokenizerJsonFileName = "turbo-tokenizer.json";
 
     /// <summary>
@@ -109,162 +113,80 @@ public static class ModelCatalog
     /// <param name="Asset">Port-level asset (name, file, size, optionality).</param>
     /// <param name="Sha256">Pinned sha256 (HF LFS oid); null when the file is not LFS-tracked.</param>
     /// <param name="Group">Download-group key for the Models tab.</param>
-    public sealed record CatalogAsset(ModelAsset Asset, string? Sha256, string Group);
+    public sealed record CatalogAsset(ModelAsset Asset, string? Sha256, string Group, string Url);
 
-    /// <summary>All pinned assets across every group, in stable display order.</summary>
-    public static IReadOnlyList<CatalogAsset> Assets { get; } =
-    [
-        new(
-            new ModelAsset("Speech encoder", SpeechEncoderFileName, 1184608),
-            "8f1c8a0f89b77bf9cd5dd8f2e034eb2c79dc00fe70d41196b28c257643b00ccb",
-            ChatterboxRequiredGroup),
-        new(
-            new ModelAsset("Speech encoder weights", SpeechEncoderDataFileName, 591274880),
-            "04431dcef6325c54b02de2219845888b464bcd1f1ac2f8839c2fecd1ed2ef294",
-            ChatterboxRequiredGroup),
-        new(
-            new ModelAsset("Text embedding", EmbedTokensFileName, 13286),
-            "160722ec14789f616abdb1e31916cbbf9223c03fde0ab546d64ca74fb72e430b",
-            ChatterboxRequiredGroup),
-        new(
-            new ModelAsset("Text embedding weights", EmbedTokensDataFileName, 61640704),
-            "898c563c3a5ca1b9ea10ce89b0cdcf252b0bb5ab460dfc4eadea003b56e5d2ee",
-            ChatterboxRequiredGroup),
-        new(
-            new ModelAsset("Conditional decoder", ConditionalDecoderFileName, 6350448),
-            "1656d0d31332bae1854839959a3139300ebb67c178651dfa3f8c5fbfa5351351",
-            ChatterboxRequiredGroup),
-        new(
-            new ModelAsset("Conditional decoder weights", ConditionalDecoderDataFileName, 533970816),
-            "51d58345a272747665ec9d5bb61e01835258a940e321a288582ac4c18cf01b5a",
-            ChatterboxRequiredGroup),
-        new(
-            new ModelAsset("Language model (q4)", LanguageModelQ4FileName, 227911),
-            "7f8cdca83b2493536cbf3acf421199808a3d68736f55f4eabd20ef8a99da4313",
-            ChatterboxRequiredGroup),
-        new(
-            new ModelAsset("Language model weights (q4)", LanguageModelQ4DataFileName, 353621248),
-            "5203d1e83c159316f9923c5c83759f6a34f87be1322ce4ad0facd9fc4aef4790",
-            ChatterboxRequiredGroup),
-        new(
-            new ModelAsset("Tokenizer", TokenizerJsonFileName, 28543),
-            Sha256: null,
-            ChatterboxRequiredGroup),
-        new(
-            new ModelAsset("Default reference voice", DefaultVoiceFileName, 714320),
-            "3ebc531cdaba358a327099c1c4f0448026719957bcf4d8e9868767f227e02f4e",
-            ChatterboxRequiredGroup),
-        new(
-            new ModelAsset("Language model (fp32)", LanguageModelFp32FileName, 171387, Optional: true),
-            "861a34585605e8ad671051788afc495dcbeaee833a41523a1b33aded9c3babc7",
-            ChatterboxFp32LmGroup),
-        new(
-            new ModelAsset("Language model weights (fp32)", LanguageModelFp32DataFileName, 2080632832, Optional: true),
-            "efe9a1173c40d50bc651cb96ebff9f23d6f20d5b3a11b0685510e3a3facdbcf1",
-            ChatterboxFp32LmGroup),
-        new(
-            new ModelAsset("Kokoro model (fp32)", KokoroModelFileName, 325508342),
-            "0cfd5e79aab70a3d8c1a57dc639835110ddb32c9f5ff4fdd1f4db202ea43bb05",
-            KokoroGroup),
-        new(
-            new ModelAsset("F5 preprocess", F5PreprocessFileName, 68549853),
-            "e71d3ed14e90ba3fc1e83560512e86a771e25b6f0be7789b2cf53a5c9ba5617d",
-            F5Group),
-        new(
-            new ModelAsset("F5 transformer", F5TransformerFileName, 1321718282),
-            "c63aeb96953ccae551df6717d892f73a8408e59f1a6fe8edc2aed8063bd195b8",
-            F5Group),
-        new(
-            new ModelAsset("F5 decode", F5DecodeFileName, 62550703),
-            "a16fea891beb4889b47e5987b80c841bb996beaccc1d1fe27a1f9323a089a6da",
-            F5Group),
-        new(
-            new ModelAsset("F5 vocab", F5VocabFileName, 13800),
-            "2a05f992e00af9b0bd3800a8d23e78d520dbd705284ed2eedb5f4bd29398fa3c",
-            F5Group),
-        new(
-            new ModelAsset("Turbo speech encoder (fp32)", TurboSpeechEncoderFileName, 1172072),
-            "4d66128037517dd51d370edc9b89ce36d42c75dcbd96e7216c7fb45dfae36045",
-            TurboGroup),
-        new(
-            new ModelAsset("Turbo speech encoder weights (fp32)", TurboSpeechEncoderDataFileName, 1044712832),
-            "c9915ff6c529e7bb80983b525255e6744d6c39c7e35b12720925ba99ed0d0a2f",
-            TurboGroup),
-        new(
-            new ModelAsset("Turbo text embedding (fp32)", TurboEmbedTokensFileName, 2058),
-            "27796e8252f36b463b0421cafdcc35b5f1e670ab0d96c9182f37ac6571c2f4bc",
-            TurboGroup),
-        new(
-            new ModelAsset("Turbo text embedding weights (fp32)", TurboEmbedTokensDataFileName, 232812544),
-            "a1c37edc6ec6adb655351f02e958da297221b50211c2c01b69312cb6f008a293",
-            TurboGroup),
-        new(
-            new ModelAsset("Turbo language model (fp32)", TurboLanguageModelFileName, 207266),
-            "c12e31df78c74f9589b165c8d51e65171f5028b77b7fedb41900f55f7f410dc8",
-            TurboGroup),
-        new(
-            new ModelAsset("Turbo language model weights (fp32)", TurboLanguageModelDataFileName, 1269724812),
-            "67db106868f5354b2e425651f1791aef36ae3e6f00ac5e1d91e32c985cad6b39",
-            TurboGroup),
-        new(
-            new ModelAsset("Turbo conditional decoder (fp32)", TurboConditionalDecoderFileName, 1889468),
-            "8c43f3a1d0ddb1a86e226a244d7cda5396c67f5c6412789c23900c646e3ffc50",
-            TurboGroup),
-        new(
-            new ModelAsset("Turbo conditional decoder weights (fp32)", TurboConditionalDecoderDataFileName, 768593792),
-            "05f162a519f3e9abaf0b7337ae037f4af8b2b30c4455d39b2c61ed3a9b2b5476",
-            TurboGroup),
-        new(
-            new ModelAsset("Turbo tokenizer", TurboTokenizerJsonFileName, 3562272),
-            Sha256: null,
-            TurboGroup),
-        new(
-            new ModelAsset("Turbo default reference voice", TurboDefaultVoiceFileName, 714320),
-            "3ebc531cdaba358a327099c1c4f0448026719957bcf4d8e9868767f227e02f4e",
-            TurboGroup),
-        new(
-            new ModelAsset("Emotion classifier (fp32)", EmotionModelFileName, 498841248, Optional: true),
-            "3bf605adfa0e59ae36723f1136d37865acb0ec4ded7831f7f7f5231eb032d60a",
-            EmotionGroup),
-        new(
-            new ModelAsset("Emotion classifier tokenizer", EmotionTokenizerFileName, 2108884, Optional: true),
-            Sha256: null,
-            EmotionGroup),
-    ];
+    /// <summary>
+    /// Precision variants of the Turbo set (same ResembleAI repo). They carry only the four
+    /// graph+weights pairs; the tokenizer and default voice come from <see cref="TurboGroup"/>.
+    /// </summary>
+    public const string TurboFp16Group = "turbo-fp16";
+    public const string TurboQ4F16Group = "turbo-q4f16";
+
+    /// <summary>
+    /// What every Turbo install needs whatever its precision: the tokenizer and the default reference voice
+    /// (4 MB). Split from the graphs so a graphics card needs only the small q4f16 build next to it.
+    /// </summary>
+    public const string TurboBaseGroup = "turbo-base";
+
+    private const string CatalogResourceName = "models-catalog.json";
+
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+
+    /// <summary>All pinned assets across every group, in stable display order (loaded from the
+    /// embedded models-catalog.json).</summary>
+    public static IReadOnlyList<CatalogAsset> Assets { get; } = LoadCatalog();
+
+    /// <summary>Assets of one download group, in catalog order.</summary>
+    public static IReadOnlyList<ModelAsset> GroupAssets(string group) =>
+        [.. Assets.Where(a => a.Group == group).Select(a => a.Asset)];
+
+    private static IReadOnlyList<CatalogAsset> LoadCatalog()
+    {
+        using var stream = typeof(ModelCatalog).Assembly.GetManifestResourceStream(CatalogResourceName)
+            ?? throw new InvalidOperationException($"Embedded resource \"{CatalogResourceName}\" is missing.");
+        var file = JsonSerializer.Deserialize<CatalogFile>(stream, JsonOptions)
+            ?? throw new InvalidOperationException("models-catalog.json is empty.");
+        return
+        [
+            .. file.Assets.Select(e => new CatalogAsset(
+                new ModelAsset(e.Name, e.Local, e.SizeBytes, e.Optional, e.Precision),
+                e.Sha256,
+                e.Group,
+                (e.BaseUrl ?? $"https://huggingface.co/{e.Repo}/resolve/main/") + e.Remote)),
+        ];
+    }
+
+    private sealed record CatalogFile(List<CatalogEntry> Assets);
+
+    private sealed record CatalogEntry(
+        string Group,
+        string Name,
+        string Precision,
+        string? Repo,
+        string? BaseUrl,
+        string Remote,
+        string Local,
+        long SizeBytes,
+        string? Sha256,
+        bool Optional = false);
 
     /// <summary>Required Chatterbox assets (the whole engine; optionals would be excluded).</summary>
     public static IReadOnlyList<ModelAsset> ChatterboxRequiredAssets { get; } =
         Assets.Where(a => a.Group == ChatterboxRequiredGroup).Select(a => a.Asset).ToArray();
 
-    /// <summary>Required Chatterbox Turbo assets (graph + weights + tokenizer).</summary>
-    public static IReadOnlyList<ModelAsset> TurboRequiredAssets { get; } =
-        Assets.Where(a => a.Group == TurboGroup).Select(a => a.Asset).ToArray();
+    /// <summary>The tokenizer and default voice every Turbo install needs (see <see cref="TurboBaseGroup"/>).</summary>
+    public static IReadOnlyList<ModelAsset> TurboBaseAssets { get; } =
+        Assets.Where(a => a.Group == TurboBaseGroup).Select(a => a.Asset).ToArray();
 
-    /// <summary>Resolve URLs are RepoBaseUrl + ModelAsset.FileName; Kokoro's remote file
-    /// is a GitHub release asset and F5's remote names differ from the flat local names
-    /// (catalog constants map them).</summary>
-    public static string UrlFor(ModelAsset asset) => asset.FileName switch
-    {
-        F5PreprocessFileName => F5RepoBaseUrl + "F5_Preprocess.onnx",
-        F5TransformerFileName => F5RepoBaseUrl + "F5_Transformer.onnx",
-        F5DecodeFileName => F5RepoBaseUrl + "F5_Decode.onnx",
-        F5VocabFileName => F5RepoBaseUrl + "vocab.txt",
-        TurboSpeechEncoderFileName => TurboRepoBaseUrl + "onnx/speech_encoder.onnx",
-        TurboSpeechEncoderDataFileName => TurboRepoBaseUrl + "onnx/" + TurboSpeechEncoderDataFileName,
-        TurboEmbedTokensFileName => TurboRepoBaseUrl + "onnx/embed_tokens.onnx",
-        TurboEmbedTokensDataFileName => TurboRepoBaseUrl + "onnx/" + TurboEmbedTokensDataFileName,
-        TurboLanguageModelFileName => TurboRepoBaseUrl + "onnx/language_model.onnx",
-        TurboLanguageModelDataFileName => TurboRepoBaseUrl + "onnx/" + TurboLanguageModelDataFileName,
-        TurboConditionalDecoderFileName => TurboRepoBaseUrl + "onnx/conditional_decoder.onnx",
-        TurboConditionalDecoderDataFileName => TurboRepoBaseUrl + "onnx/" + TurboConditionalDecoderDataFileName,
-        TurboTokenizerJsonFileName => TurboRepoBaseUrl + "tokenizer.json",
-        TurboDefaultVoiceFileName => RepoBaseUrl + "default_voice.wav", // same clip as legacy chatterbox ships
-        KokoroModelFileName => KokoroRepoBaseUrl + KokoroRemoteFileName,
-        EmotionModelFileName => EmotionRepoBaseUrl + "onnx/model.onnx",
-        EmotionTokenizerFileName => EmotionRepoBaseUrl + "onnx/tokenizer.json",
-        _ => RepoBaseUrl + asset.FileName,
-    };
+    /// <summary>The full-size Turbo install (the CPU choice): the base files plus the fp32 graphs and weights.</summary>
+    public static IReadOnlyList<ModelAsset> TurboRequiredAssets { get; } =
+        Assets.Where(a => a.Group is TurboBaseGroup or TurboGroup).Select(a => a.Asset).ToArray();
+
+    /// <summary>Resolve URL for a catalog asset; unknown files fall back to the legacy Chatterbox repo.</summary>
+    public static string UrlFor(ModelAsset asset) =>
+        Assets.FirstOrDefault(a => a.Asset.FileName == asset.FileName)?.Url ?? RepoBaseUrl + asset.FileName;
 
     public static string? Sha256For(string fileName) =>
         Assets.FirstOrDefault(a => a.Asset.FileName == fileName)?.Sha256;
 }
+

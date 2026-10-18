@@ -23,6 +23,9 @@ public sealed class FakeAudioSink : IAudioSink
 
     public bool IsSupported { get; set; } = true;
 
+    /// <summary>What the next play reports as measured; tests set it.</summary>
+    public PlaybackReport? LastPlayback { get; set; }
+
     public void Play(SynthesisResult audio, float volume)
     {
         lock (this.gate)
@@ -35,6 +38,65 @@ public sealed class FakeAudioSink : IAudioSink
         if (this.OnPlay is { } behavior)
         {
             behavior(audio, volume, signal.Task).Wait();
+        }
+    }
+
+    /// <summary>Audio read from streamed lines, one entry per PlayStream call.</summary>
+    public List<float[]> Streamed { get; } = [];
+
+    public List<int> StreamedSampleRates { get; } = [];
+
+    /// <summary>Set to make PlayStream treat the sink as unable to stream (falls back to the whole-line default).</summary>
+    public bool StreamingDisabled { get; set; }
+
+    public void PlayStream(IPcmSource source, float volume)
+    {
+        if (this.StreamingDisabled)
+        {
+            // Same as the interface default: wait for the whole line, then Play it.
+            var all = new List<float>();
+            var chunk = new float[1024];
+            while (!source.IsFinished)
+            {
+                var n = source.Read(chunk);
+                if (n > 0)
+                {
+                    all.AddRange(chunk.AsSpan(0, n).ToArray());
+                }
+                else
+                {
+                    source.WaitForData(20);
+                }
+            }
+
+            if (all.Count > 0)
+            {
+                this.Play(new SynthesisResult([.. all], source.SampleRate), volume);
+            }
+
+            return;
+        }
+
+        var heard = new List<float>();
+        var buffer = new float[1024];
+        while (!source.IsFinished)
+        {
+            var n = source.Read(buffer);
+            if (n > 0)
+            {
+                heard.AddRange(buffer.AsSpan(0, n).ToArray());
+            }
+            else
+            {
+                source.WaitForData(20);
+            }
+        }
+
+        lock (this.gate)
+        {
+            // The rate first: tests wait on Streamed.Count without the lock and then read the rate.
+            this.StreamedSampleRates.Add(source.SampleRate);
+            this.Streamed.Add([.. heard]);
         }
     }
 

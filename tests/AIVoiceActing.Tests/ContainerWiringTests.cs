@@ -74,4 +74,33 @@ public sealed class ContainerWiringTests
         last = false; // option delegates are read per call
         Assert.Equal("Merlwyb", container.Announcer.PartialName("Merlwyb Bloefhiswyn"));
     }
+    [Theory]
+    [InlineData("kokoro", "KokoroSynthesizer")]
+    [InlineData(null, "KokoroSynthesizer")]
+    [InlineData("remote", "RemoteSynthesizer")]
+    [InlineData("nonsense", "KokoroSynthesizer")]
+    [InlineData("chatterbox-turbo", "ChatterboxSynthesizer")]
+    [InlineData("turbo", "ChatterboxSynthesizer")] // alias still resolves
+    [InlineData("f5", "KokoroSynthesizer")] // retired engines fall back to Kokoro
+    [InlineData("chatterbox", "KokoroSynthesizer")]
+    public void EngineFactory_ResolvesThroughTheCatalog(string? engine, string expectedType)
+    {
+        using var container = new ServiceContainer(
+            logSinkOverride: new FakeLogSink(),
+            modelsDirFactory: () => Path.Combine(Path.GetTempPath(), Path.GetRandomFileName()),
+            selectedEngineFactory: () => engine!);
+
+        Assert.Equal(expectedType, container.SpeechSynthesizer.GetType().Name);
+    }
+
+    [Fact]
+    public void EngineCatalog_IsInjectable()
+    {
+        var catalog = new Infrastructure.Engines.EngineCatalog();
+        using var container = new ServiceContainer(
+            logSinkOverride: new FakeLogSink(),
+            engineCatalogFactory: () => catalog);
+
+        Assert.Same(catalog, container.EngineCatalog);
+    }
 }

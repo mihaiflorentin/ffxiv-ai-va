@@ -63,16 +63,22 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
 
     public int Depth => Volatile.Read(ref this.depth);
 
+    /// <summary>Items with a live stream play while they fill; the sink falls back to whole-line playback if it cannot stream.</summary>
+    public bool SupportsStreaming => true;
+
 
     /// <summary>Stops the item currently being spoken; queued items are kept, except the
     /// remaining chunks of the same streamed line.</summary>
     public void CancelCurrent()
     {
-        if (this.nowPlaying is { LineId: not 0 } current)
+        var current = this.nowPlaying;
+        if (current is { LineId: not 0 })
         {
             Volatile.Write(ref this.skipLineId, current.LineId);
         }
 
+        // Tell a synthesizer still feeding this line to stop; nobody will hear the rest.
+        current?.Stream?.Cancel();
         this.sink.Cancel();
     }
 
@@ -90,13 +96,19 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
     /// </summary>
     public void Clear()
     {
-        while (this.channel.Reader.TryRead(out _))
+        while (this.channel.Reader.TryRead(out var dropped))
         {
             Interlocked.Decrement(ref this.depth);
+            dropped.Stream?.Cancel();
         }
 
+        this.nowPlaying?.Stream?.Cancel();
         this.sink.Cancel();
     }
+
+    private const long MinCountedGapMs = 50;
+    private long lastLineId;
+    private long lastEndTicks;
 
     private async Task PlayLoopAsync()
     {
@@ -121,6 +133,7 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
     {
         if (item.LineId != 0 && item.LineId == Volatile.Read(ref this.skipLineId))
         {
+            item.Stream?.Cancel();
             return; // the rest of a line the player skipped
         }
 
@@ -132,6 +145,7 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
             {
                 this.log?.Info(
                     $"Dropping stale line for \"{item.Speaker.Key}\" ({ageMs / 1000.0:0}s old; limit {staleAfterMs / 1000.0:0}s).");
+                item.Stream?.Cancel();
                 return;
             }
         }
@@ -139,14 +153,39 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
         if (!this.sink.IsSupported)
         {
             // mac / no output device: dequeue without audio so the pipeline keeps flowing.
+            item.Stream?.Cancel();
             return;
         }
 
+        // The wait between two chunks of one line is silence the listener hears, but each chunk has its own
+        // device and meter that never see it: measure it here (arrival of the next chunk after the last ended).
+        var gapMs = item.LineId != 0 && item.LineId == this.lastLineId && this.lastEndTicks > 0
+            ? Environment.TickCount64 - this.lastEndTicks
+            : 0;
         try
         {
             // Gain, levelling, limiting and fades happen here so the device sees unity gain
             // and a volume above 100% compresses instead of clipping.
             var gain = Math.Clamp(this.volume() * item.Request.Volume, 0f, 2f);
+            if (item.Stream is { } stream)
+            {
+                this.nowPlaying = item;
+                try
+                {
+                    // Polishing happens on the way out of the stream; the device sees unity gain, as above.
+                    this.sink.PlayStream(
+                        new PolishedPcmSource(stream, gain, this.levelLoudnessFactory?.Invoke() ?? false), 1f);
+                }
+                finally
+                {
+                    this.nowPlaying = null;
+                    stream.Cancel(); // the line is over; a producer still running has nothing left to feed
+                    this.ReportPlayback(item, gapMs);
+                }
+
+                return;
+            }
+
             var shaped = AudioPolish.Finish(
                 item.Audio.Samples, item.Audio.SampleRate, gain, this.levelLoudnessFactory?.Invoke() ?? false);
             this.nowPlaying = item;
@@ -157,12 +196,38 @@ public sealed class PlaybackSpeechQueue : ISpeechQueue, IDisposable
             finally
             {
                 this.nowPlaying = null;
+                this.ReportPlayback(item, gapMs);
             }
         }
         catch (Exception ex)
         {
             this.log?.Error($"Playback failed for \"{item.Speaker.Key}\".", ex);
         }
+    }
+
+    /// <summary>Hands what the sink measured for the item that just played to its line's timer.</summary>
+    private void ReportPlayback(SpeechItem item, long gapMs)
+    {
+        this.lastLineId = item.LineId;
+        this.lastEndTicks = Environment.TickCount64;
+        if (item.Timer is not { } timer)
+        {
+            return;
+        }
+
+        var report = this.sink.LastPlayback;
+        if (report is not null)
+        {
+            timer.AddPlayback(report);
+        }
+
+        if (gapMs >= MinCountedGapMs)
+        {
+            // Waiting for the next chunk, then opening a new device for it: both are silence in the middle of the line.
+            timer.AddPlayback(new PlaybackReport(-1, 1, gapMs + Math.Max(0, report?.DeviceOpenMs ?? 0), 0));
+        }
+
+        timer.Commit();
     }
 
     public void Dispose()

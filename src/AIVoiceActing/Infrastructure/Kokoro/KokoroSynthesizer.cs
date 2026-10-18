@@ -19,13 +19,18 @@ using Microsoft.ML.OnnxRuntime;
 public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
 {
     private const int KokoroSampleRate = 24000;
-    private const string DefaultVoiceName = "af_heart";
+    private const string DefaultVoiceName = VoiceCatalog.FallbackFemale;
 
     private readonly Func<string> modelsDirFactory;
     private readonly Func<int> intraOpThreadsFactory;
     private readonly Func<string?>? voicesDirFactory;
     private readonly Func<bool>? keepTempoWhenPitched;
     private readonly ILogSink? log;
+    private readonly IVoiceLibrary? voiceLibrary;
+
+    /// <summary>Pack style tensors already read from disk, keyed by voice id; stale entries
+    /// (file replaced) are detected by length and write time.</summary>
+    private readonly Dictionary<string, (string Path, long Length, DateTime Stamp, KokoroVoice Voice)> customVoices = [];
 
     /// <summary>Guards the small state fields only; never held across a model load, so
     /// readiness checks (read every UI frame) never wait on one.</summary>
@@ -53,8 +58,10 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
         Func<int> intraOpThreadsFactory,
         ILogSink? log = null,
         Func<string?>? voicesDirFactory = null,
-        Func<bool>? keepTempoWhenPitched = null)
+        Func<bool>? keepTempoWhenPitched = null,
+        IVoiceLibrary? voiceLibrary = null)
     {
+        this.voiceLibrary = voiceLibrary;
         this.keepTempoWhenPitched = keepTempoWhenPitched;
         this.modelsDirFactory = modelsDirFactory ?? throw new ArgumentNullException(nameof(modelsDirFactory));
         this.intraOpThreadsFactory = intraOpThreadsFactory ?? throw new ArgumentNullException(nameof(intraOpThreadsFactory));
@@ -105,6 +112,52 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
     public bool IsReady => this.FindNotReadyReason() is null;
 
     public string NotReadyReason => this.FindNotReadyReason() ?? string.Empty;
+
+    /// <summary>
+    /// Kokoro has no GPU path (its LSTM nodes abort the WebGPU runtime), so it asks for and runs on
+    /// the CPU always: ready, loading, failed, or not installed. Polled per frame; no disk work
+    /// beyond the cached asset check.
+    /// </summary>
+    public EngineStatus Status
+    {
+        get
+        {
+            bool loaded;
+            bool loading;
+            string? error;
+            lock (this.gate)
+            {
+                loaded = this.engine is not null;
+                loading = this.initializing;
+                error = this.initError;
+            }
+
+            if (loaded)
+            {
+                return Cpu(EngineState.Ready, DeviceModePolicy.Plan(KokoroInput).Reason);
+            }
+
+            if (loading)
+            {
+                return Cpu(EngineState.Loading, "Loading Kokoro model…");
+            }
+
+            if (error is not null)
+            {
+                return Cpu(EngineState.Failed, error);
+            }
+
+            return this.FindNotReadyReason() is { } missing
+                ? Cpu(EngineState.NotInstalled, missing)
+                : Cpu(EngineState.Ready, DeviceModePolicy.Plan(KokoroInput).Reason);
+        }
+    }
+
+    private static readonly DevicePolicyInput KokoroInput =
+        new(DeviceMode.Cpu, "kokoro", DeviceReport.Unknown, CrashGuardTripped: false, AllowlistMatch: false);
+
+    private static EngineStatus Cpu(EngineState state, string reason) =>
+        new(state, DeviceMode.Cpu, ActiveDevice.Cpu, reason, false);
 
     /// <summary>
     /// Readiness means "all assets present; a line would synthesize" — NOT "the ONNX
@@ -376,7 +429,7 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
             IntraOpNumThreads = Math.Max(1, this.intraOpThreadsFactory()),
             InterOpNumThreads = 1,
             EnableMemoryPattern = true,
-        };
+        }.Quiet();
 
         this.log?.Info($"Initializing Kokoro engine ({modelPath}, intra-op threads: {options.IntraOpNumThreads}).");
         var engine = KokoroWavSynthesizer.LoadModel(modelPath, options);
@@ -406,17 +459,76 @@ public sealed class KokoroSynthesizer : ISpeechSynthesizer, IDisposable
         return engine;
     }
 
-    private KokoroVoice ResolveVoice(string referenceVoiceId)
+    /// <summary>
+    /// Picks the Kokoro voice for an id. Pack voices carry a style tensor on disk, which is
+    /// registered under an internal name whose first letter selects the phonemizer the
+    /// manifest declared (KokoroSharp derives the G2P language from that letter); stock
+    /// voices are looked up by name in the loaded bank. Anything missing, unavailable or
+    /// unreadable falls back to <see cref="DefaultVoiceName"/> with a log line.
+    /// </summary>
+    internal KokoroVoice ResolveVoice(string referenceVoiceId)
     {
         var name = string.IsNullOrWhiteSpace(referenceVoiceId) ? DefaultVoiceName : referenceVoiceId;
         try
         {
+            if (this.voiceLibrary?.Find(name) is { } entry)
+            {
+                if (!entry.Available)
+                {
+                    throw new InvalidOperationException(entry.UnavailableReason ?? "voice is unavailable");
+                }
+
+                if (this.LoadCustomVoice(entry) is { } custom)
+                {
+                    return custom;
+                }
+            }
+
             return KokoroVoiceManager.GetVoice(name);
         }
         catch (Exception ex)
         {
-            this.log?.Warn($"Kokoro voice \"{name}\" unavailable ({ex.Message}); falling back to {DefaultVoiceName}.");
-            return KokoroVoiceManager.GetVoice(DefaultVoiceName);
+            var fallback = VoiceCatalog.FallbackFor(name, this.voiceLibrary?.Find(name)?.Sex);
+            this.log?.Warn($"Kokoro voice \"{name}\" unavailable ({ex.Message}); falling back to {fallback}.");
+            return KokoroVoiceManager.GetVoice(fallback);
+        }
+    }
+
+    /// <summary>The voice's on-disk style tensor as a Kokoro voice under its internal name, or
+    /// null for a stock voice (no file of its own).</summary>
+    private KokoroVoice? LoadCustomVoice(VoiceInfo entry)
+    {
+        var realization = entry.Realizations.FirstOrDefault(r =>
+            r.Kind == RealizationKind.StyleTensor
+            && r.Available
+            && r.Path.Length > 0
+            && string.Equals(r.Engine, "kokoro", StringComparison.OrdinalIgnoreCase));
+        if (realization is null)
+        {
+            return null;
+        }
+
+        var file = new FileInfo(realization.Path);
+        lock (this.customVoices)
+        {
+            if (this.customVoices.TryGetValue(entry.Id, out var cached)
+                && cached.Path == realization.Path
+                && cached.Length == file.Length
+                && cached.Stamp == file.LastWriteTimeUtc)
+            {
+                return cached.Voice;
+            }
+
+            var phonemizer = Phonemizers.Normalize(realization.Phonemizer) ?? Phonemizers.EnglishUs;
+            var features = KokoroVoice.FromPath(realization.Path).Features;
+            var voice = new KokoroVoice
+            {
+                Name = Phonemizers.InternalName(entry.Id, phonemizer, entry.Sex),
+                Features = features,
+            };
+            this.customVoices[entry.Id] = (realization.Path, file.Length, file.LastWriteTimeUtc, voice);
+            this.log?.Info($"Kokoro pack voice \"{entry.Id}\" loaded as \"{voice.Name}\" (phonemizer {phonemizer}).");
+            return voice;
         }
     }
 

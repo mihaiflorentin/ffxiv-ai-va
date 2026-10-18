@@ -94,15 +94,17 @@ public sealed class JsonCastingPresetStore : ICastingPresetStore
                 ModelIds: map.BeastTribeBindings.TryGetValue(tribe.Key, out var boundIds)
                     ? boundIds
                     : [],
-                Voices: map.Disabled?.Sets.TryGetValue(tribe.ManifestSetKey, out var parked) == true
-                    ? parked.ToDtoArray()
-                    : [],
-                MaleVoices: [],
-                FemaleVoices: []))
+                Voices: ParkedList(map, tribe.ManifestSetKey),
+                MaleVoices: ParkedList(map, tribe.ManifestSetKey + "Male"),
+                FemaleVoices: ParkedList(map, tribe.ManifestSetKey + "Female")))
             .ToArray();
 
         return new CastingPreset(CastingPreset.DefaultPresetName, buckets, tribes);
     }
+
+    /// <summary>A tribe list from the parked sets of the manifest (setX, setXMale, setXFemale); empty when absent.</summary>
+    private static VoiceSlotDto[] ParkedList(RaceVoiceMap map, string setKey) =>
+        map.Disabled?.Sets.TryGetValue(setKey, out var slots) == true ? slots.ToDtoArray() : [];
 
     public CastingPreset Get(string name)
     {

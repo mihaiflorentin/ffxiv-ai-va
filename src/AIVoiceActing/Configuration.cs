@@ -21,11 +21,51 @@ public class Configuration
 {
     public const string DefaultPresetName = "Default";
 
-    /// <summary>Execution-provider setting consumed by the EP selector: auto/cpu/directml/coreml.</summary>
-    public const string DefaultExecutionProvider = "auto";
+    /// <summary>Current schema version; <see cref="ConfigMigrator"/> upgrades older files to it.</summary>
+    public const int CurrentVersion = 2;
 
-    /// <summary>Schema version (IPluginConfiguration contract); bump on breaking migrations.</summary>
-    public int Version { get; set; } = 1;
+    /// <summary>Schema version (IPluginConfiguration contract). Fresh installs start current;
+    /// loaded files carry their own until migrated.</summary>
+    public int Version { get; set; } = CurrentVersion;
+
+    // ---- v2 sections (see ConfigurationSections.cs) ----
+    public EngineSettings Engine { get; set; } = new();
+
+    public DeviceSettings Device { get; set; } = new();
+
+    public VoiceSettings Voices { get; set; } = new();
+
+    public MigrationState Migration { get; set; } = new();
+
+    // ---- UI-owned fields (declared here so the schema has one owner) ----
+    public bool ShowAdvanced { get; set; }
+
+    public bool ReduceMotion { get; set; }
+
+    public string LastPage { get; set; } = "";
+
+    public int OnboardingCompletedVersion { get; set; }
+
+    public int OnboardingStep { get; set; }
+
+    public int MigrationNoticeAckedVersion { get; set; }
+
+    // ---- v1 fields, kept one generation so old files still deserialize ----
+    // Read only by ConfigMigrator and written as null. Remove in schema v3; nothing else may touch them.
+    [Obsolete("v1: use Engine.Primary")]
+    public string? SelectedEngine { get; set; }
+
+    [Obsolete("v1: use Device.Mode")]
+    public string? SelectedEp { get; set; }
+
+    [Obsolete("v1: use Device.CpuImpact")]
+    public string? CpuImpact { get; set; }
+
+    [Obsolete("v1: use Engine.Expressive.Enabled")]
+    public bool? ExpressiveEngine { get; set; }
+
+    [Obsolete("v1: dropped with the legacy Chatterbox engine")]
+    public bool? UseFp32LanguageModel { get; set; }
 
     // ---- General / speech ----
     public bool Enabled { get; set; } = true;
@@ -89,8 +129,6 @@ public class Configuration
     public int CurrentPresetId { get; set; }
 
     // ---- Local-AI additions ----
-    public string SelectedEp { get; set; } = DefaultExecutionProvider;
-
     /// <summary>Baseline delivery intensity (0..1) used when the emotion plan is neutral.</summary>
     public float DefaultExaggeration { get; set; } = 0.5f;
 
@@ -98,19 +136,7 @@ public class Configuration
     /// downloaded; the rules table runs otherwise (and whenever the classifier fails).</summary>
     public bool DirectorEnabled { get; set; }
 
-    /// <summary>
-    /// Runs the full-precision language model instead of the q4 export: avoids the int4
-    /// MatMulNBits kernels that hard-crash on some CPUs (Zen 5 + AVX-512) and the q4
-    /// short-prompt degeneration that renders as static. Needs the optional fp32 model
-    /// rows downloaded on the Models tab (~2 GB).
-    /// </summary>
-    public bool UseFp32LanguageModel { get; set; }
-
-    // ---- Engine selection & performance ----
-    /// <summary>"kokoro" (fast, default), "f5" (voice-acting quality — opt-in, ~10×
-    /// slower than real time on CPU), or "chatterbox" (legacy cloning).</summary>
-    public string SelectedEngine { get; set; } = "kokoro";
-
+    // ---- Delivery & performance (engine/device choice lives in Engine/Device) ----
     /// <summary>Pitch-shifted voices keep their speaking pace (the shift used to slow deep
     /// voices and speed up high ones). Off restores the old coupled behaviour.</summary>
     public bool KeepTempoWhenPitched { get; set; } = true;
@@ -121,21 +147,21 @@ public class Configuration
     /// <summary>Children get a higher, quicker take on their voice; elders a lower, slower one.</summary>
     public bool AgeAwareCasting { get; set; } = true;
 
-    /// <summary>Long lines start playing after their first sentence instead of after the whole line.</summary>
+    /// <summary>Long lines start playing after their first sentence instead of after the whole line; engines that can
+    /// (Turbo with the language model on the GPU) also hand over audio piece by piece within a sentence.</summary>
     public bool StreamSentences { get; set; } = true;
 
     /// <summary>Shows the small now-speaking panel (speaker, voice, mood, Replay/Skip/Stop).</summary>
     public bool ShowNowSpeaking { get; set; }
 
-    /// <summary>Strongly emotional lines use the expressive engine (Turbo) when it is
-    /// downloaded and Kokoro is the main engine. Off by default: ~3.2 GB, slower on CPU.</summary>
-    public bool ExpressiveEngine { get; set; }
-
     /// <summary>Lines older than this are dropped at playback instead of played late. 0 keeps everything.</summary>
     public int StaleLineSeconds { get; set; } = 20;
 
-    /// <summary>ONNX intra-op thread budget: "low" = 2, "medium" = 4, "high" = 8. Lower protects framerate.</summary>
-    public string CpuImpact { get; set; } = "medium";
+    /// <summary>
+    /// The longest a streamed line waits, after its first sound is ready, for a cushion that carries it to the
+    /// end without stopping mid-sentence. A fast machine starts sooner than this. 0 starts at once, as before.
+    /// </summary>
+    public float MaxPrerollSeconds { get; set; } = 6f;
 
     // ---- Triggers / exclusions (an exclusion wins) ----
     public IList<TriggerSpec> Triggers { get; set; } = new List<TriggerSpec>();

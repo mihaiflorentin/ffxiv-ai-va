@@ -1,0 +1,25 @@
+// S1: what does DirectML do under Wine? Same ORT 1.24.4 DirectML package the plugin ships.
+using System.Diagnostics;
+using Microsoft.ML.OnnxRuntime;
+
+var model = args.Length > 0 ? args[0] : "ops/chain.onnx";
+var id = args.Length > 1 ? int.Parse(args[1]) : 0;
+Console.WriteLine($"providers: {string.Join(",", OrtEnv.Instance().GetAvailableProviders())}");
+try
+{
+    var sw = Stopwatch.StartNew();
+    using var so = new SessionOptions();
+    so.AppendExecutionProvider_DML(id);
+    Console.WriteLine($"AppendExecutionProvider_DML({id}) ok {sw.ElapsedMilliseconds} ms");
+    using var s = new InferenceSession(model, so);
+    Console.WriteLine($"session created {sw.ElapsedMilliseconds} ms");
+    var a = new float[8]; var b = new float[8];
+    using var ia = OrtValue.CreateTensorValueFromMemory(a, new long[] { 2, 4 });
+    using var ib = OrtValue.CreateTensorValueFromMemory(b, new long[] { 2, 4 });
+    using var r = s.Run(new RunOptions(), new Dictionary<string, OrtValue> { ["a"] = ia, ["b"] = ib }, s.OutputNames);
+    Console.WriteLine("DML RUN OK");
+}
+catch (Exception e)
+{
+    Console.WriteLine("DML FAILED: " + e.GetType().Name + ": " + e.Message);
+}

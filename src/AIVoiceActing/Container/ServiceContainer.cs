@@ -49,15 +49,44 @@ public sealed class ServiceContainer : IDisposable
     private readonly Func<bool>? nameWithSayEnabledFactory;
     private readonly Func<float>? defaultExaggerationFactory;
     private readonly Func<string>? selectedEpFactory;
-    private readonly Func<bool>? useFp32LanguageModelFactory;
     private readonly Func<string>? selectedEngineFactory;
     private readonly Func<bool>? streamSentencesFactory;
     private readonly Func<bool>? expressiveEngineFactory;
+    private readonly Func<string>? expressiveEngineIdFactory;
+    private readonly Func<string, string>? enginePrecisionFactory;
+    private readonly Func<string, string>? engineDeviceFactory;
+    private readonly Func<IEngineCatalog>? engineCatalogFactory;
+    private readonly Func<IReadOnlyDictionary<string, string>>? remoteExtraFactory;
+    private readonly Func<IReadOnlyList<string>>? voicePackRootsFactory;
+    private readonly Func<IReadOnlyCollection<string>>? disabledVoicePacksFactory;
+    private readonly Func<IVoiceLibrary>? voiceLibraryFactory;
+    private readonly Func<bool>? uniqueVoicePerCharacterFactory;
+    private readonly Func<string>? generatedVoicesDirFactory;
+    private IGeneratedVoiceStore? generatedVoiceStore;
+    private IVoiceGenerator? voiceGenerator;
+    private bool generatedVoicesPruned;
+    private readonly Func<DevicePreferences>? devicePreferencesFactory;
+    private readonly Action? clearGpuCrashFlag;
+    private readonly Func<string?>? pluginDirectoryFactory;
+    private readonly Func<bool>? isWineFactory;
+    private readonly Func<string>? gpuMarkerPathFactory;
+    private readonly Func<IWebGpuRuntime>? webGpuRuntimeFactory;
+    private IWebGpuRuntime? webGpuRuntime;
+    private IDeviceProbe? deviceProbe;
+    private GpuCrashGuard? gpuCrashGuard;
+    private OnnxSessionFactory? sessionFactory;
+    private IDevicePlanner? devicePlanner;
+    private int deviceProbeStarted;
+    private IVoiceLibrary? voiceLibrary;
+    private IEngineCatalog? engineCatalog;
     private ISpeechSynthesizer? expressiveSynthesizer;
     private ExpressiveRouter? expressiveRouter;
+    private ISpeechSynthesizer? kokoroReferenceRenderer;
     private readonly Func<int>? cpuThreadsFactory;
+    private readonly Func<bool>? decoderSpinningFactory;
+    private readonly Func<int>? maxPrerollMsFactory;
     private readonly Func<string?>? kokoroVoicesDirFactory;
-    private readonly Func<string?>? f5VoicesDirFactory;
+    private readonly Func<string?>? referenceClipsDirFactory;
     private readonly Func<IEmotionDirector?>? llmDirectorFactory;
     private readonly Func<bool>? nameNpcWithSayFactory;
     private readonly Func<bool>? disallowMultipleSayFactory;
@@ -75,6 +104,7 @@ public sealed class ServiceContainer : IDisposable
     private IVoiceLineDetector? voiceLineDetector;
 
     private ILogSink? logSink;
+    private ILineTimingLog? lineTimingLog;
     private IProfileStore? profileStore;
     private ICastingPresetStore? castingPresetStore;
     private IModelStore? modelStore;
@@ -133,11 +163,12 @@ public sealed class ServiceContainer : IDisposable
         Func<FirstOrLastName>? onlySayFirstOrLastNameFactory = null,
         Func<float>? defaultExaggerationFactory = null,
         Func<string>? selectedEpFactory = null,
-        Func<bool>? useFp32LanguageModelFactory = null,
         Func<string>? selectedEngineFactory = null,
         Func<int>? cpuThreadsFactory = null,
+        Func<bool>? decoderSpinningFactory = null,
+        Func<int>? maxPrerollMsFactory = null,
         Func<string?>? kokoroVoicesDirFactory = null,
-        Func<string?>? f5VoicesDirFactory = null,
+        Func<string?>? referenceClipsDirFactory = null,
         Func<IEmotionDirector?>? llmDirectorFactory = null,
         Func<bool>? cutsceneActiveFactory = null,
         Func<bool>? talkVisibleFactory = null,
@@ -149,9 +180,41 @@ public sealed class ServiceContainer : IDisposable
         Func<bool>? ageAwareCastingFactory = null,
         Func<bool>? emotionClassifierEnabledFactory = null,
         Func<bool>? streamSentencesFactory = null,
-        Func<bool>? expressiveEngineFactory = null)
+        Func<bool>? expressiveEngineFactory = null,
+        Func<string>? expressiveEngineIdFactory = null,
+        Func<string, string>? enginePrecisionFactory = null,
+        Func<string, string>? engineDeviceFactory = null,
+        Func<IEngineCatalog>? engineCatalogFactory = null,
+        Func<IReadOnlyDictionary<string, string>>? remoteExtraFactory = null,
+        Func<IReadOnlyList<string>>? voicePackRootsFactory = null,
+        Func<IReadOnlyCollection<string>>? disabledVoicePacksFactory = null,
+        Func<IVoiceLibrary>? voiceLibraryFactory = null,
+        Func<DevicePreferences>? devicePreferencesFactory = null,
+        Action? clearGpuCrashFlag = null,
+        Func<string?>? pluginDirectoryFactory = null,
+        Func<bool>? isWineFactory = null,
+        Func<string>? gpuMarkerPathFactory = null,
+        Func<IWebGpuRuntime>? webGpuRuntimeFactory = null,
+        Func<bool>? uniqueVoicePerCharacterFactory = null,
+        Func<string>? generatedVoicesDirFactory = null)
     {
+        this.uniqueVoicePerCharacterFactory = uniqueVoicePerCharacterFactory;
+        this.generatedVoicesDirFactory = generatedVoicesDirFactory;
+        this.devicePreferencesFactory = devicePreferencesFactory;
+        this.clearGpuCrashFlag = clearGpuCrashFlag;
+        this.pluginDirectoryFactory = pluginDirectoryFactory;
+        this.isWineFactory = isWineFactory;
+        this.gpuMarkerPathFactory = gpuMarkerPathFactory;
+        this.webGpuRuntimeFactory = webGpuRuntimeFactory;
+        this.voicePackRootsFactory = voicePackRootsFactory;
+        this.disabledVoicePacksFactory = disabledVoicePacksFactory;
+        this.voiceLibraryFactory = voiceLibraryFactory;
+        this.remoteExtraFactory = remoteExtraFactory;
+        this.engineCatalogFactory = engineCatalogFactory;
         this.expressiveEngineFactory = expressiveEngineFactory;
+        this.expressiveEngineIdFactory = expressiveEngineIdFactory;
+        this.enginePrecisionFactory = enginePrecisionFactory;
+        this.engineDeviceFactory = engineDeviceFactory;
         this.streamSentencesFactory = streamSentencesFactory;
         this.emotionClassifierEnabledFactory = emotionClassifierEnabledFactory;
         this.ageAwareCastingFactory = ageAwareCastingFactory;
@@ -185,11 +248,12 @@ public sealed class ServiceContainer : IDisposable
         this.defaultExaggerationFactory = defaultExaggerationFactory;
         this.cutsceneActiveFactory = cutsceneActiveFactory;
         this.selectedEpFactory = selectedEpFactory;
-        this.useFp32LanguageModelFactory = useFp32LanguageModelFactory;
         this.selectedEngineFactory = selectedEngineFactory;
         this.cpuThreadsFactory = cpuThreadsFactory;
+        this.decoderSpinningFactory = decoderSpinningFactory;
+        this.maxPrerollMsFactory = maxPrerollMsFactory;
         this.kokoroVoicesDirFactory = kokoroVoicesDirFactory;
-        this.f5VoicesDirFactory = f5VoicesDirFactory;
+        this.referenceClipsDirFactory = referenceClipsDirFactory;
         this.llmDirectorFactory = llmDirectorFactory;
         this.talkVisibleFactory = talkVisibleFactory;
         this.useRaceVoicePresetsFactory = useRaceVoicePresetsFactory;
@@ -200,6 +264,62 @@ public sealed class ServiceContainer : IDisposable
     /// <summary>Recently rendered lines; cleared whenever the engine is rebuilt (a new
     /// engine, EP or voice set can change what the same request sounds like).</summary>
     public SynthesisCache SynthesisCache { get; } = new();
+
+    /// <summary>Engine descriptors, alias resolution and download-group ownership.</summary>
+    public IEngineCatalog EngineCatalog => this.engineCatalog ??= this.engineCatalogFactory?.Invoke()
+        ?? Infrastructure.Engines.EngineCatalog.Instance;
+
+    /// <summary>Voice catalog: stock Kokoro voices plus the packs found under the configured
+    /// roots. Call <see cref="IVoiceLibrary.Reload"/> after packs change on disk.</summary>
+    public IVoiceLibrary VoiceLibrary
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.VoiceLibraryUnlocked();
+            }
+        }
+    }
+
+    private IVoiceLibrary VoiceLibraryUnlocked() =>
+        this.voiceLibrary ??= this.voiceLibraryFactory?.Invoke()
+            ?? new FileVoiceLibrary(
+                this.voicePackRootsFactory ?? (() => []),
+                this.disabledVoicePacksFactory,
+                this.LogSinkUnlocked(),
+                generated: this.GeneratedVoiceStoreUnlocked());
+
+    private IGeneratedVoiceStore? GeneratedVoiceStoreUnlocked() =>
+        this.generatedVoiceStore ??= this.generatedVoicesDirFactory is { } dir
+            ? new GeneratedVoiceStore(dir, this.LogSinkUnlocked())
+            : null;
+
+    /// <summary>Makes the per-character blended voices; null when no generated-voices folder is configured.</summary>
+    public IVoiceGenerator? GeneratedVoices
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.VoiceGeneratorUnlocked();
+            }
+        }
+    }
+
+    private IVoiceGenerator? VoiceGeneratorUnlocked() =>
+        this.voiceGenerator ??= this.GeneratedVoiceStoreUnlocked() is { } generatedStore
+            ? new VoiceGenerator(
+                this.VoiceLibraryUnlocked(),
+                generatedStore,
+                () => this.kokoroVoicesDirFactory?.Invoke(),
+                this.LogSinkUnlocked())
+            : null;
+
+    /// <summary>Slots only lose their place when the library knows the voice and has demoted it;
+    /// ids it has never heard of (legacy bare ids) stay castable.</summary>
+    private bool VoiceIsCastable(string voiceId) =>
+        this.VoiceLibraryUnlocked().Find(voiceId) is not { Available: false };
 
     /// <summary>Downloaded-model directory (modelsDirFactory or a hard error, like the profile store).</summary>
     public string ModelsDir => this.modelsDirFactory?.Invoke()
@@ -235,6 +355,122 @@ public sealed class ServiceContainer : IDisposable
                         this.ModelsDir, store: this.ModelStore, log: this.LogSinkUnlocked()));
             }
         }
+    }
+
+    /// <summary>
+    /// GPU capability probe (WebGPU runtime + adapters). Creating it loads nothing; the runtime
+    /// loads on the first <see cref="IDeviceProbe.Detect"/>.
+    /// </summary>
+    public IDeviceProbe DeviceProbe
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.DeviceProbeUnlocked();
+            }
+        }
+    }
+
+    private IDeviceProbe DeviceProbeUnlocked() =>
+        this.deviceProbe ??= new Infrastructure.Onnx.DeviceProbe(
+            this.WebGpuRuntimeUnlocked(),
+            this.isWineFactory ?? (() => RuntimeHost.DetectWine()),
+            directMlPresent: null,
+            log: this.LogSinkUnlocked());
+
+    private IWebGpuRuntime WebGpuRuntimeUnlocked() =>
+        this.webGpuRuntime ??= this.webGpuRuntimeFactory?.Invoke()
+            ?? new WebGpuRuntime(
+                this.pluginDirectoryFactory?.Invoke(),
+                this.isWineFactory?.Invoke() ?? RuntimeHost.DetectWine(),
+                this.LogSinkUnlocked());
+
+    /// <summary>
+    /// The last probe result for the UI, or null while detection has not finished. The first call starts
+    /// detection on a worker thread (it loads the GPU runtime), so polling this per frame is safe.
+    /// </summary>
+    public DeviceReport? DeviceReportOrStartProbe()
+    {
+        var probe = this.DeviceProbe;
+        if (probe.LastReport is { } report)
+        {
+            return report;
+        }
+
+        if (Interlocked.Exchange(ref this.deviceProbeStarted, 1) == 0)
+        {
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    probe.Detect();
+                }
+                catch (Exception ex)
+                {
+                    this.LogSinkOptional?.Warn($"Device probe failed: {ex.Message}");
+                }
+            });
+        }
+
+        return null;
+    }
+
+    /// <summary>Crash marker for native GPU aborts (see <see cref="GpuCrashGuard"/>).</summary>
+    public GpuCrashGuard GpuCrashGuard
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.GpuCrashGuardUnlocked();
+            }
+        }
+    }
+
+    private GpuCrashGuard GpuCrashGuardUnlocked() =>
+        this.gpuCrashGuard ??= new GpuCrashGuard(
+            this.gpuMarkerPathFactory?.Invoke() ?? Path.Combine(this.ModelsDir, "gpu-session.pending"),
+            this.LogSinkUnlocked());
+
+    /// <summary>Decides, per engine and model, where a session may run (settings x probe x allowlist).</summary>
+    public IDevicePlanner DevicePlanner
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.DevicePlannerUnlocked();
+            }
+        }
+    }
+
+    private IDevicePlanner DevicePlannerUnlocked() =>
+        this.devicePlanner ??= new DevicePlanner(
+            this.devicePreferencesFactory ?? (() => DevicePreferences.Default),
+            this.DeviceProbeUnlocked());
+
+    /// <summary>
+    /// Device services for one Turbo instance: the shared planner and session factory, plus that engine's
+    /// own precision and device overrides from <c>Engine.PerEngine</c>, read live. The decode loop keeps its
+    /// key-value cache device-resident, so a GPU plan really runs on the GPU.
+    /// </summary>
+    private TurboDeviceServices TurboDevicesUnlocked(string engineId)
+    {
+        this.sessionFactory ??= new OnnxSessionFactory(
+            this.WebGpuRuntimeUnlocked(), this.GpuCrashGuardUnlocked(), this.LogSinkUnlocked(), this.decoderSpinningFactory);
+        return new TurboDeviceServices(
+            this.DevicePlannerUnlocked(),
+            this.sessionFactory,
+            this.clearGpuCrashFlag,
+            LmGpuLoopReady: true,
+            Precision: () => this.enginePrecisionFactory?.Invoke(engineId) ?? "auto",
+            ModeOverride: () => this.engineDeviceFactory?.Invoke(engineId) switch
+            {
+                "gpu" => DeviceMode.Gpu,
+                "cpu" => DeviceMode.Cpu,
+                _ => null,
+            });
     }
 
     /// <summary>
@@ -274,7 +510,8 @@ public sealed class ServiceContainer : IDisposable
 
     /// <summary>
     /// The configured speech engine: "kokoro" (CPU real-time, default and the fallback for
-    /// unknown values), or the parked "f5", "chatterbox" and "turbo". Sessions load lazily
+    /// unknown values and retired engines), "chatterbox-turbo" (GPU recommended, expressive) or "remote".
+    /// Sessions load lazily
     /// on first use / warm-up.
     /// </summary>
     public ISpeechSynthesizer SpeechSynthesizer
@@ -289,44 +526,17 @@ public sealed class ServiceContainer : IDisposable
                 }
 
                 var threads = this.cpuThreadsFactory?.Invoke();
-                var engine = this.selectedEngineFactory?.Invoke() ?? "kokoro";
+                var engine = this.EngineCatalog.Resolve(this.selectedEngineFactory?.Invoke());
                 ISpeechSynthesizer created = engine switch
                 {
-                    "chatterbox" => new ChatterboxSynthesizer(
-                        this.ModelsDir,
-                        // Convention: the provisioner writes catalog assets flat, so the
-                        // bundled fallback clip id "default" resolves to
-                        // ModelsDir/default_voice.wav; plugin-installed clips live under
-                        // ModelsDir/voices/{id}.wav.
-                        voicePathResolver: this.ClippingResolver("default_voice.wav"),
-                        executionProvider: this.selectedEpFactory?.Invoke() ?? "auto",
-                        // fp32 override replaces the q4 LM session entirely (int4 kernels
-                        // and their Zen5/AVX-512 native crashes go with it).
-                        languageModelOverride: this.useFp32LanguageModelFactory?.Invoke() == true
-                            ? Infrastructure.Onnx.ModelCatalog.LanguageModelFp32FileName
-                            : null,
-                        intraOpThreads: threads,
-                        log: this.LogSinkUnlocked()),
-                    "turbo" => Infrastructure.Onnx.ChatterboxSynthesizer.CreateTurbo(
-                        this.ModelsDir,
-                        voicePathResolver: this.ClippingResolver("turbo-default-voice.wav"),
-                        executionProvider: this.selectedEpFactory?.Invoke() ?? "cpu",
-                        intraOpThreads: threads,
-                        log: this.LogSinkUnlocked()),
-                    "f5" => new Infrastructure.F5.F5Synthesizer(
-                        () => this.ModelsDir,
-                        () => Math.Max(1, threads ?? 4),
-                        this.LogSinkUnlocked(),
-                        voicesDirFactory: this.f5VoicesDirFactory,
-                        executionProviderFactory: this.selectedEpFactory),
-                    // A stale or unknown value (old configs) must never silently pick a
-                    // 1.4 GB parked engine.
-                    _ => new Infrastructure.Kokoro.KokoroSynthesizer(
-                        () => this.ModelsDir,
-                        () => Math.Max(1, threads ?? 4),
-                        this.LogSinkUnlocked(),
-                        voicesDirFactory: this.kokoroVoicesDirFactory,
-                        keepTempoWhenPitched: this.keepTempoWhenPitchedFactory),
+                    "chatterbox-turbo" => this.CreateTurboUnlocked(
+                        this.ClippingResolver(Infrastructure.Onnx.ModelCatalog.TurboDefaultVoiceFileName)),
+                    "remote" => new Infrastructure.Net.RemoteSynthesizer(
+                        this.remoteExtraFactory ?? (() => new Dictionary<string, string>()),
+                        this.LogSinkUnlocked()),
+                    // A stale or unknown value (old configs, retired engines) must never silently
+                    // pick a multi-gigabyte engine.
+                    _ => this.CreateKokoroUnlocked(threads),
                 };
 
                 this.LogSinkUnlocked().Info(
@@ -338,6 +548,55 @@ public sealed class ServiceContainer : IDisposable
         }
     }
 
+    private Infrastructure.Onnx.ChatterboxSynthesizer CreateTurboUnlocked(Func<string, string?> voicePathResolver) =>
+        Infrastructure.Onnx.ChatterboxSynthesizer.CreateTurbo(
+            this.ModelsDir,
+            voicePathResolver,
+            executionProvider: this.selectedEpFactory?.Invoke() ?? "cpu",
+            intraOpThreads: this.cpuThreadsFactory?.Invoke(),
+            log: this.LogSinkUnlocked(),
+            devices: this.TurboDevicesUnlocked(DeviceModePolicy.TurboEngineId),
+            maxPrerollMs: this.maxPrerollMsFactory);
+
+    private bool TurboIsMainEngine =>
+        this.EngineCatalog.Resolve(this.selectedEngineFactory?.Invoke()) == "chatterbox-turbo";
+
+    private Infrastructure.Kokoro.KokoroSynthesizer CreateKokoroUnlocked(int? threads) =>
+        new(
+            () => this.ModelsDir,
+            () => Math.Max(1, threads ?? 4),
+            this.LogSinkUnlocked(),
+            voicesDirFactory: this.kokoroVoicesDirFactory,
+            keepTempoWhenPitched: this.keepTempoWhenPitchedFactory,
+            voiceLibrary: this.VoiceLibraryUnlocked());
+
+    /// <summary>
+    /// The Kokoro instance that renders reference clips: the main engine when that is Kokoro, otherwise a
+    /// separate CPU instance (Turbo cannot render a stock voice itself). Built on first use.
+    /// </summary>
+    private ISpeechSynthesizer KokoroReferenceRenderer()
+    {
+        lock (this.gate)
+        {
+            if (!this.TurboIsMainEngine)
+            {
+                return this.SpeechSynthesizer;
+            }
+
+            return this.kokoroReferenceRenderer ??= this.RegisterDisposable(
+                this.CreateKokoroUnlocked(this.cpuThreadsFactory?.Invoke()));
+        }
+    }
+
+    /// <summary>
+    /// Loads the Kokoro instance that renders reference clips (when Turbo is the main engine and so it is a
+    /// separate one) and runs its short practice line, so the first new voice of the session does not pay the
+    /// session, voice bank and dictionary start-up. Does nothing when the main engine already is that Kokoro
+    /// (it is warmed with the main engine). Failures are the caller's to log.
+    /// </summary>
+    public Task WarmReferenceRendererAsync(CancellationToken cancellationToken) =>
+        this.TurboIsMainEngine ? this.KokoroReferenceRenderer().WarmUpAsync(cancellationToken) : Task.CompletedTask;
+
     /// <summary>Kokoro-rendered reference clips the expressive engine clones, one per voice and pitch.</summary>
     public const string ExpressiveClipsFolder = "voices-kokoro-ref";
 
@@ -347,17 +606,47 @@ public sealed class ServiceContainer : IDisposable
         "The morning light spilled across the harbor as the ships came in. Merchants called out " +
         "their wares, and somewhere a bell rang twice. It was, by all accounts, a perfectly ordinary day.";
 
-    /// <summary>True when every required file of the expressive engine (Turbo) is on disk.</summary>
+    /// <summary>
+    /// The configured expressive engine, resolved through the catalog. Only a live engine that clones a
+    /// reference clip qualifies; anything else (a retired id, Kokoro, a typo) means the default, Turbo.
+    /// </summary>
+    public string ExpressiveEngineId
+    {
+        get
+        {
+            var info = this.EngineCatalog.Find(this.expressiveEngineIdFactory?.Invoke());
+            return info is { Retired: false } && info.Consumes.Contains(RealizationKind.ReferenceClip)
+                ? info.Key
+                : ConfigMigrator.TurboId;
+        }
+    }
+
+    /// <summary>
+    /// True when the expressive engine can speak from what is on disk: every required file, and for Turbo its
+    /// base files plus any one complete precision set (a graphics card needs only the small q4f16 build).
+    /// </summary>
     public bool ExpressiveEngineInstalled =>
         this.modelsDirFactory is not null
-        && Infrastructure.Onnx.ModelCatalog.TurboRequiredAssets
-            .Where(a => !a.Optional)
-            .All(a => File.Exists(Path.Combine(this.ModelsDir, a.FileName)));
+        && this.EngineCatalog.Find(this.ExpressiveEngineId) is { } engine
+        && (engine.AssetGroups.Contains(TurboInstall.BaseGroup)
+            ? TurboInstall.IsInstalled(this.GroupOnDisk)
+            : Infrastructure.Onnx.ModelCatalog.Assets
+                .Where(a => engine.AssetGroups.Contains(a.Group) && !a.Asset.Optional)
+                .All(a => File.Exists(Path.Combine(this.ModelsDir, a.Asset.FileName))));
 
-    /// <summary>Expressive routing applies: switched on, installed, and Kokoro is the main engine.</summary>
+    private bool GroupOnDisk(string group)
+    {
+        var files = Infrastructure.Onnx.ModelCatalog.Assets.Where(a => a.Group == group).ToList();
+        return files.Count > 0 && files.All(a => File.Exists(Path.Combine(this.ModelsDir, a.Asset.FileName)));
+    }
+
+    /// <summary>
+    /// Expressive routing applies: switched on, installed, and the main engine is a different one
+    /// (with Turbo as the main engine every line already goes through it, so there is nothing to route).
+    /// </summary>
     public bool ExpressiveRoutingActive =>
         this.expressiveEngineFactory?.Invoke() == true
-        && (this.selectedEngineFactory?.Invoke() ?? "kokoro") == "kokoro"
+        && this.EngineCatalog.Resolve(this.selectedEngineFactory?.Invoke()) != this.ExpressiveEngineId
         && this.ExpressiveEngineInstalled;
 
     /// <summary>
@@ -370,19 +659,23 @@ public sealed class ServiceContainer : IDisposable
         {
             lock (this.gate)
             {
+                // Turbo as the main engine clones every speaker, so every line gets a reference clip rendered
+                // from that speaker's Kokoro voice; the same instance serves as both primary and "expressive".
                 return this.expressiveRouter ??= new ExpressiveRouter(
                     primary: () => this.SpeechSynthesizer,
-                    expressive: () => this.ExpressiveSynthesizer,
+                    expressive: () => this.TurboIsMainEngine ? this.SpeechSynthesizer : this.ExpressiveSynthesizer,
                     prepareVoice: this.PrepareExpressiveVoiceAsync,
-                    log: this.LogSinkUnlocked());
+                    log: this.LogSinkUnlocked(),
+                    everyLine: () => this.TurboIsMainEngine);
             }
         }
     }
 
     /// <summary>
-    /// The secondary expressive engine (fp32 Chatterbox Turbo on CPU), built lazily while
-    /// routing is active; its sessions load on the first expressive line. Switching routing
-    /// off retires the instance in the background so its memory is returned.
+    /// The secondary expressive engine (Chatterbox Turbo; device and precision from the
+    /// configuration), built lazily while routing is active; its sessions load on the first
+    /// expressive line. Switching routing off retires the instance in the background so its
+    /// memory is returned.
     /// </summary>
     public ISpeechSynthesizer? ExpressiveSynthesizer
     {
@@ -397,15 +690,11 @@ public sealed class ServiceContainer : IDisposable
                     if (this.expressiveSynthesizer is null)
                     {
                         var fallbackClips = this.ClippingResolver(Infrastructure.Onnx.ModelCatalog.TurboDefaultVoiceFileName);
-                        this.expressiveSynthesizer = Infrastructure.Onnx.ChatterboxSynthesizer.CreateTurbo(
-                            this.ModelsDir,
-                            // The router hands over an absolute clip path; anything else
-                            // resolves like the parked Turbo engine does.
-                            voicePathResolver: id => Path.IsPathRooted(id) && File.Exists(id) ? id : fallbackClips(id),
-                            executionProvider: "cpu",
-                            intraOpThreads: this.cpuThreadsFactory?.Invoke(),
-                            log: this.LogSinkUnlocked());
-                        this.LogSinkUnlocked().Info("Expressive engine instance created (Turbo, CPU).");
+                        // The router hands over an absolute clip path; anything else resolves like the
+                        // Turbo engine does when it is the main one.
+                        this.expressiveSynthesizer = this.CreateTurboUnlocked(
+                            id => Path.IsPathRooted(id) && File.Exists(id) ? id : fallbackClips(id));
+                        this.LogSinkUnlocked().Info("Expressive engine instance created (Chatterbox Turbo).");
                     }
 
                     return this.expressiveSynthesizer;
@@ -435,12 +724,29 @@ public sealed class ServiceContainer : IDisposable
     }
 
     /// <summary>
-    /// The reference clip the expressive engine clones for this request: the user's own clip
-    /// for the voice when there is one, else a clip the main (Kokoro) engine renders once per
-    /// voice and pitch, so the expressive take keeps the speaker's timbre. Null when no clip
-    /// can be made (the line then stays on the main engine).
+    /// The reference clip the expressive engine clones for this request, in order: the user's own clip
+    /// for the voice; a real recorded clip from a voice pack (the voice's own, or for a generated blend its
+    /// dominant source's), pitched by resampling when the profile asks for it, so the accent survives; else a
+    /// clip the main (Kokoro) engine renders once per voice and pitch, so the expressive take keeps the
+    /// speaker's timbre. Null when no clip can be made (the line then goes to the engine's id-based fallback,
+    /// which is sex-aware, see <see cref="ClippingResolver"/>).
     /// </summary>
     private async Task<string?> PrepareExpressiveVoiceAsync(SynthesisRequest request, CancellationToken cancellationToken)
+    {
+        var kind = string.Empty;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            return await this.PrepareExpressiveVoiceCoreAsync(request, cancellationToken, source => kind = source);
+        }
+        finally
+        {
+            LineTimer.Current?.SetReference(kind, clock.ElapsedMilliseconds);
+        }
+    }
+
+    private async Task<string?> PrepareExpressiveVoiceCoreAsync(
+        SynthesisRequest request, CancellationToken cancellationToken, Action<string> clipSource)
     {
         var voiceId = request.ReferenceVoiceId;
         if (string.IsNullOrWhiteSpace(voiceId) || voiceId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
@@ -451,17 +757,29 @@ public sealed class ServiceContainer : IDisposable
         var userClip = Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav");
         if (File.Exists(userClip))
         {
+            clipSource("user clip");
+            this.LogClipChoice(voiceId, "user clip", userClip);
             return userClip;
         }
 
         var pitchTag = (int)MathF.Round(Math.Clamp(request.Pitch, 0.5f, 1.5f) * 100f);
+        if (this.RealClipFor(voiceId) is { } real)
+        {
+            var pitched = this.PitchedCopy(real.Path, voiceId, pitchTag);
+            clipSource(pitchTag == 100 ? "pack clip" : "pack clip pitched");
+            this.LogClipChoice(voiceId, real.Source, pitched);
+            return pitched;
+        }
+
         var clip = Path.Combine(this.ModelsDir, ExpressiveClipsFolder, $"{voiceId}_p{pitchTag:000}.wav");
         if (File.Exists(clip))
         {
+            clipSource("cached");
+            this.LogClipChoice(voiceId, "rendered", clip);
             return clip;
         }
 
-        var main = this.SpeechSynthesizer;
+        var main = this.KokoroReferenceRenderer();
         if (!main.IsReady)
         {
             return null;
@@ -480,7 +798,102 @@ public sealed class ServiceContainer : IDisposable
         Infrastructure.Onnx.WavCodec.WriteMono24k(partial, reference.Samples);
         File.Move(partial, clip, overwrite: true);
         this.LogSinkOptional?.Info($"Rendered expressive reference clip for \"{voiceId}\" (pitch {pitchTag / 100f:0.00}).");
+        clipSource("rendered");
+        this.LogClipChoice(voiceId, "rendered", clip);
         return clip;
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> loggedClipChoices = new(StringComparer.Ordinal);
+
+    /// <summary>Info line the first time a voice gets a clip from a given source (clip source and sex), for in-game reports.</summary>
+    private void LogClipChoice(string voiceId, string source, string? path)
+    {
+        if (this.loggedClipChoices.TryAdd($"{voiceId}|{source}", 0))
+        {
+            this.LogSinkOptional?.Info(
+                $"Reference clip for \"{voiceId}\": {source}, sex {this.SexOf(voiceId) ?? "unknown"} " +
+                $"({(path is null ? "engine default" : Path.GetFileName(path))}).");
+        }
+    }
+
+    /// <summary>The sex of a voice: the library's (generated blends included), else what the id spells out.</summary>
+    private string? SexOf(string voiceId) =>
+        this.VoiceLibrary.Find(voiceId) is { Sex: "female" or "male" } info
+            ? info.Sex
+            : ReferenceClipBank.SexFromId(voiceId);
+
+    /// <summary>
+    /// A real recorded clip for a voice: its own pack ReferenceClip realization, or for a generated blend
+    /// the clip of its dominant-weight source (then the next heaviest) that has one. Null when none exists,
+    /// so only voices with no real clip are spoken from a Kokoro-rendered reference.
+    /// </summary>
+    private (string Path, string Source)? RealClipFor(string voiceId)
+    {
+        static string? ClipOf(VoiceInfo? voice) =>
+            voice?.Realizations.FirstOrDefault(r =>
+                r.Kind == RealizationKind.ReferenceClip && r.Available && File.Exists(r.Path))?.Path;
+
+        var library = this.VoiceLibrary;
+        if (ClipOf(library.Find(voiceId)) is { } own)
+        {
+            return (own, "pack clip");
+        }
+
+        if (VoiceBlend.IsGeneratedId(voiceId))
+        {
+            IGeneratedVoiceStore? store;
+            lock (this.gate)
+            {
+                store = this.GeneratedVoiceStoreUnlocked();
+            }
+
+            if (store?.Find(voiceId) is { } record)
+            {
+                foreach (var part in record.Sources.OrderByDescending(p => p.Weight))
+                {
+                    if (ClipOf(library.Find(part.VoiceId)) is { } sourceClip)
+                    {
+                        return (sourceClip, $"pack clip of blend source {part.VoiceId}");
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The clip at the requested pitch. Turbo has no pitch control of its own (pitch lives in the reference),
+    /// so a pitched voice gets a resampled copy of the real clip, the same shift Kokoro applies to its output.
+    /// Pitch 1 uses the pack file itself. Any trouble reading the clip falls back to the unpitched file.
+    /// </summary>
+    private string PitchedCopy(string source, string voiceId, int pitchTag)
+    {
+        if (pitchTag == 100)
+        {
+            return source;
+        }
+
+        var dest = Path.Combine(this.ModelsDir, ExpressiveClipsFolder, $"{voiceId}_pack_p{pitchTag:000}.wav");
+        if (File.Exists(dest))
+        {
+            return dest;
+        }
+
+        try
+        {
+            var shifted = ClipPitch.Resample(Infrastructure.Onnx.WavCodec.ReadMono24k(source), pitchTag / 100f);
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            var partial = dest + ".part";
+            Infrastructure.Onnx.WavCodec.WriteMono24k(partial, shifted);
+            File.Move(partial, dest, overwrite: true);
+            return dest;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            this.LogSinkOptional?.Warn($"Could not pitch the reference clip of \"{voiceId}\" ({ex.Message}); using it unpitched.");
+            return source;
+        }
     }
 
     /// <summary>Race/voice-group slot manifest (voicesManifestFactory or a hard error).</summary>
@@ -584,30 +997,53 @@ public sealed class ServiceContainer : IDisposable
 
     /// <summary>Speech pipeline: lexicon → stutter removal → director → synthesis → queue.</summary>
     /// <summary>
-    /// Reference-clip resolution for the cloning engines (turbo/legacy): profiles carry
-    /// Kokoro voice ids, which only exist as files when the user adds clip overrides.
-    /// Fall back to the bundled F5 bank clip for that id, then to the engine default —
-    /// a missing clip must degrade to the default voice, never error the line.
+    /// Reference-clip resolution for the cloning engine (Turbo): profiles carry Kokoro voice ids, which
+    /// only exist as files when the user adds clip overrides. A rooted path that exists is a clip prepared by
+    /// <see cref="PrepareExpressiveVoiceAsync"/> and is used as is. An id resolves to: the user's clip, a real
+    /// pack clip (the voice's own or its blend's source), a clip rendered earlier (the unpitched one, else the
+    /// nearest pitch), then the bundled bank clip chosen by the voice's sex, then the engine default. A
+    /// missing clip must degrade to a voice of the right sex, never error the line.
     /// </summary>
     private Func<string, string?> ClippingResolver(string defaultClipFileName)
     {
-        var f5Dir = this.f5VoicesDirFactory?.Invoke();
+        var clipsDir = this.referenceClipsDirFactory?.Invoke();
         return voiceId =>
         {
-            if (!string.IsNullOrWhiteSpace(voiceId) && voiceId != "default")
+            if (!string.IsNullOrWhiteSpace(voiceId) && Path.IsPathRooted(voiceId) && File.Exists(voiceId))
+            {
+                return voiceId;
+            }
+
+            if (!string.IsNullOrWhiteSpace(voiceId) && voiceId != "default"
+                && voiceId.IndexOfAny([.. Path.GetInvalidFileNameChars(), '*', '?']) < 0)
             {
                 var userClip = Path.Combine(this.ModelsDir, "voices", $"{voiceId}.wav");
                 if (File.Exists(userClip))
                 {
+                    this.LogClipChoice(voiceId, "user clip", userClip);
                     return userClip;
                 }
 
-                if (!string.IsNullOrWhiteSpace(f5Dir))
+                if (this.RealClipFor(voiceId) is { } real)
                 {
-                    var bundled = Path.Combine(
-                        f5Dir, $"{Infrastructure.F5.F5Synthesizer.ClipIdFor(voiceId)}.wav");
+                    this.LogClipChoice(voiceId, real.Source, real.Path);
+                    return real.Path;
+                }
+
+                // A clip the main engine already rendered for this voice (see PrepareExpressiveVoiceAsync):
+                // the unpitched one, else whichever pitch is closest (the timbre is what matters here).
+                if (RenderedClipFor(Path.Combine(this.ModelsDir, ExpressiveClipsFolder), voiceId) is { } rendered)
+                {
+                    this.LogClipChoice(voiceId, "rendered", rendered);
+                    return rendered;
+                }
+
+                if (!string.IsNullOrWhiteSpace(clipsDir))
+                {
+                    var bundled = Path.Combine(clipsDir, $"{ReferenceClipBank.ClipIdFor(voiceId, this.SexOf(voiceId))}.wav");
                     if (File.Exists(bundled))
                     {
+                        this.LogClipChoice(voiceId, "bank", bundled);
                         return bundled;
                     }
                 }
@@ -616,6 +1052,7 @@ public sealed class ServiceContainer : IDisposable
             var defaultClip = Path.Combine(this.ModelsDir, defaultClipFileName);
             if (File.Exists(defaultClip))
             {
+                this.LogClipChoice(voiceId, "default", defaultClip);
                 return defaultClip;
             }
 
@@ -628,6 +1065,7 @@ public sealed class ServiceContainer : IDisposable
                 var bundledDefault = Path.Combine(kokoroVoicesDir, "default_voice.wav");
                 if (File.Exists(bundledDefault))
                 {
+                    this.LogClipChoice(voiceId, "default", bundledDefault);
                     return bundledDefault;
                 }
             }
@@ -637,6 +1075,52 @@ public sealed class ServiceContainer : IDisposable
             return null;
         };
     }
+
+    private static string? RenderedClipFor(string folder, string voiceId)
+    {
+        var unpitched = Path.Combine(folder, $"{voiceId}_p100.wav");
+        if (File.Exists(unpitched))
+        {
+            return unpitched;
+        }
+
+        if (!Directory.Exists(folder))
+        {
+            return null;
+        }
+
+        return Directory.EnumerateFiles(folder, $"{voiceId}_p???.wav")
+            .Select(f => (File: f, Tag: int.TryParse(Path.GetFileNameWithoutExtension(f)[^3..], out var t) ? t : int.MaxValue))
+            .Where(c => c.Tag != int.MaxValue)
+            .OrderBy(c => Math.Abs(c.Tag - 100))
+            .Select(c => c.File)
+            .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Engine part of the render-cache key: the main engine's id and variant (precision and device class for
+    /// Turbo), plus the expressive engine's variant while routing is active.
+    /// </summary>
+    public string RenderEngineKey()
+    {
+        var id = this.EngineCatalog.Resolve(this.selectedEngineFactory?.Invoke());
+        return SynthesisCache.EngineKey(id, this.RoutedSynthesizer.RenderVariant);
+    }
+
+    /// <summary>Stage timings of the last few spoken lines, for the diagnostics report.</summary>
+    public ILineTimingLog LineTimingLog
+    {
+        get
+        {
+            lock (this.gate)
+            {
+                return this.LineTimingLogUnlocked();
+            }
+        }
+    }
+
+    private ILineTimingLog LineTimingLogUnlocked() =>
+        this.lineTimingLog ??= new Infrastructure.Diagnostics.RingLineTimingLog();
 
     public SpeechRequestHandler SpeechHandler
     {
@@ -664,8 +1148,8 @@ public sealed class ServiceContainer : IDisposable
                     log: this.LogSinkUnlocked(),
                     streamSentences: this.streamSentencesFactory,
                     cache: this.SynthesisCache,
-                    engineKey: () => (this.selectedEngineFactory?.Invoke() ?? "kokoro")
-                        + (this.ExpressiveRoutingActive ? "+turbo" : string.Empty));
+                    engineKey: this.RenderEngineKey,
+                    timings: this.LineTimingLogUnlocked());
             }
         }
     }
@@ -895,8 +1379,17 @@ public sealed class ServiceContainer : IDisposable
             this.UnboundModels.Record(unboundModel, speaker.DisplayName, DateTimeOffset.UtcNow);
         }
 
+        // Hrothgar women count as Ungendered for the group (TextToTalk's rule), but they are women:
+        // they take the Hrothgar female cast instead of the mixed Unknown row.
+        var castGroup = beastTribe is null
+            && racePresets
+            && group == VoiceGroup.Ungendered
+            && speaker.Race == VoiceGroupResolver.RaceHrothgar
+            && speaker.Sex == 1
+                ? VoiceGroup.Female
+                : group;
         var slots = beastSlots
-            ?? (racePresets ? map.SlotsFor(group, speaker.Race) : map.SlotsFor(VoiceGroup.Ungendered, null));
+            ?? (racePresets ? map.SlotsFor(castGroup, speaker.Race) : map.SlotsFor(VoiceGroup.Ungendered, null));
 
         this.LogSinkUnlocked().Info(
             $"Voice resolution for \"{speaker.Key}\": race={speaker.Race?.ToString() ?? "?"} " +
@@ -916,7 +1409,17 @@ public sealed class ServiceContainer : IDisposable
         // Engine migrations (Chatterbox clip ids → Kokoro voice names) retire ids that
         // the store's never-reassign invariant would keep forever; a retired id can
         // never synthesize, so re-derive a fresh random pick from the current bank.
-        if (!map.DistinctVoiceIds().Contains(profile.ReferenceVoiceId))
+        // A pack voice demoted by a missing file (Available false) is retired too; a usable
+        // pack voice the user picked by hand stays. A voice whose pack was removed is unknown
+        // to the library, so the engine's fallback voice (with a log line) covers it.
+        // A stock voice that the built-in casting no longer uses (it was dropped from the casting in
+        // an update) is replaced only on an AUTOMATIC pick: a voice the user chose by hand (Custom)
+        // is theirs and stays, as long as the voice still exists.
+        var picked = this.VoiceLibraryUnlocked().Find(profile.ReferenceVoiceId);
+        var keptByPack = picked is { Available: true, Quality: not VoiceQuality.Stock };
+        var keptByUser = profile.Custom && picked is { Available: true };
+        if (picked is { Available: false }
+            || (!keptByPack && !keptByUser && !map.DistinctVoiceIds().Contains(profile.ReferenceVoiceId)))
         {
             this.LogSinkUnlocked().Info(
                 $"Reassigning \"{speaker.Key}\" from retired voice \"{profile.ReferenceVoiceId}\".");
@@ -924,9 +1427,59 @@ public sealed class ServiceContainer : IDisposable
             profile = store.GetOrCreate(speaker.Key, () => slots, speaker.Race, speaker.Tribe, speaker.Sex)!;
         }
 
+        profile = this.ApplyUniqueVoiceUnlocked(speaker, profile, slots, castGroup);
+
         return this.ageAwareCastingFactory?.Invoke() == false
             ? profile
             : AgeCasting.Apply(profile, speaker.BodyType);
+    }
+
+    /// <summary>
+    /// Unique voice per character: an automatic (not hand-picked) profile whose voice is still a
+    /// plain cast pick is moved onto a voice blended for this speaker from the same cast set. The
+    /// slot's bias/pitch/speed/volume stay, so only the timbre changes; the store keeps the new id,
+    /// so the voice is reused across lines and sessions. No-op when the setting is off, the voice
+    /// is already generated, or no blend is possible (the ordinary pick stands).
+    /// </summary>
+    private VoiceProfile ApplyUniqueVoiceUnlocked(
+        SpeakerIdentity speaker, VoiceProfile profile, VoiceSlot[] slots, VoiceGroup group)
+    {
+        if (this.uniqueVoicePerCharacterFactory?.Invoke() != true
+            || profile.Custom
+            || VoiceBlend.IsGeneratedId(profile.ReferenceVoiceId)
+            || this.VoiceGeneratorUnlocked() is not { } generator)
+        {
+            return profile;
+        }
+
+        var store = this.ProfileStoreUnlocked();
+        this.PruneGeneratedVoicesOnceUnlocked(store);
+        var preferredSex = group switch
+        {
+            VoiceGroup.Male => "male",
+            VoiceGroup.Female => "female",
+            _ => null,
+        };
+
+        var made = generator.Ensure(speaker.Key, speaker.DisplayName, [.. slots.Select(slot => slot.Id)], preferredSex);
+        return made is null ? profile : store.SetVoice(speaker.Key, made.Id, custom: false) ?? profile;
+    }
+
+    /// <summary>Once per session: generated voices no profile points at any more (players evicted from the
+    /// capped store, removed characters) are deleted so the folder cannot grow without bound.</summary>
+    private void PruneGeneratedVoicesOnceUnlocked(IProfileStore profiles)
+    {
+        if (this.generatedVoicesPruned || this.GeneratedVoiceStoreUnlocked() is not { } generatedStore)
+        {
+            return;
+        }
+
+        this.generatedVoicesPruned = true;
+        var removed = generatedStore.Prune(profiles.Entries.Select(e => e.ReferenceVoiceId).ToHashSet(StringComparer.Ordinal));
+        if (removed > 0)
+        {
+            this.LogSinkUnlocked().Info($"Removed {removed} unused generated voice(s).");
+        }
     }
 
     /// <summary>Non-human models heard this session that no tribe binding claims (casting UI inbox).</summary>
@@ -1039,7 +1592,7 @@ public sealed class ServiceContainer : IDisposable
             catch (CastingPresetException e)
             {
                 this.LogSinkUnlocked().Warn($"Active casting preset \"{active}\" is unreadable; using the built-in casting. {e.Message}");
-                return this.voiceMap = baseMap;
+                return this.voiceMap = baseMap.WithAvailability(this.VoiceIsCastable);
             }
         }
 
@@ -1081,7 +1634,7 @@ public sealed class ServiceContainer : IDisposable
             .SelectMany(race => (string[])[$"{race}|Male", $"{race}|Female"])
             .ToDictionary(key => key, key => key, StringComparer.Ordinal);
 
-        return this.voiceMap = new RaceVoiceMap(sets, variants, baseMap.Disabled);
+        return this.voiceMap = new RaceVoiceMap(sets, variants, baseMap.Disabled, isAvailable: this.VoiceIsCastable);
     }
 
     /// <summary>Persistent voice-assignment store (JsonProfileStore over voice-assignments.json).</summary>

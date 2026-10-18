@@ -12,8 +12,9 @@
     <!-- Core ORT (osx-arm64 native: CPU + CoreML EPs) — the plugin keeps its
          Managed+DirectML 1.24.4 pins; the engine sources compile against both. -->
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.29.0" />
+    <!-- GPU device on the Turbo path: the WebGPU provider natives (linux-x64 .so here, pinned like the plugin). -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.EP.WebGpu" Version="[0.2.1]" ExcludeAssets="compile;runtime" />
     <PackageReference Include="KokoroSharp" Version="0.8.4" />
-    <PackageReference Include="Horus.F5Tts.Onnx" Version="0.3.1" />
     <PackageReference Include="Tokenizers.DotNet" Version="1.4.1" />
     <PackageReference Include="Tokenizers.DotNet.runtime.osx-arm64" Version="1.4.1" />
     <PackageReference Include="Tokenizers.DotNet.runtime.win-x64" Version="1.4.1" />
@@ -28,9 +29,16 @@
     <Compile Include="..\..\src\AIVoiceActing\Ports\**\*.cs" Link="AIVoiceActing\Ports\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Onnx\**\*.cs" Link="AIVoiceActing\Infrastructure\Onnx\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Kokoro\**\*.cs" Link="AIVoiceActing\Infrastructure\Kokoro\%(Filename)%(Extension)" />
-    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\F5\**\*.cs" Link="AIVoiceActing\Infrastructure\F5\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Net\HuggingFaceProvisioner.cs" Link="AIVoiceActing\Infrastructure\Net\HuggingFaceProvisioner.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\FileModelStore.cs" Link="AIVoiceActing\Infrastructure\Storage\FileModelStore.cs" />
+    <!-- Voice pack modes (validate-pack, audition) run the own library scan of the plugin. -->
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\FileVoiceLibrary.cs" Link="AIVoiceActing\Infrastructure\Storage\FileVoiceLibrary.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\VoicePackValidator.cs" Link="AIVoiceActing\Infrastructure\Storage\VoicePackValidator.cs" />
+    <EmbeddedResource Include="..\..\src\AIVoiceActing\Domain\voices-core.json" LogicalName="voices-core.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\src\AIVoiceActing\Infrastructure\Onnx\models-catalog.json" LogicalName="models-catalog.json" />
   </ItemGroup>
 
   <ItemGroup>

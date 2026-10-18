@@ -99,6 +99,7 @@ public sealed class CommandRouter
         return CommandResult.Silent with { Action = AivaCommand.OpenConfig };
     }
 
+    /// <summary>Opens the style tag settings (the plugin wires this to What's read, More options).</summary>
     private CommandResult ToggleStyles()
     {
         var open = this.openStyles?.Invoke();
@@ -106,7 +107,7 @@ public sealed class CommandRouter
         {
             return new CommandResult(
                 AivaCommand.OpenStyles,
-                ["The styles window is not available in this build."]);
+                ["The style tag settings are not available in this build."]);
         }
 
         open();

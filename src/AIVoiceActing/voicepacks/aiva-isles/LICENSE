@@ -1,0 +1,29 @@
+British Isles accents (aiva-isles) voice pack
+=============================================
+
+Everything in this folder (voicepack.json, style/*.npy, clips/*, preview/*) is
+licensed under the Creative Commons Attribution-ShareAlike 4.0 International
+license (CC-BY-SA-4.0), SPDX identifier: CC-BY-SA-4.0.
+
+  Full legal code: https://creativecommons.org/licenses/by-sa/4.0/legalcode
+  Human-readable summary: https://creativecommons.org/licenses/by-sa/4.0/
+
+Why this license: the voices are adaptations of recordings from the
+ylacombe/english_dialects dataset, which is itself CC-BY-SA-4.0. The style
+tensors are optimised to imitate those speakers, and the reference clips are
+excerpts of the recordings, so both are derivative material and must carry the
+same license (ShareAlike). See NOTICE for the attribution and the list of
+changes.
+
+Scope of the license: it applies to this folder only. The AIVoiceActing plugin
+code and the rest of the plugin package are under their own terms and are not
+affected; this pack is a separate data collection that the plugin loads at run
+time. Audio you generate by speaking text with these voices is output of a
+speech model and is not itself a copy of the dataset recordings.
+
+You may use, copy and redistribute this pack, with or without changes, as long as
+you keep this LICENSE and the NOTICE, credit the sources named there, say what you
+changed, and share your adapted version under CC-BY-SA-4.0 (or a compatible license).
+
+THE MATERIAL IS PROVIDED AS IS, WITHOUT WARRANTIES OF ANY KIND. See the legal code
+linked above for the binding terms.

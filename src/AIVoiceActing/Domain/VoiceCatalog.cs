@@ -36,6 +36,22 @@ public sealed record VoiceCatalogEntry(string Id, VoiceLanguage Language, VoiceS
 /// </summary>
 public static class VoiceCatalog
 {
+    /// <summary>The British voices used whenever a requested voice is missing: no American voice is ever a default.</summary>
+    public const string FallbackFemale = "bf_emma";
+
+    public const string FallbackMale = "bm_george";
+
+    /// <summary>
+    /// The British stand-in for a voice that cannot be loaded: bm_george for a male voice, bf_emma otherwise.
+    /// <paramref name="knownSex"/> (a library entry's <c>female</c>/<c>male</c>) wins; else the Kokoro id prefix decides.
+    /// </summary>
+    public static string FallbackFor(string? requestedId, string? knownSex = null)
+    {
+        var male = string.Equals(knownSex, "male", StringComparison.OrdinalIgnoreCase)
+            || (string.IsNullOrWhiteSpace(knownSex) && Describe(requestedId).Sex == VoiceSex.Male);
+        return male ? FallbackMale : FallbackFemale;
+    }
+
     /// <summary>Parses a Kokoro voice id prefix; null, short, or unmatched ids
     /// describe as Unknown.</summary>
     public static VoiceCatalogEntry Describe(string? voiceId)

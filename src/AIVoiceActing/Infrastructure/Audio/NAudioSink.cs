@@ -1,5 +1,6 @@
 namespace AIVoiceActing.Infrastructure.Audio;
 
+using AIVoiceActing.Domain;
 using AIVoiceActing.Ports;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
@@ -23,9 +24,11 @@ public sealed class NAudioSink : IAudioSink
     private readonly ILogSink? log;
     private readonly object currentGate = new();
     private const long PlaybackGraceMs = 3000;
+    private const int StreamStartTimeoutMs = 60_000;
     private bool unsupportedLogged;
     private int? wasapiFailedDevice;
     private IWavePlayer? current;
+    private volatile PlaybackReport? lastPlayback;
 
     public NAudioSink(Func<int>? deviceIndexFactory = null, ILogSink? log = null)
     {
@@ -34,6 +37,9 @@ public sealed class NAudioSink : IAudioSink
     }
 
     public bool IsSupported => OperatingSystem.IsWindows();
+
+    /// <summary>What the last line measured: device start-up, underruns and silence, when sound first reached the device.</summary>
+    public PlaybackReport? LastPlayback => this.lastPlayback;
 
     /// <summary>Static output-device listing for the configuration UI (empty off-Windows).</summary>
     public static IReadOnlyList<(int Index, string Name)> EnumerateOutputDevices()
@@ -57,6 +63,8 @@ public sealed class NAudioSink : IAudioSink
             return;
         }
 
+        this.lastPlayback = null;
+        var opening = System.Diagnostics.Stopwatch.StartNew();
         var scaled = new VolumeSampleProvider(new MonoFloatSampleProvider(audio.Samples, audio.SampleRate))
         {
             Volume = Math.Clamp(volume, 0f, 2f),
@@ -66,13 +74,75 @@ public sealed class NAudioSink : IAudioSink
         {
             try
             {
-                this.PlayOn(output, backend, scaled, audio);
+                this.PlayOn(output, backend, scaled, audio, null, opening, null);
                 return;
             }
             catch (Exception ex)
             {
                 // Remember a WASAPI failure so later lines go straight to waveOut instead
                 // of paying the failed device setup every time.
+                if (backend.StartsWith("wasapi", StringComparison.Ordinal))
+                {
+                    this.wasapiFailedDevice = this.deviceIndexFactory?.Invoke() ?? 0;
+                }
+
+                this.log?.Warn($"{backend} playback failed: {ex.Message}");
+            }
+            finally
+            {
+                output.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Plays a line that is still being synthesized: waits for the first samples, opens the device, and
+    /// feeds it from <paramref name="source"/> as it fills (silence when the synthesizer falls behind).
+    /// Same backend order, cancellation and watchdog rules as <see cref="Play"/>.
+    /// </summary>
+    public void PlayStream(IPcmSource source, float volume)
+    {
+        if (!this.IsSupported)
+        {
+            this.WarnUnsupportedOnce();
+            return;
+        }
+
+        this.lastPlayback = null;
+
+        // Do not open the device (and its start-up latency) before there is something to say.
+        var waited = 0;
+        while (!source.WaitForData(100))
+        {
+            waited += 100;
+            if (waited >= StreamStartTimeoutMs)
+            {
+                this.log?.Warn("The line never produced any audio; giving up on it.");
+                return;
+            }
+        }
+
+        if (source.IsFinished)
+        {
+            return;
+        }
+
+        var meter = new PlaybackMeter(source.SampleRate);
+        var opening = System.Diagnostics.Stopwatch.StartNew();
+        var scaled = new VolumeSampleProvider(new PcmSourceSampleProvider(source, meter))
+        {
+            Volume = Math.Clamp(volume, 0f, 2f),
+        };
+
+        foreach (var (output, backend) in this.CreateOutputs())
+        {
+            try
+            {
+                this.PlayOn(output, backend, scaled, null, source, opening, meter);
+                return;
+            }
+            catch (Exception ex)
+            {
                 if (backend.StartsWith("wasapi", StringComparison.Ordinal))
                 {
                     this.wasapiFailedDevice = this.deviceIndexFactory?.Invoke() ?? 0;
@@ -99,13 +169,24 @@ public sealed class NAudioSink : IAudioSink
     /// <summary>Drops every queued item without playing them (nothing buffers here).</summary>
     public void Flush() => this.Cancel();
 
-    private void PlayOn(IWavePlayer output, string backend, ISampleProvider scaled, SynthesisResult audio)
+    private void PlayOn(
+        IWavePlayer output,
+        string backend,
+        ISampleProvider scaled,
+        SynthesisResult? audio,
+        IPcmSource? live,
+        System.Diagnostics.Stopwatch opening,
+        PlaybackMeter? meter)
     {
-        this.log?.Info($"Playing {audio.Samples.Length / (float)audio.SampleRate:0.0}s via {backend}.");
+        this.log?.Info(audio is { } whole
+            ? $"Playing {whole.Samples.Length / (float)whole.SampleRate:0.0}s via {backend}."
+            : $"Streaming a line via {backend}.");
         using var finished = new ManualResetEventSlim(false);
         output.PlaybackStopped += (_, _) => finished.Set();
         output.Init(scaled);
         output.Play();
+        var openMs = opening.ElapsedMilliseconds;
+        var playingAtTicks = Environment.TickCount64;
         // Register only once playback has begun: a Cancel landing before this point
         // must never be silently no-op'd by the Stop below — the worst case is that
         // it misses the first milliseconds of a just-started line instead.
@@ -118,10 +199,18 @@ public sealed class NAudioSink : IAudioSink
         {
             // Watchdog: if the backend never reports the stop (seen with some Wine audio
             // drivers), the queue would stall behind this line forever.
-            var deadline = Environment.TickCount64
-                + (long)(audio.Samples.Length * 1000.0 / audio.SampleRate) + PlaybackGraceMs;
+            // A live line has no known length until the synthesizer is done: the clock only starts
+            // once the source ended and the device has had time to play what was left.
+            var deadline = audio is { } known
+                ? Environment.TickCount64 + (long)(known.Samples.Length * 1000.0 / known.SampleRate) + PlaybackGraceMs
+                : long.MaxValue;
             while (!finished.IsSet)
             {
+                if (live is { IsFinished: true } && deadline == long.MaxValue)
+                {
+                    deadline = Environment.TickCount64 + PlaybackGraceMs;
+                }
+
                 if (Environment.TickCount64 > deadline)
                 {
                     this.log?.Warn($"{backend} never reported the end of playback; stopping it.");
@@ -132,6 +221,11 @@ public sealed class NAudioSink : IAudioSink
                 finished.Wait(100);
             }
 
+            this.lastPlayback = new PlaybackReport(
+                openMs,
+                meter?.UnderrunCount ?? 0,
+                meter?.SilenceMs ?? 0,
+                meter is { FirstSoundAtTicks: > 0 } heard ? heard.FirstSoundAtTicks : playingAtTicks);
             this.log?.Info("Playback finished.");
         }
         finally
@@ -198,6 +292,32 @@ public sealed class NAudioSink : IAudioSink
 
         this.unsupportedLogged = true;
         this.log?.Warn("Audio playback is unsupported on this platform (Windows-only WASAPI); speech is skipped.");
+    }
+}
+
+/// <summary>
+/// Adapts a live <see cref="IPcmSource"/> to NAudio: when the synthesizer has not produced enough yet the
+/// device gets silence (the line stalls instead of ending); once the source is finished it reports the end.
+/// </summary>
+internal sealed class PcmSourceSampleProvider(IPcmSource source, PlaybackMeter? meter = null) : ISampleProvider
+{
+    public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(source.SampleRate, 1);
+
+    public int Read(float[] buffer, int offset, int count)
+    {
+        var read = source.Read(buffer.AsSpan(offset, count));
+        meter?.OnRead(count, read, source.IsFinished);
+        if (read == 0 && source.IsFinished)
+        {
+            return 0;
+        }
+
+        if (read < count)
+        {
+            buffer.AsSpan(offset + read, count - read).Clear();
+        }
+
+        return count;
     }
 }
 

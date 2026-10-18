@@ -15,9 +15,11 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageReference Include="Standart.Hash.xxHash" Version="4.0.5" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.24.4" /><!-- same ORT as the plugin ships -->
+    <!-- Natives only, for the AIVA_GPU_TESTS=1 integration tests; same pin as the plugin. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.EP.WebGpu" Version="[0.2.1]" ExcludeAssets="compile;runtime" />
     <PackageReference Include="KokoroSharp" Version="0.8.4" />
-    <PackageReference Include="Horus.F5Tts.Onnx" Version="0.3.1" />
     <PackageReference Include="Tokenizers.DotNet" Version="1.4.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" /><!-- test-only: Dalamud persists configs with it at runtime -->
     <PackageReference Include="Tokenizers.DotNet.runtime.osx-arm64" Version="1.4.1" />
     <PackageReference Include="Tokenizers.DotNet.runtime.win-x64" Version="1.4.1" />
   </ItemGroup>
@@ -44,8 +46,9 @@
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Dalamud\HarvestLogSink.cs" Link="AIVoiceActing\Infrastructure\HarvestLogSink.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Dalamud\GameObjectSpeakerDirectory.cs" Link="AIVoiceActing\Infrastructure\GameObjectSpeakerDirectory.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Onnx\**\*.cs" Link="AIVoiceActing\Infrastructure\Onnx\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Diagnostics\**\*.cs" Link="AIVoiceActing\Infrastructure\Diagnostics\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Kokoro\**\*.cs" Link="AIVoiceActing\Infrastructure\Kokoro\%(Filename)%(Extension)" />
-    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\F5\**\*.cs" Link="AIVoiceActing\Infrastructure\F5\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Net\RemoteSynthesizer.cs" Link="AIVoiceActing\Infrastructure\Net\RemoteSynthesizer.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Net\HuggingFaceProvisioner.cs" Link="AIVoiceActing\Infrastructure\Net\HuggingFaceProvisioner.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\FileModelStore.cs" Link="AIVoiceActing\Infrastructure\Storage\FileModelStore.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\JsonProfileStore.cs" Link="AIVoiceActing\Infrastructure\Storage\JsonProfileStore.cs" />
@@ -54,11 +57,21 @@
     <!-- Step 7: pure UI state (Dalamud- and ImGui-free by the same rule as Domain). -->
     <Compile Include="..\..\src\AIVoiceActing\UI\State\**\*.cs" Link="AIVoiceActing\UI\State\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\src\AIVoiceActing\Configuration.cs" Link="AIVoiceActing\Configuration.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\ConfigurationSections.cs" Link="AIVoiceActing\ConfigurationSections.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\ConfigMigrator.cs" Link="AIVoiceActing\ConfigMigrator.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Engines\**\*.cs" Link="AIVoiceActing\Infrastructure\Engines\%(Filename)%(Extension)" />
+    <Content Include="Fixtures\config-v1-owner.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\..\src\AIVoiceActing\Container\CommandRouter.cs" Link="AIVoiceActing\CommandRouter.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Container\KeybindMonitor.cs" Link="AIVoiceActing\KeybindMonitor.cs" />
     <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Audio\PlaybackSpeechQueue.cs" Link="AIVoiceActing\PlaybackSpeechQueue.cs" />
     <Content Include="..\..\src\AIVoiceActing\Infrastructure\Dalamud\overridenModelIds.txt" Link="overridenModelIds.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\AIVoiceActing\Domain\voices.json" Link="voices.json" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="..\..\src\AIVoiceActing\Infrastructure\Onnx\models-catalog.json" LogicalName="models-catalog.json" />
+    <EmbeddedResource Include="..\..\src\AIVoiceActing\Domain\voices-core.json" LogicalName="voices-core.json" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\FileVoiceLibrary.cs" Link="AIVoiceActing\Infrastructure\Storage\FileVoiceLibrary.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\VoicePackValidator.cs" Link="AIVoiceActing\Infrastructure\Storage\VoicePackValidator.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\GeneratedVoiceStore.cs" Link="AIVoiceActing\Infrastructure\Storage\GeneratedVoiceStore.cs" />
+    <Compile Include="..\..\src\AIVoiceActing\Infrastructure\Storage\VoiceGenerator.cs" Link="AIVoiceActing\Infrastructure\Storage\VoiceGenerator.cs" />
   </ItemGroup>
 
 </Project>
